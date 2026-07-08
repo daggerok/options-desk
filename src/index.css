@@ -4,50 +4,214 @@
  * AGENTIC AI ENFORCED SPECIFICATION & GUIDELINES (CRITICAL)
  * ============================================================================
  * 1. PERSIST ALL COMMENTS: Under no circumstances should ANY code comments,
- * system design docs, or type descriptors be removed or truncated.
+ *    system design docs, or type descriptors be removed or truncated.
  * 2. AGENT READ-WRITE RULE: If a future deployment or agent updates the code,
- * this header section and related documentation blocks MUST be kept accurate,
- * expanded, and dynamically synchronized with the feature upgrades.
+ *    this header section and related documentation blocks MUST be kept accurate,
+ *    expanded, and dynamically synchronized with the feature upgrades.
  * 3. SINGLE-FILE CONTINUITY: Keep the core architecture completely self-contained
- * within this file to maximize maintainability for automated development pipelines.
+ *    within this file to maximize maintainability for automated development pipelines.
  * ============================================================================
  *
  * ============================================================================
- * AGENTIC AI DOCUMENTATION & SYSTEM ARCHITECTURE
+ * AGENTIC AI DOCUMENTATION & SYSTEM ARCHITECTURE  (index.css)
  * ============================================================================
  *
  * PROJECT: Options Desk
  * ENVIRONMENT: TailwindCSS v4 (CSS-in-JS style configuration)
  *
+ * ---------------------------------------------------------------------------
+ * CHANGELOG (append newest at top; keep every entry):
+ * ---------------------------------------------------------------------------
+ * v0.7.0 - No CSS structural changes required by the main.tsx v0.7.0 upgrade
+ *          (removed Tradier/Alpaca/Polygon/Alpha Vantage; fixed DoltHub; added
+ *          a CBOE local-proxy path). Purely provider-layer + infra changes;
+ *          existing utilities/tokens cover the UI. Entry recorded to keep the
+ *          changelog synchronized with main.tsx per the AGENT READ-WRITE RULE.
+ * v0.6.0 - No CSS structural changes required by the main.tsx v0.6.0 upgrade
+ *          (added Polygon/Massive + DoltHub providers). Both reuse the existing
+ *          provider UI (dropdown, badges, onboarding, expiration selector);
+ *          no new styles needed. Entry recorded to keep the changelog
+ *          synchronized with main.tsx per the AGENT READ-WRITE RULE.
+ * v0.5.0 - No CSS structural changes required by the main.tsx v0.5.0 upgrade
+ *          (Alpaca KEY+SECRET provider). The extra secret input in Settings and
+ *          the onboarding card reuse existing Tailwind utilities; the Settings
+ *          popover already scrolls via `.themed-scroll`. Entry recorded to keep
+ *          the changelog synchronized with main.tsx per the AGENT READ-WRITE RULE.
+ * v0.4.0 - No CSS structural changes required by the main.tsx v0.4.0 upgrade
+ *          (works-first defaults, deferred two-step loading, Cancel button, and
+ *          the new "Static cache" + "Yahoo (via proxy)" providers). The Settings
+ *          popover now scrolls via the existing `.themed-scroll` utility; the
+ *          Cancel button, notice banner, and ticker dropdown reuse existing
+ *          Tailwind utilities + the fade-in / shake / pulse-soft tokens. Entry
+ *          recorded to keep the changelog synchronized with main.tsx per the
+ *          AGENT READ-WRITE RULE.
+ * v0.3.0 - No CSS structural changes required by the main.tsx provider overhaul
+ *          (v0.3.0: Tradier Sandbox default + bulk/lazy provider modes). The
+ *          new expiration-loading spinner, provider badges, and onboarding
+ *          preview all reuse existing utilities + the fade-in / shake /
+ *          pulse-soft tokens and the themed-scroll surfaces already declared
+ *          here. Entry recorded to keep the changelog synchronized with
+ *          main.tsx per the AGENT READ-WRITE RULE.
+ * v0.2.0 - No CSS structural changes required by the main.tsx provider overhaul
+ *          (v0.2.0). The onboarding card, setup badges, and retry banner all
+ *          reuse existing Tailwind utilities + the `fade-in` / `shake` /
+ *          `pulse-soft` animation tokens and the themed-scroll surfaces already
+ *          declared here. Entry recorded to keep the changelog synchronized
+ *          with main.tsx per the AGENT READ-WRITE RULE.
+ * v0.1.0 - Initial CSS baseline:
+ *          - Tailwind v4 engine import.
+ *          - `@custom-variant dark` scoped dark-mode strategy (class based).
+ *          - Animation tokens: `shake`, `fade-in`, `pulse-soft`.
+ *          - Themed scrollbars for `.table-container` and `.themed-scroll`.
+ *          - Base surface / typography resets bound to CSS variables.
+ * ---------------------------------------------------------------------------
+ *
  * MODULES & FEATURES:
  * 1. [Tailwind Engine & Variants]
- * - Imports the tailwind base engine.
- * - `@variant dark`: Enforces strict scoped dark mode strategy `where(.dark, .dark *)`
- * to ensure CSS selector specificity overrides standard tailwind defaults.
+ *    - Imports the tailwind base engine via `@import "tailwindcss"`.
+ *    - `@custom-variant dark`: Enforces a strict scoped dark mode strategy
+ *      using `&:where(.dark, .dark *)` so that the `.dark` class placed on the
+ *      <html>/<body> element (see main.tsx theme controller) reliably overrides
+ *      standard Tailwind light defaults with correct selector specificity.
  *
  * 2. [Animation System]
- * - `@theme`: Defines the design tokens for animations.
- * - `shake`: Feedback animation for invalid inputs or modal rejections.
- * - `fade-in`: Entry transition for modal windows and popover elements.
+ *    - `@theme`: Defines the design tokens (custom animations) for the app.
+ *    - `shake`     : Feedback animation for invalid inputs (e.g. bad ticker).
+ *    - `fade-in`   : Entry transition for modal windows and popover elements
+ *                    (settings panel, dropdowns).
+ *    - `pulse-soft`: Subtle looping pulse used on the "live/loading" indicator.
  *
  * 3. [Scrollbar Theming]
- * - Shared themed scrollbars across all scrollable surfaces in the app.
- * - Applies to two utility classes:
- *     • `.table-container` → main data table scroll area
- *     • `.themed-scroll`   → any other scrollable surface (e.g. tabs strip)
- * - Firefox: uses `scrollbar-width` and `scrollbar-color`.
- * - WebKit (Chrome / Safari / Edge): styled via `::-webkit-scrollbar` pseudo-elements.
- * - Colors are sourced from the Tailwind `slate` palette to stay consistent with
- *   the application's neutral surface theme:
- *     • Light theme thumb: slate-300 (#cbd5e1), hover slate-400 (#94a3b8)
- *     • Dark theme thumb : slate-700 (#334155), hover slate-600 (#475569)
+ *    - Shared themed scrollbars across all scrollable surfaces in the app.
+ *    - Applies to two utility classes:
+ *        - `.table-container` -> main option-chain data table scroll area
+ *        - `.themed-scroll`   -> any other scrollable surface (e.g. tabs strip,
+ *                                the expiration selector strip)
+ *    - Firefox: uses `scrollbar-width` and `scrollbar-color`.
+ *    - WebKit (Chrome / Safari / Edge): styled via `::-webkit-scrollbar`.
+ *    - Colors are sourced from the Tailwind `slate` palette to stay consistent
+ *      with the application's neutral surface theme:
+ *        - Light theme thumb: slate-300 (#cbd5e1), hover slate-400 (#94a3b8)
+ *        - Dark  theme thumb: slate-700 (#334155), hover slate-600 (#475569)
  *
  * DESIGN PATTERNS:
  * - Utility-First: Avoid over-nesting CSS; use Tailwind classes where possible.
- * - Theme Consistency: All colors must derive from the Tailwind theme or explicit CSS variables.
+ * - Theme Consistency: All colors must derive from the Tailwind theme or from
+ *   the explicit CSS variables declared in the `:root` / `.dark` blocks below.
  * ============================================================================
  */
 
 @import "tailwindcss";
 
-/* TODO...*/
+/* ---------------------------------------------------------------------------
+ * [Tailwind Engine & Variants]
+ * Class-based dark mode. main.tsx toggles `.dark` on <html>. Any element under
+ * a `.dark` ancestor (or the `.dark` element itself) receives dark styling.
+ * ------------------------------------------------------------------------- */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+ * [Animation System] Design tokens registered on the Tailwind theme so that
+ * the utilities `animate-shake`, `animate-fade-in`, `animate-pulse-soft`
+ * become available application-wide.
+ * ------------------------------------------------------------------------- */
+@theme {
+    --animate-shake: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+    --animate-fade-in: fade-in 0.18s ease-out both;
+    --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
+}
+
+/* Keyframes must live outside @theme (they are standard CSS at-rules). */
+@keyframes shake {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(2px); }
+    30%, 50%, 70% { transform: translateX(-4px); }
+    40%, 60% { transform: translateX(4px); }
+}
+
+@keyframes fade-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.35; }
+}
+
+/* ---------------------------------------------------------------------------
+ * Theme surface variables. These feed the base body colors and give a single
+ * source of truth referenced by the scrollbar rules and any custom surfaces.
+ * ------------------------------------------------------------------------- */
+:root {
+    --od-bg: #f8fafc;          /* slate-50  : app background (light)          */
+    --od-fg: #0f172a;          /* slate-900 : primary text  (light)          */
+    --od-scroll-thumb: #cbd5e1;      /* slate-300 */
+    --od-scroll-thumb-hover: #94a3b8;/* slate-400 */
+    --od-scroll-track: transparent;
+}
+
+.dark {
+    --od-bg: #0f172a;          /* slate-900 : app background (dark)           */
+    --od-fg: #e2e8f0;          /* slate-200 : primary text  (dark)           */
+    --od-scroll-thumb: #334155;      /* slate-700 */
+    --od-scroll-thumb-hover: #475569;/* slate-600 */
+    --od-scroll-track: transparent;
+}
+
+/* Base body binding. Uses the CSS variables above so the whole page reacts to
+ * the `.dark` class instantly with a soft transition. */
+html, body {
+    height: 100%;
+}
+body {
+    background-color: var(--od-bg);
+    color: var(--od-fg);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    transition: background-color 0.2s ease, color 0.2s ease;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+ * [Scrollbar Theming]
+ * Firefox (standards) block.
+ * ------------------------------------------------------------------------- */
+.table-container,
+.themed-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--od-scroll-thumb) var(--od-scroll-track);
+}
+
+/* WebKit (Chrome / Safari / Edge) block. */
+.table-container::-webkit-scrollbar,
+.themed-scroll::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.table-container::-webkit-scrollbar-track,
+.themed-scroll::-webkit-scrollbar-track {
+    background: var(--od-scroll-track);
+}
+.table-container::-webkit-scrollbar-thumb,
+.themed-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--od-scroll-thumb);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+.table-container::-webkit-scrollbar-thumb:hover,
+.themed-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: var(--od-scroll-thumb-hover);
+}
+
+/* Sticky table header helper — keeps the option-chain column labels visible
+ * while scrolling the (potentially long) list of strikes. */
+.table-container thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+/* TODO: future surfaces (charts, greeks heatmap) should reuse these tokens. */

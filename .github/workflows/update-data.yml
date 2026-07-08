@@ -1,0 +1,81 @@
+# =============================================================================
+# Options Desk — SMART build-time data cache (GitHub Action)
+# -----------------------------------------------------------------------------
+# INFRASTRUCTURE (not part of the 3-file app source). Implements the
+# "GitHub Actions build-time caching" strategy:
+#   1. Runs scripts/fetch_data.py (yfinance) on a schedule.
+#   2. The script SELF-DISCOVERS a market-cap-ranked US universe, SKIPS files
+#      already refreshed today, and fetches top-down until its budget or the
+#      source rate-limits it. Each run APPENDS; the next run resumes.
+#   3. Commits the fresh data/*.json back to the repo.
+# The site (GitHub Pages) then reads its OWN data/*.json via the app's
+# "Static cache" provider — zero CORS issues, zero exposed keys.
+#
+# SETUP:
+#   - Commit this repo with Pages enabled (Settings → Pages).
+#   - No ticker list to maintain — tune the env vars in the job below.
+#   - Ensure Actions has write permission: Settings → Actions → General →
+#     Workflow permissions → "Read and write permissions".
+#
+# CADENCE: runs several times on weekdays so the cache keeps growing (the
+# resumable design means each run only does NEW work). Adjust the cron as needed.
+# =============================================================================
+name: Update options data
+
+on:
+  schedule:
+    # A few times each weekday (UTC): pre-open, midday, and after US close.
+    # The script is resumable, so more runs simply grow the cache faster.
+    #- cron: "45 13 * * 1-5" # at 13:45 every day between Monday and Friday
+    #- cron: "45 17 * * 1-5" # at 17:45 every day between Monday and Friday
+    #- cron: "15 21 * * 1-5" # at 21:15 every day between Monday and Friday
+    - cron: "2 0,8,16 * * 0-3"    # Mon-Thu: 00:02, 08:02, 16:02
+    - cron: "3 1,9,17 * * 1-4"    # Tue-Fri: 01:03, 09:03, 17:03
+    - cron: "5 2,10,18 * * 2-5"   # Wed-Sat: 02:05, 10:05, 18:05
+    - cron: "8 3,11,19 * * 3-6"   # Thu-Sun: 03:08, 11:08, 19:08
+    - cron: "13 4,12,20 * * 0-3"  # Mon-Thu: 04:13, 12:13, 20:13
+    - cron: "21 5,13,21 * * 1-4"  # Tue-Fri: 05:21, 13:21, 21:21
+    - cron: "34 6,14,22 * * 2-5"  # Wed-Sat: 06:34, 14:34, 22:03
+    - cron: "55 7,15,23 * * 3-6"  # Thu-Sun: 07:55, 15:55, 23:04
+  workflow_dispatch: {}   # allow manual runs from the Actions tab
+
+permissions:
+  contents: write         # needed to commit the refreshed JSON
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      # SMART, self-driving universe — no hand-maintained ticker list.
+      # The script discovers US symbols sorted DESC by market cap (NASDAQ
+      # screener), skips files already refreshed today, and fetches top-down
+      # until the per-run budget is hit or the source rate-limits us. Each run
+      # APPENDS to the cache and the next run resumes where this one stopped.
+      MAX_FETCHES: "60"        # NEW (non-skipped) fetches per run
+      UNIVERSE_SIZE: "400"     # how deep the market-cap ranking goes
+      MAX_EXPIRATIONS: "12"    # expirations stored per ticker (keeps JSON small)
+      REQUEST_SLEEP: "0.6"     # politeness delay between fetches (seconds)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up uv # https://docs.astral.sh/uv/guides/integration/github/#using-uv-pip
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          python-version: 3.13
+
+      - name: Fetch option chains
+        run: uv run --with yfinance --with requests python scripts/fetch_data.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "No data changes."
+          else
+            git commit -m "chore(data): refresh option chains [skip ci]"
+            git push
+          fi

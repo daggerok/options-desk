@@ -4,27 +4,165 @@
  * AGENTIC AI ENFORCED SPECIFICATION & GUIDELINES (CRITICAL)
  * ============================================================================
  * 1. PERSIST ALL COMMENTS: Under no circumstances should ANY code comments,
- * system design docs, or type descriptors be removed or truncated.
+ *    system design docs, or type descriptors be removed or truncated.
  * 2. AGENT READ-WRITE RULE: If a future deployment or agent updates the code,
- * this header section and related documentation blocks MUST be kept accurate,
- * expanded, and dynamically synchronized with the feature upgrades.
- * 3. SINGLE-FILE CONTINUITY: Keep the core architecture completely self-contained
- * within this file to maximize maintainability for automated development pipelines.
+ *    this header section and related documentation blocks MUST be kept accurate,
+ *    expanded, and dynamically synchronized with the feature upgrades.
+ * 3. SINGLE-FILE CONTINUITY: Keep the core APP architecture self-contained in
+ *    this file. (Optional INFRASTRUCTURE lives outside the 3 source files — see
+ *    "COMPANION INFRASTRUCTURE" below — and is not required for the app to run.)
  * ============================================================================
  *
  * ============================================================================
- * AGENTIC AI DOCUMENTATION & SYSTEM ARCHITECTURE
+ * AGENTIC AI DOCUMENTATION & SYSTEM ARCHITECTURE  (main.tsx)
  * ============================================================================
  *
  * PROJECT: Options Desk
  * ENVIRONMENT: Bun, Vite, React, TypeScript, TailwindCSS v4
  *
- * TODO...
+ * ---------------------------------------------------------------------------
+ * CHANGELOG (append newest at top; keep every entry — NEVER delete history):
+ * ---------------------------------------------------------------------------
+ * v0.7.0 - Trim to privacy-friendly providers + fix DoltHub + CBOE local proxy:
+ *          - REMOVED providers that need an account with sensitive sign-up or a
+ *            paid/gated plan (per user request & live re-testing):
+ *              * Tradier, Alpaca  -> require brokerage-style sign-up (SSN/ID).
+ *              * Polygon/Massive  -> options snapshot NOT in the free plan
+ *                (confirmed: "plan lacks the options snapshot").
+ *              * Alpha Vantage    -> HISTORICAL_OPTIONS is now premium-gated; the
+ *                free key returns the 25/day limit on the FIRST call, so it is
+ *                effectively unusable for options. Dropped.
+ *          - REMAINING providers (works-first, all no-account or same-origin):
+ *            marketdata (AAPL keyless), Static cache, DoltHub, Yahoo(proxy),
+ *            CBOE(proxy).
+ *          - FIXED DoltHub "hangs then network error": the correlated
+ *            `MAX(date)` subquery scanned the 5.63GB DB and timed out (>25s).
+ *            Verified the archive is frozen at 2024-11-11, so we now HARDCODE
+ *            DOLT_LATEST_DATE and filter by the indexed date -> <1s responses.
+ *            Added sqlLit() to escape SQL string literals.
+ *          - CBOE can now use a REQUEST-HANDLING PROXY BASE ({base}/api/cboe),
+ *            same pattern as Yahoo — so the local Bun server / Worker relays it.
+ *            Falls back to the generic CORS-proxy template if no base is set.
+ * v0.6.0 - Added Polygon/Massive + DoltHub providers (investigated on request):
+ *          - Polygon.io (rebranded Massive.com on 2025-10-30; api.polygon.io
+ *            still works) [BULK, free key]. Endpoint
+ *            /v3/snapshot/options/{TICKER}?limit=250&apiKey=KEY (paginated via
+ *            next_url). Free "Options Basic": 5 req/min, 15-min delayed, no card.
+ *            Returns greeks/IV/OI + underlying price + full contract details, so
+ *            no OCC parsing needed. apiKey passed as QUERY PARAM to avoid a CORS
+ *            preflight. next_url carries a cursor but not the key -> we re-append.
+ *          - DoltHub dolthub/options [LAZY, no key]. SQL-over-HTTP:
+ *            GET /api/v1alpha1/dolthub/options/master?q=<SQL>. Verified live: the
+ *            option_chain table has date/expiration/strike/call_put/bid/ask/vol/
+ *            delta/gamma/theta/vega/rho (NO volume/OI, NO spot -> parity est.).
+ *            IMPORTANT: it is a FROZEN HISTORICAL ARCHIVE (last date ≈2024-11-11),
+ *            excellent for research/backtesting but NOT live. Honors the CBOE
+ *            proxy template ({url}) so a Worker /raw can bypass any CORS block.
+ *          - PROVIDERS reordered works-first with the two additions:
+ *            marketdata, static, dolthub, yahoo, tradier, alpaca, polygon,
+ *            alphavantage, cboe.
+ * v0.5.0 - Alpaca provider (KEY + SECRET, both in localStorage):
+ *          - Added the Alpaca Market Data provider (BULK). Endpoint
+ *            data.alpaca.markets/v1beta1/options/snapshots/{SYMBOL}
+ *            ?feed=indicative&limit=1000 (paginated via next_page_token, capped).
+ *          - Verified live vs a github.io origin: CORS:* on GET AND preflight,
+ *            with the two auth headers (APCA-API-KEY-ID / APCA-API-SECRET-KEY)
+ *            explicitly allow-listed => works directly from a static site.
+ *          - GENERALIZED CREDENTIALS: providers may now require a KEY + SECRET
+ *            pair (supportsSecret/keyLabel/secretLabel). Both are persisted per
+ *            provider in localStorage (settings.secrets), exactly like the single
+ *            token — no backend needed for a personal static app (user's call).
+ *          - Settings + onboarding render a second (secret) field when required;
+ *            the "Key set" badge now requires BOTH parts for secret providers.
+ *          - Free Alpaca "Basic" plan needs feed=indicative (OPRA real-time is
+ *            paid, returns 403). Greeks/IV inline; OTM/0DTE may omit greeks; no
+ *            spot -> UI estimates via put-call parity.
+ *          - getDates() gained a credsOverride param so onboarding can retry with
+ *            just-entered creds without waiting for the settings state to commit.
+ * v0.4.0 - "Works-first" defaults, deferred loading, cancel, +2 providers:
+ *          - DEFAULT is now marketdata.app (AAPL loads with ZERO setup — the
+ *            one thing confirmed working out of the box). Providers are ordered
+ *            works-first: no-setup → key-required → proxy-required.
+ *          - DEFERRED LOADING (no wasted quota on page open): the app no longer
+ *            auto-fetches. Flow is explicit and two-step:
+ *              1) type a ticker → "Get dates" loads ONLY expirations (+spot),
+ *              2) pick an expiration → "Load" fetches that expiration's chain.
+ *            For BULK providers the single "Get dates" request already contains
+ *            every expiration (cached); "Load"/expiration-switch is then free.
+ *          - CANCEL BUTTON: every request is abortable via AbortController; a
+ *            visible Cancel appears while loading, so you can bail and switch
+ *            provider/ticker. Aborts are shown as a calm notice, not an error.
+ *          - NEW PROVIDER "Static cache (data.json)" [BULK, no setup]: reads the
+ *            site's OWN ./data/{TICKER}.json (produced by the GitHub Action +
+ *            scripts/fetch_data.py, yfinance). 100% CORS-free on GitHub Pages,
+ *            no keys. Ships with a ticker picker sourced from ./data/index.json.
+ *          - NEW PROVIDER "Yahoo (via proxy)" [LAZY, needs proxy base]: calls a
+ *            small proxy that handles Yahoo's crumb/cookie flow — either the
+ *            local Bun server (scripts/yahoo-proxy.ts, default
+ *            http://localhost:8787) or a deployed Cloudflare Worker
+ *            (scripts/cloudflare-worker.js). Endpoint:
+ *            GET {base}/api/options?symbol=X[&date=YYYY-MM-DD].
+ *          - Settings gained a "Proxy base URL" field (for Yahoo/worker) and the
+ *            existing CBOE CORS-proxy dropdown now also accepts a custom Worker
+ *            "/raw?url={url}" template.
+ *          - RESEARCH refresh (verified live vs a github.io origin): Finnhub's
+ *            /stock/option-chain is now PREMIUM-only (free tier lost it). Alpaca
+ *            options have CORS:* but require two keys (id+secret) => browser-
+ *            unsafe for a public static site; noted for the Worker path instead.
+ * v0.3.0 - Added Tradier Sandbox + bulk/lazy provider modes (was default).
+ *          - Verified vs github.io origin: CBOE no CORS (+403 preflight);
+ *            Fidelity has no retail API; Yahoo crumb-locked; Google Finance API
+ *            discontinued; Barchart no free tier; Nasdaq no CORS. CORS:* winners:
+ *            Tradier, marketdata, Alpha Vantage, Twelve Data, Finnhub.
+ *          - bulk (one-shot, cached) vs lazy (per-expiration) provider modes;
+ *            loadMeta()/loadExpiration() dispatch; asArray() for Tradier quirks.
+ * v0.2.0 - Stability & UX overhaul (CORS pain fix): proxies fronting CBOE were
+ *          unreliable; made marketdata (AAPL keyless) work, Alpha Vantage as
+ *          instant-key, CBOE proxy-only; friendly onboarding + error mapping +
+ *          retry + put-call-parity spot estimate + per-provider stored keys.
+ * v0.1.0 - Initial baseline: debug system, persistent settings, theme
+ *          controller (light/dark/system), DataProvider abstraction, top bar
+ *          (brand + API dropdown + theme + gear), ticker search with shake,
+ *          expiration strip, Calls|Strike|Puts table, OCC symbol parser.
+ * ---------------------------------------------------------------------------
+ *
+ * COMPANION INFRASTRUCTURE (optional; outside the 3 app source files):
+ *   - scripts/fetch_data.py           yfinance -> data/*.json (static cache)
+ *   - .github/workflows/update-data.yml   schedules the fetch + commits JSON
+ *   - scripts/yahoo-proxy.ts          local Bun proxy (Yahoo crumb handling)
+ *   - scripts/cloudflare-worker.js    deployable proxy (Yahoo + generic /raw)
+ *
+ * WHY THESE API CHOICES (research summary, keep for future agents):
+ *   - marketdata.app: CORS:*, AAPL keyless -> the reliable zero-setup default.
+ *   - Static cache: same-origin JSON on GitHub Pages -> zero CORS, zero keys.
+ *   - Yahoo (via proxy): needs crumb/cookies -> only works behind our proxy.
+ *   - Tradier: CORS:*, free dev token, UNLIMITED chains + greeks.
+ *   - Alpaca: CORS:* (both auth headers allow-listed), free KEY+SECRET stored in
+ *     localStorage, live snapshot with greeks/IV (feed=indicative on free plan).
+ *   - Alpha Vantage: CORS:*, instant free key (25/day), IBM keyless.
+ *   - Polygon/Massive: free key (5/min, 15-min delayed) snapshot with greeks +
+ *     spot; key via query param (no preflight).
+ *   - DoltHub: free SQL-over-HTTP, no key, but a FROZEN historical archive
+ *     (~2024-11-11) — research/backtesting only, greeks but no volume/OI/spot.
+ *   - CBOE: richest no-key data but NO CORS -> proxy-only (flaky), advanced.
+ *   - Not viable direct-from-browser: Fidelity(no retail API), Google Finance
+ *     (discontinued), Barchart(no free), Nasdaq(no CORS), Finnhub options
+ *     (now premium-only).
+ *
+ * DATA FLOW (deferred):
+ *   [Get dates] -> loadMeta(symbol) -> ChainMeta{ underlyingPrice, expirations }
+ *   [Load]      -> loadExpiration(symbol, exp) -> OptionQuote[] (cached for bulk)
+ *               -> (fallback) estimate spot via put-call parity if missing
+ *               -> render selected expiration as Calls | Strike | Puts.
+ *
+ * EXTENSION POINTS (for future features / agents):
+ *   - Add a provider: implement DataProvider (bulk or lazy) & push to PROVIDERS.
+ *   - Greeks columns / payoff chart: OptionQuote already carries the greeks.
  * ============================================================================
  */
 
-// @ts-ignore
-import React, { useState, useEffect, useRef, useMemo, useCallback, ChangeEvent } from 'react';
+// @ts-ignore -- resolved by the Vite/Bun build toolchain (see ENVIRONMENT above)
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
 
@@ -34,8 +172,8 @@ import { createRoot } from 'react-dom/client';
 
 /**
  * Debug mode is controlled by the `?debug=true` URL parameter.
- * When active, verbose logs are emitted for boot-restore, paint waiting, etc.
- * When inactive, `dbg()` is a no-op with zero runtime cost.
+ * When active, verbose logs are emitted for boot-restore, fetch lifecycle, etc.
+ * When inactive, `dbg()` is a no-op with effectively zero runtime cost.
  */
 const DEBUG_ENABLED: boolean = (() => {
     try {
@@ -43,30 +181,1655 @@ const DEBUG_ENABLED: boolean = (() => {
     } catch { return false; }
 })();
 
-/** Conditional debug logger — no-op unless `?debug=true` is in the URL */
+/** Conditional debug logger — no-op unless `?debug=true` is in the URL. */
 function dbg(...args: unknown[]): void {
     if (DEBUG_ENABLED) console.log('[DBG]', ...args);
 }
 
 if (DEBUG_ENABLED) {
-    console.log('%c[DEBUG MODE ACTIVE]%c Add ?debug=true to URL to enable. Remove to disable.',
+    console.log(
+        '%c[DEBUG MODE ACTIVE]%c Add ?debug=true to URL to enable. Remove to disable.',
         'color: #fff; background: #e11d48; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
-        'color: #6b7280;');
+        'color: #6b7280;',
+    );
 }
 
-// TODO...
+/** Error thrown/detected when a request is intentionally cancelled by the user. */
+function isAbortError(e: unknown): boolean {
+    return e instanceof DOMException ? e.name === 'AbortError'
+        : (e instanceof Error && e.name === 'AbortError');
+}
+
+// ============================================================================
+// DOMAIN TYPES
+// ============================================================================
+
+/** A single normalized option contract quote (provider-agnostic shape). */
+interface OptionQuote {
+    /** OCC-style option symbol, e.g. "AAPL260717C00110000". */
+    symbol: string;
+    /** ISO expiration date "YYYY-MM-DD". */
+    expiration: string;
+    /** Contract side. */
+    side: 'call' | 'put';
+    /** Strike price in dollars. */
+    strike: number;
+    bid: number | null;
+    ask: number | null;
+    /** Convenience mid = (bid+ask)/2 when both present. */
+    mid: number | null;
+    last: number | null;
+    volume: number | null;
+    openInterest: number | null;
+    /** Implied volatility as a decimal (0.25 = 25%), when provided. */
+    iv: number | null;
+    delta: number | null;
+    gamma: number | null;
+    theta: number | null;
+    vega: number | null;
+}
+
+/** Lightweight chain metadata (expirations + spot) — the cheap first fetch. */
+interface ChainMeta {
+    symbol: string;
+    /** Spot price of the underlying, when the provider supplies it (else null). */
+    underlyingPrice: number | null;
+    /** Sorted unique list of ISO expirations available. */
+    expirations: string[];
+}
+
+/** Full chain result for a symbol (used internally by BULK providers). */
+interface ChainResult extends ChainMeta {
+    /** All contracts across all expirations. */
+    quotes: OptionQuote[];
+}
+
+/** Runtime context handed to a provider so it can honor user settings. */
+interface ProviderContext {
+    /** CORS proxy template; "{url}" is replaced with the encoded target URL. */
+    proxyTemplate: string;
+    /** Base URL of a request-handling proxy (Yahoo/worker), e.g. localhost:8787. */
+    proxyBase: string;
+    /** Optional/required API token or key (provider-specific). */
+    token: string;
+    /** Optional/required API secret, for providers needing a KEY + SECRET pair
+     *  (e.g. Alpaca: APCA-API-KEY-ID + APCA-API-SECRET-KEY). Stored locally. */
+    secret: string;
+    /** Abort signal so any in-flight request can be cancelled by the user. */
+    signal?: AbortSignal;
+}
+
+/** How much setup a provider needs before it can serve the requested symbol. */
+type SetupKind = 'none' | 'key' | 'proxy';
+
+/**
+ * How a provider delivers data:
+ *  - 'bulk': one request returns the entire chain (cached; per-expiration views
+ *            are filtered from cache -> no extra requests).
+ *  - 'lazy': list expirations first, then fetch each expiration on demand
+ *            (required by APIs whose chain endpoint needs an expiration param).
+ */
+type ProviderMode = 'bulk' | 'lazy';
+
+/** Pluggable data source contract. Add new sources by implementing this. */
+interface DataProvider {
+    id: string;
+    /** Short label shown in the top-bar dropdown. */
+    label: string;
+    /** One-line human description shown in Settings / onboarding. */
+    description: string;
+    /** Delivery strategy (see ProviderMode). */
+    mode: ProviderMode;
+    /** Setup requirement classification (drives badges & onboarding). */
+    setup: SetupKind;
+    /** Whether this provider accepts an API key/token. */
+    supportsToken: boolean;
+    /**
+     * Whether this provider ALSO needs a secret (KEY + SECRET pair), e.g. Alpaca
+     * (APCA-API-KEY-ID + APCA-API-SECRET-KEY). Both are stored in localStorage,
+     * exactly like the single token — no server needed for a personal static app.
+     */
+    supportsSecret?: boolean;
+    /** Placeholder label for the key field (defaults to "key"). */
+    keyLabel?: string;
+    /** Placeholder label for the secret field (when supportsSecret). */
+    secretLabel?: string;
+    /** Whether this provider is routed through the CORS proxy template. */
+    needsProxy: boolean;
+    /** Whether this provider needs a request-handling proxy base URL (Yahoo). */
+    needsProxyBase?: boolean;
+    /** URL where the user can obtain a free key (for the onboarding link). */
+    keyUrl?: string;
+    /** Symbol that works with NO key (demo), if any (e.g. AAPL / IBM). */
+    demoSymbol?: string;
+    /** Extra human hint for the onboarding card (e.g. "no funded account"). */
+    keyHint?: string;
+    /** True if, given settings, this provider needs a key to serve `symbol`. */
+    needsKeyFor: (symbol: string, ctx: ProviderContext) => boolean;
+
+    // -- BULK providers implement this (returns the whole chain in one shot) --
+    fetchAll?: (symbol: string, ctx: ProviderContext) => Promise<ChainResult>;
+
+    // -- LAZY providers implement these two --------------------------------
+    fetchMeta?: (symbol: string, ctx: ProviderContext) => Promise<ChainMeta>;
+    fetchExpiration?: (symbol: string, expiration: string, ctx: ProviderContext) => Promise<OptionQuote[]>;
+
+    /** Optional: list of tickers this provider can serve (Static cache uses it). */
+    listTickers?: (ctx: ProviderContext) => Promise<string[]>;
+}
+
+// ============================================================================
+// SHARED HELPERS
+// ============================================================================
+
+/** Normalize a value that an API may return as either an array or a single
+ *  object (Tradier does this for singletons) into a proper array. */
+function asArray<T>(v: T | T[] | null | undefined): T[] {
+    if (v == null) return [];
+    return Array.isArray(v) ? v : [v];
+}
+
+/**
+ * Parse an OCC-style option symbol into its components.
+ * Format: ROOT + YYMMDD + (C|P) + STRIKE*1000 (8 digits, zero-padded).
+ * Example: "AAPL260717C00110000" -> exp 2026-07-17, call, strike 110.
+ * Returns null if the symbol does not match.
+ */
+function parseOccSymbol(sym: string): { expiration: string; side: 'call' | 'put'; strike: number } | null {
+    const m = /^[.\-A-Z0-9]*?(\d{6})([CP])(\d{8})$/.exec(sym);
+    if (!m) return null;
+    const [, yymmdd, cp, strikeRaw] = m;
+    const yy = Number(yymmdd.slice(0, 2));
+    const mm = yymmdd.slice(2, 4);
+    const dd = yymmdd.slice(4, 6);
+    // OCC dates are 21st-century; 2000 + yy is correct for the foreseeable future.
+    const expiration = `20${String(yy).padStart(2, '0')}-${mm}-${dd}`;
+    const side = cp === 'C' ? 'call' : 'put';
+    const strike = Number(strikeRaw) / 1000;
+    return { expiration, side, strike };
+}
+
+/** Compute a mid price from bid/ask when both are usable, else null. */
+function computeMid(bid: number | null, ask: number | null): number | null {
+    if (bid == null || ask == null || bid <= 0 || ask <= 0) return null;
+    return (bid + ask) / 2;
+}
+
+/** Coerce arbitrary JSON numbers to `number | null` (treats 0 as valid). */
+function num(v: unknown): number | null {
+    const n = typeof v === 'string' ? Number(v) : (v as number);
+    return typeof n === 'number' && Number.isFinite(n) ? n : null;
+}
+
+/** Format a number for display, with a graceful "—" for null/undefined. */
+function fmt(v: number | null | undefined, digits = 2): string {
+    if (v == null || !Number.isFinite(v)) return '—';
+    return v.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+/** Format an integer-ish value (volume / OI) with thousands separators. */
+function fmtInt(v: number | null | undefined): string {
+    if (v == null || !Number.isFinite(v)) return '—';
+    return Math.round(v).toLocaleString();
+}
+
+/** Format implied volatility (decimal) as a percentage string. */
+function fmtPct(v: number | null | undefined): string {
+    if (v == null || !Number.isFinite(v)) return '—';
+    return `${(v * 100).toFixed(1)}%`;
+}
+
+/** Convert a "YYYY-MM-DD" date to unix seconds (UTC midnight). */
+function isoToUnix(iso: string): number {
+    return Math.floor(new Date(`${iso}T00:00:00Z`).getTime() / 1000);
+}
+
+/**
+ * Build a proxied URL from the user's proxy template.
+ * The template must contain "{url}", which is replaced by the URL-encoded target.
+ */
+function proxied(target: string, template: string): string {
+    if (!template || !template.includes('{url}')) return target;
+    return template.replace('{url}', encodeURIComponent(target));
+}
+
+/**
+ * Estimate the underlying spot via put-call parity for providers that do not
+ * return it. At the strike where |callMid - putMid| is smallest, the underlying
+ * is approximately: S ≈ K + (callMid - putMid). Returns null if not derivable.
+ */
+function estimateSpot(quotes: OptionQuote[], expiration: string): number | null {
+    const byStrike = new Map<number, { c?: number; p?: number }>();
+    for (const q of quotes) {
+        if (q.expiration !== expiration) continue;
+        const mid = q.mid ?? q.last;
+        if (mid == null) continue;
+        const slot = byStrike.get(q.strike) ?? {};
+        if (q.side === 'call') slot.c = mid; else slot.p = mid;
+        byStrike.set(q.strike, slot);
+    }
+    let bestDiff = Infinity;
+    let bestSpot: number | null = null;
+    for (const [strike, { c, p }] of byStrike) {
+        if (c == null || p == null) continue;
+        const diff = Math.abs(c - p);
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            bestSpot = strike + (c - p); // put-call parity approximation
+        }
+    }
+    dbg('estimateSpot', { expiration, bestSpot });
+    return bestSpot;
+}
+
+/**
+ * Map raw fetch/parse failures to a friendly, actionable message.
+ * Keeps the UI human-readable instead of leaking stack traces or JSON parse
+ * errors like "Unexpected token '<'".
+ */
+function friendlyError(e: unknown, provider: DataProvider): string {
+    const msg = (e instanceof Error ? e.message : String(e)) || '';
+    if (/^[A-Z].*[.?!]$/.test(msg) && msg.length < 240 && !msg.includes('Unexpected token')) {
+        return msg;
+    }
+    if (msg.includes('Failed to fetch') || msg.toLowerCase().includes('networkerror')) {
+        if (provider.needsProxyBase) {
+            return 'Could not reach the proxy. Is it running? Start scripts/yahoo-proxy.ts (Bun) or set your Worker URL in Settings → Proxy base URL.';
+        }
+        return provider.needsProxy
+            ? 'Network/CORS error reaching the proxy. Try a different CORS proxy in Settings, or use marketdata.app / Static cache.'
+            : 'Network error — could not reach the data provider. Check your connection and try again.';
+    }
+    if (msg.includes('Unexpected token') || msg.toLowerCase().includes('json')) {
+        return 'The provider returned an unexpected (non-JSON) response — often a proxy error page. Switch the proxy or provider in Settings.';
+    }
+    return msg || 'Something went wrong while loading option data.';
+}
+
+// ============================================================================
+// DATA PROVIDERS
+// ============================================================================
+
+/**
+ * marketdata.app provider (DEFAULT — the reliable zero-setup path).
+ * Endpoint: https://api.marketdata.app/v1/options/chain/{SYMBOL}/
+ * - CORS:* => direct browser fetch, NO proxy. AAPL keyless; other tickers need
+ *   a free "Free Forever" token (100 req/day, data delayed >=24h).
+ * - Response is column-oriented (parallel arrays). Includes underlyingPrice.
+ */
+const marketdataProvider: DataProvider = {
+    id: 'marketdata',
+    label: 'marketdata.app — AAPL works, no setup',
+    description:
+        'marketdata.app — direct browser access (no proxy). AAPL needs no key at all (the reliable default). ' +
+        'For any other ticker, paste a free token (100 requests/day, data delayed ≥24h).',
+    mode: 'bulk',
+    setup: 'none',
+    supportsToken: true,
+    needsProxy: false,
+    keyUrl: 'https://www.marketdata.app',
+    keyHint: 'Register at marketdata.app (no credit card) and copy your token. AAPL works without a key.',
+    demoSymbol: 'AAPL',
+    needsKeyFor(symbol, ctx) {
+        const raw = symbol.trim().toUpperCase().replace(/^[_.]/, '');
+        return raw !== 'AAPL' && !ctx.token;
+    },
+    async fetchAll(symbol, ctx) {
+        const raw = symbol.toUpperCase().replace(/^[_.]/, '');
+        if (raw !== 'AAPL' && !ctx.token) {
+            throw new Error(`marketdata.app needs a free token for "${raw}" (only AAPL is keyless). Add one in Settings → API key.`);
+        }
+        const qs = ctx.token ? `?token=${encodeURIComponent(ctx.token)}` : '';
+        const target = `https://api.marketdata.app/v1/options/chain/${raw}/${qs}`;
+        dbg('marketdata fetchAll', { symbol: raw, hasToken: !!ctx.token });
+
+        const res = await fetch(target, { headers: { Accept: 'application/json' }, signal: ctx.signal });
+        const json: any = await res.json().catch(() => null);
+
+        if (!json || json.s === 'error') {
+            const em = String(json?.errmsg || `HTTP ${res.status}`);
+            if (/token|credential|auth/i.test(em)) throw new Error('marketdata.app rejected the token. Check it in Settings → API key, or use AAPL (keyless).');
+            if (/plan|limit|exceed/i.test(em)) throw new Error('marketdata.app daily limit reached (100/day free). Try again tomorrow, or use Static cache / Tradier.');
+            throw new Error(`marketdata.app error: ${em}`);
+        }
+        if (json.s === 'no_data') throw new Error(`No option data for "${raw}". Check the ticker symbol.`);
+
+        const n = Array.isArray(json.optionSymbol) ? json.optionSymbol.length : 0;
+        const quotes: OptionQuote[] = [];
+        for (let i = 0; i < n; i++) {
+            const bid = num(json.bid?.[i]);
+            const ask = num(json.ask?.[i]);
+            const expTs = num(json.expiration?.[i]);
+            const expiration = expTs != null
+                ? new Date(expTs * 1000).toISOString().slice(0, 10)
+                : (parseOccSymbol(String(json.optionSymbol[i]))?.expiration ?? '');
+            quotes.push({
+                symbol: String(json.optionSymbol[i]),
+                expiration,
+                side: json.side?.[i] === 'put' ? 'put' : 'call',
+                strike: num(json.strike?.[i]) ?? 0,
+                bid,
+                ask,
+                mid: num(json.mid?.[i]) ?? computeMid(bid, ask),
+                last: num(json.last?.[i]),
+                volume: num(json.volume?.[i]),
+                openInterest: num(json.openInterest?.[i]),
+                iv: num(json.iv?.[i]),
+                delta: num(json.delta?.[i]),
+                gamma: num(json.gamma?.[i]),
+                theta: num(json.theta?.[i]),
+                vega: num(json.vega?.[i]),
+            });
+        }
+        const expirations = Array.from(new Set(quotes.map((q) => q.expiration).filter(Boolean))).sort();
+        return { symbol: raw, underlyingPrice: num(json.underlyingPrice?.[0]), expirations, quotes };
+    },
+};
+
+/**
+ * Static cache provider (BULK, no setup — best for GitHub Pages).
+ * Reads the site's OWN files (same-origin => zero CORS, zero keys):
+ *   ./data/index.json     -> { tickers: [...] }
+ *   ./data/{TICKER}.json  -> ChainResult-like payload (see scripts/fetch_data.py)
+ * Data is refreshed by the GitHub Action. Greeks may be null (yfinance source).
+ */
+const staticProvider: DataProvider = {
+    id: 'static',
+    label: 'Static cache (data.json) — no setup',
+    description:
+        'Static cache — reads the site’s own ./data/{TICKER}.json (built by the GitHub Action + yfinance). ' +
+        '100% CORS-free on GitHub Pages, no keys. Only cached tickers are available (see the picker).',
+    mode: 'bulk',
+    setup: 'none',
+    supportsToken: false,
+    needsProxy: false,
+    demoSymbol: undefined,
+    needsKeyFor() { return false; },
+    async listTickers(ctx) {
+        try {
+            const res = await fetch('data/index.json', { headers: { Accept: 'application/json' }, signal: ctx.signal });
+            if (!res.ok) return [];
+            const j: any = await res.json();
+            return asArray<string>(j?.tickers).map((s) => String(s).toUpperCase());
+        } catch { return []; }
+    },
+    async fetchAll(symbol, ctx) {
+        const raw = symbol.toUpperCase().replace(/^[_.]/, '');
+        const res = await fetch(`data/${encodeURIComponent(raw)}.json`, { headers: { Accept: 'application/json' }, signal: ctx.signal });
+        if (!res.ok) {
+            throw new Error(`"${raw}" is not in the static cache. Pick a cached ticker, or add it to the GitHub Action's TICKERS list.`);
+        }
+        const j: any = await res.json().catch(() => null);
+        if (!j || !Array.isArray(j.quotes)) throw new Error(`Bad static data for "${raw}".`);
+        const quotes: OptionQuote[] = j.quotes.map((q: any) => ({
+            symbol: String(q.symbol ?? ''),
+            expiration: String(q.expiration ?? ''),
+            side: q.side === 'put' ? 'put' : 'call',
+            strike: num(q.strike) ?? 0,
+            bid: num(q.bid),
+            ask: num(q.ask),
+            mid: num(q.mid) ?? computeMid(num(q.bid), num(q.ask)),
+            last: num(q.last),
+            volume: num(q.volume),
+            openInterest: num(q.openInterest),
+            iv: num(q.iv),
+            delta: num(q.delta),
+            gamma: num(q.gamma),
+            theta: num(q.theta),
+            vega: num(q.vega),
+        }));
+        const expirations = asArray<string>(j.expirations).length
+            ? asArray<string>(j.expirations).map(String)
+            : Array.from(new Set(quotes.map((q) => q.expiration).filter(Boolean))).sort();
+        return { symbol: raw, underlyingPrice: num(j.underlyingPrice), expirations, quotes };
+    },
+};
+
+/**
+ * Yahoo (via proxy) provider (LAZY, needs a proxy base URL).
+ * The proxy (scripts/yahoo-proxy.ts locally, or scripts/cloudflare-worker.js
+ * deployed) handles Yahoo's crumb/cookie flow and re-exposes CORS:*.
+ * Endpoint: GET {base}/api/options?symbol=X[&date=YYYY-MM-DD]
+ *   -> Yahoo optionChain JSON: result[0].expirationDates (unix), quote price,
+ *      and options[0].calls/puts for the requested expiration.
+ */
+const yahooProvider: DataProvider = {
+    id: 'yahoo',
+    label: 'Yahoo (via proxy) — needs proxy',
+    description:
+        'Yahoo Finance via a small proxy that handles its crumb/cookie auth. Run scripts/yahoo-proxy.ts locally ' +
+        '(default http://localhost:8787) or deploy scripts/cloudflare-worker.js and set the URL in Settings.',
+    mode: 'lazy',
+    setup: 'proxy',
+    supportsToken: false,
+    needsProxy: false,
+    needsProxyBase: true,
+    demoSymbol: undefined,
+    needsKeyFor() { return false; },
+    async fetchMeta(symbol, ctx) {
+        const raw = symbol.toUpperCase().replace(/^[.]/, '');
+        const base = (ctx.proxyBase || '').replace(/\/$/, '');
+        if (!base) throw new Error('Set a Proxy base URL in Settings (e.g. http://localhost:8787).');
+        const url = `${base}/api/options?symbol=${encodeURIComponent(raw)}`;
+        dbg('yahoo fetchMeta', { raw, url });
+        const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
+        const j: any = await res.json().catch(() => null);
+        const result = j?.optionChain?.result?.[0];
+        if (!result) {
+            const err = j?.optionChain?.error?.description || j?.error;
+            throw new Error(err ? `Yahoo: ${err}` : `No option data for "${raw}". Check the symbol / proxy.`);
+        }
+        const expirations = asArray<number>(result.expirationDates)
+            .map((ts) => new Date(ts * 1000).toISOString().slice(0, 10))
+            .sort();
+        const underlyingPrice = num(result?.quote?.regularMarketPrice);
+        return { symbol: raw, underlyingPrice, expirations };
+    },
+    async fetchExpiration(symbol, expiration, ctx) {
+        const raw = symbol.toUpperCase().replace(/^[.]/, '');
+        const base = (ctx.proxyBase || '').replace(/\/$/, '');
+        if (!base) throw new Error('Set a Proxy base URL in Settings (e.g. http://localhost:8787).');
+        const url = `${base}/api/options?symbol=${encodeURIComponent(raw)}&date=${isoToUnix(expiration)}`;
+        dbg('yahoo fetchExpiration', { raw, expiration, url });
+        const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
+        const j: any = await res.json().catch(() => null);
+        const opt = j?.optionChain?.result?.[0]?.options?.[0];
+        if (!opt) throw new Error('Yahoo returned no contracts for this expiration.');
+
+        const map = (row: any, side: 'call' | 'put'): OptionQuote => {
+            const bid = num(row.bid);
+            const ask = num(row.ask);
+            return {
+                symbol: String(row.contractSymbol ?? ''),
+                expiration,
+                side,
+                strike: num(row.strike) ?? 0,
+                bid,
+                ask,
+                mid: computeMid(bid, ask),
+                last: num(row.lastPrice),
+                volume: num(row.volume),
+                openInterest: num(row.openInterest),
+                iv: num(row.impliedVolatility), // decimal
+                delta: null, gamma: null, theta: null, vega: null, // Yahoo has no greeks
+            };
+        };
+        return [
+            ...asArray<any>(opt.calls).map((r) => map(r, 'call')),
+            ...asArray<any>(opt.puts).map((r) => map(r, 'put')),
+        ];
+    },
+};
+
+/**
+ * DoltHub provider (LAZY — free, no key, HISTORICAL archive).
+ * SQL-over-HTTP: GET https://www.dolthub.com/api/v1alpha1/dolthub/options/master?q=<SQL>
+ * - The public `dolthub/options` database exposes an `option_chain` table with
+ *   date/expiration/strike/call_put/bid/ask/vol/greeks (delta..rho). No volume
+ *   or open-interest columns, and NO underlying spot (UI estimates via parity).
+ * - IMPORTANT: this dataset is a FROZEN HISTORICAL ARCHIVE. Verified live that
+ *   the latest stored date is 2024-11-11 and it hasn't advanced in ~11 months,
+ *   so we HARDCODE that date (DOLT_LATEST_DATE) as a constant. This is critical:
+ *   a correlated `MAX(date)` subquery scans the 5.63GB DB and TIMES OUT (>25s),
+ *   which is exactly the "hangs then network error" bug that was reported.
+ *   Filtering by an explicit indexed date returns in <1s.
+ * - CORS: DoltHub reflects the request Origin (works from a browser). It can be
+ *   slow/occasionally blocked; if so, route via the Worker /raw proxy in
+ *   Settings — the provider honors ctx.proxyTemplate when it contains {url}.
+ * - LAZY: meta lists the distinct expirations at DOLT_LATEST_DATE for the
+ *   symbol; each expiration is then queried on demand.
+ */
+const DOLT_BASE = 'https://www.dolthub.com/api/v1alpha1/dolthub/options/master';
+/** The frozen latest snapshot date in dolthub/options (verified 2024-11-11). */
+const DOLT_LATEST_DATE = '2024-11-11';
+/** Escape single quotes for safe literal embedding in a DoltHub SQL string. */
+function sqlLit(s: string): string { return s.replace(/'/g, "''"); }
+/** Run a DoltHub SQL query, optionally via the user's CORS proxy template. */
+async function doltQuery(sql: string, ctx: ProviderContext): Promise<any[]> {
+    const target = `${DOLT_BASE}?q=${encodeURIComponent(sql)}`;
+    // If a proxy template with {url} is configured (e.g. a Worker), use it.
+    const url = ctx.proxyTemplate && ctx.proxyTemplate.includes('{url}')
+        ? proxied(target, ctx.proxyTemplate)
+        : target;
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
+    const text = await res.text();
+    let json: any;
+    try { json = JSON.parse(text); }
+    catch { throw new Error('DoltHub returned a non-JSON response (possibly a CORS block). Try the Worker /raw proxy in Settings.'); }
+    if (json.query_execution_status && json.query_execution_status !== 'Success') {
+        throw new Error(`DoltHub query error: ${json.query_execution_message || 'failed'}`);
+    }
+    return Array.isArray(json.rows) ? json.rows : [];
+}
+const dolthubProvider: DataProvider = {
+    id: 'dolthub',
+    label: 'DoltHub — historical, free (no key)',
+    description:
+        `DoltHub dolthub/options — free SQL-over-HTTP, no key. HISTORICAL archive (frozen at ${DOLT_LATEST_DATE}), ` +
+        'great for research/backtesting — NOT live. Greeks included; no volume/OI/spot. If it stalls or is CORS-blocked, use the Worker /raw proxy.',
+    mode: 'lazy',
+    setup: 'none',
+    supportsToken: false,
+    needsProxy: false,
+    demoSymbol: 'AAPL',
+    needsKeyFor() { return false; },
+    async fetchMeta(symbol, ctx) {
+        const raw = symbol.toUpperCase().replace(/^[_.]/, '');
+        // Fixed date -> uses the PRIMARY KEY index, returns fast (no MAX subquery).
+        const sql =
+            `SELECT DISTINCT expiration FROM option_chain ` +
+            `WHERE act_symbol='${sqlLit(raw)}' AND date='${DOLT_LATEST_DATE}' ` +
+            `ORDER BY expiration`;
+        const rows = await doltQuery(sql, ctx);
+        const expirations = rows.map((r) => String(r.expiration)).filter(Boolean).sort();
+        if (expirations.length === 0) {
+            throw new Error(`No historical data for "${raw}" in DoltHub (archive is dated ${DOLT_LATEST_DATE}). Try AAPL, MSFT, SPY, TSLA, etc.`);
+        }
+        return { symbol: raw, underlyingPrice: null, expirations };
+    },
+    async fetchExpiration(symbol, expiration, ctx) {
+        const raw = symbol.toUpperCase().replace(/^[_.]/, '');
+        const sql =
+            `SELECT * FROM option_chain ` +
+            `WHERE act_symbol='${sqlLit(raw)}' AND date='${DOLT_LATEST_DATE}' AND expiration='${sqlLit(expiration)}' ` +
+            `ORDER BY strike`;
+        const rows = await doltQuery(sql, ctx);
+        return rows.map((r) => {
+            const bid = num(r.bid);
+            const ask = num(r.ask);
+            return {
+                symbol: `${raw}${String(expiration).replace(/-/g, '').slice(2)}${String(r.call_put).toLowerCase() === 'put' ? 'P' : 'C'}${String(Math.round((num(r.strike) ?? 0) * 1000)).padStart(8, '0')}`,
+                expiration: String(r.expiration ?? expiration),
+                side: String(r.call_put).toLowerCase() === 'put' ? 'put' : 'call',
+                strike: num(r.strike) ?? 0,
+                bid,
+                ask,
+                mid: computeMid(bid, ask),
+                last: null,
+                volume: null,          // not in this dataset
+                openInterest: null,    // not in this dataset
+                iv: num(r.vol),
+                delta: num(r.delta),
+                gamma: num(r.gamma),
+                theta: num(r.theta),
+                vega: num(r.vega),
+            } as OptionQuote;
+        });
+    },
+};
+
+/**
+ * CBOE provider (BULK — free, no key, ALL equities + indices, richest data).
+ * Cash indices are prefixed with "_" (_SPX, _VIX...). CBOE's CDN sends NO CORS
+ * header, so the browser CANNOT call it directly — it must be relayed. Two ways:
+ *   1) A request-handling proxy base (RECOMMENDED): the local Bun server
+ *      (scripts/yahoo-proxy.ts also serves /api/cboe) or the Cloudflare Worker.
+ *      Set "Proxy base URL" in Settings; we call {base}/api/cboe?symbol=XXX.
+ *   2) A generic CORS proxy template ({url}) as a fallback (public ones flaky).
+ */
+const cboeProvider: DataProvider = {
+    id: 'cboe',
+    label: 'CBOE — richest data, needs proxy',
+    description:
+        'CBOE Global Delayed Quotes — free, no key, all US equities & indices, richest data (greeks/IV/OI + spot). ' +
+        'CBOE blocks direct browser calls, so it needs a proxy: run scripts/yahoo-proxy.ts locally (it also serves ' +
+        '/api/cboe) or deploy the Cloudflare Worker, then set the Proxy base URL in Settings.',
+    mode: 'bulk',
+    setup: 'proxy',
+    supportsToken: false,
+    needsProxy: true,       // shows the CORS-proxy dropdown (fallback path)
+    needsProxyBase: true,   // shows the Proxy base URL field (recommended path)
+    needsKeyFor() { return false; },
+    async fetchAll(symbol, ctx) {
+        const INDEX_SET = new Set(['SPX', 'VIX', 'NDX', 'RUT', 'DJX', 'XSP', 'OEX', 'VXN']);
+        const raw = symbol.toUpperCase().replace(/^[_.]/, '');
+        const cboeSym = INDEX_SET.has(raw) ? `_${raw}` : raw;
+        const target = `https://cdn.cboe.com/api/global/delayed_quotes/options/${cboeSym}.json`;
+
+        // Prefer a request-handling proxy base ({base}/api/cboe) if configured;
+        // otherwise fall back to the generic CORS-proxy template.
+        const base = (ctx.proxyBase || '').replace(/\/$/, '');
+        const url = base
+            ? `${base}/api/cboe?symbol=${encodeURIComponent(cboeSym)}`
+            : proxied(target, ctx.proxyTemplate);
+        if (!base && (!ctx.proxyTemplate || ctx.proxyTemplate === '{url}')) {
+            throw new Error('CBOE needs a proxy. Set the Proxy base URL in Settings (run scripts/yahoo-proxy.ts, default http://localhost:8787), or pick a CORS proxy.');
+        }
+
+        const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
+        if (!res.ok) throw new Error(`CBOE proxy request failed (HTTP ${res.status}). Check the Proxy base URL / CORS proxy in Settings, or switch provider.`);
+        const text = await res.text();
+        let json: any;
+        try { json = JSON.parse(text); }
+        catch { throw new Error('The proxy returned a non-JSON page. Check the Proxy base URL / CORS proxy in Settings, or use marketdata.app / Static cache.'); }
+        const data = json?.data;
+        if (!data || !Array.isArray(data.options)) throw new Error(`No option data for "${raw}". Check the ticker symbol.`);
+        const quotes: OptionQuote[] = [];
+        for (const o of data.options) {
+            const parsed = parseOccSymbol(String(o.option ?? ''));
+            if (!parsed) continue;
+            const bid = num(o.bid);
+            const ask = num(o.ask);
+            quotes.push({
+                symbol: String(o.option),
+                expiration: parsed.expiration,
+                side: parsed.side,
+                strike: parsed.strike,
+                bid, ask, mid: computeMid(bid, ask),
+                last: num(o.last_trade_price),
+                volume: num(o.volume),
+                openInterest: num(o.open_interest),
+                iv: num(o.iv), delta: num(o.delta), gamma: num(o.gamma), theta: num(o.theta), vega: num(o.vega),
+            });
+        }
+        const expirations = Array.from(new Set(quotes.map((q) => q.expiration))).sort();
+        return { symbol: raw, underlyingPrice: num(data.current_price) ?? num(data.close), expirations, quotes };
+    },
+};
+
+/**
+ * Ordered provider registry — WORKS-FIRST (per product requirement).
+ * All remaining providers are privacy-friendly: NO account with sensitive
+ * personal data is ever required.
+ *   1. no-setup, direct browser  -> marketdata (AAPL keyless)
+ *   2. no-setup, same-origin      -> Static cache (data.json)
+ *   3. no-key, free SQL-over-HTTP -> DoltHub (historical archive)
+ *   4. proxy, no key              -> Yahoo (via proxy)
+ *   5. proxy, no key              -> CBOE (richest live data)
+ * First entry is the DEFAULT.
+ */
+const PROVIDERS: DataProvider[] = [
+    marketdataProvider,   // no setup: AAPL keyless (the reliable default)
+    staticProvider,       // no setup: same-origin data.json (great for Pages)
+    dolthubProvider,      // no setup: free SQL-over-HTTP (historical archive)
+    yahooProvider,        // proxy: Yahoo via crumb-handling proxy
+    cboeProvider,         // proxy: richest no-key live data (all tickers+indices)
+];
+
+/** Curated public CORS proxies for CBOE. "{url}" = encoded target URL. */
+const PROXY_PRESETS: { label: string; template: string }[] = [
+    { label: 'AllOrigins (raw)', template: 'https://api.allorigins.win/raw?url={url}' },
+    { label: 'Corsproxy.io', template: 'https://corsproxy.io/?url={url}' },
+    { label: 'Codetabs', template: 'https://api.codetabs.com/v1/proxy/?quest={url}' },
+    { label: 'Your Worker (/raw?url=)', template: '{worker}/raw?url={url}' },
+    { label: 'None (direct — will fail unless host allows CORS)', template: '{url}' },
+];
+
+// ============================================================================
+// PROVIDER DISPATCH + BULK CACHE
+// ============================================================================
+
+/**
+ * In-memory cache for BULK providers, so switching expirations does not spend
+ * another API request (important for quota-limited providers). Keyed by
+ * `${providerId}:${SYMBOL}`. Cleared implicitly by page reload.
+ */
+const bulkCache = new Map<string, ChainResult>();
+const bulkKey = (providerId: string, symbol: string) => `${providerId}:${symbol.toUpperCase()}`;
+
+/** Load chain metadata (expirations + spot) for the active provider. */
+async function loadMeta(provider: DataProvider, symbol: string, ctx: ProviderContext): Promise<ChainMeta> {
+    if (provider.mode === 'bulk') {
+        if (!provider.fetchAll) throw new Error('Provider misconfigured (bulk without fetchAll).');
+        const result = await provider.fetchAll(symbol, ctx);
+        bulkCache.set(bulkKey(provider.id, result.symbol), result);
+        return { symbol: result.symbol, underlyingPrice: result.underlyingPrice, expirations: result.expirations };
+    }
+    if (!provider.fetchMeta) throw new Error('Provider misconfigured (lazy without fetchMeta).');
+    return provider.fetchMeta(symbol, ctx);
+}
+
+/** Load the quotes for one expiration for the active provider. */
+async function loadExpiration(provider: DataProvider, symbol: string, expiration: string, ctx: ProviderContext): Promise<OptionQuote[]> {
+    if (provider.mode === 'bulk') {
+        const cached = bulkCache.get(bulkKey(provider.id, symbol));
+        const result = cached ?? (provider.fetchAll ? await provider.fetchAll(symbol, ctx) : null);
+        if (result && !cached) bulkCache.set(bulkKey(provider.id, result.symbol), result);
+        return (result?.quotes ?? []).filter((q) => q.expiration === expiration);
+    }
+    if (!provider.fetchExpiration) throw new Error('Provider misconfigured (lazy without fetchExpiration).');
+    return provider.fetchExpiration(symbol, expiration, ctx);
+}
+
+// ============================================================================
+// SETTINGS STORE (persisted in localStorage)
+// ============================================================================
+
+type ThemeMode = 'light' | 'dark' | 'system';
+
+interface Settings {
+    providerId: string;
+    theme: ThemeMode;
+    proxyTemplate: string;
+    /** Base URL of the request-handling proxy (Yahoo/worker). */
+    proxyBase: string;
+    /** Optional Cloudflare Worker origin, substituted into {worker} templates. */
+    workerUrl: string;
+    /** Per-provider API keys, so switching providers keeps each key. */
+    tokens: Record<string, string>;
+    /** Per-provider API secrets (for KEY+SECRET providers like Alpaca). */
+    secrets: Record<string, string>;
+    lastTicker: string;
+}
+
+const SETTINGS_KEY = 'options-desk.settings.v5';
+
+const DEFAULT_SETTINGS: Settings = {
+    providerId: PROVIDERS[0].id,           // marketdata.app (works, no setup)
+    theme: 'system',
+    proxyTemplate: PROXY_PRESETS[0].template,
+    proxyBase: 'http://localhost:8787',    // local Bun Yahoo proxy default
+    workerUrl: '',
+    tokens: {},
+    secrets: {},
+    lastTicker: 'AAPL',
+};
+
+/** Load settings from localStorage, merged over defaults (forward-compatible). */
+function loadSettings(): Settings {
+    try {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        if (!raw) return { ...DEFAULT_SETTINGS };
+        const parsed = JSON.parse(raw);
+        return {
+            ...DEFAULT_SETTINGS,
+            ...parsed,
+            tokens: { ...DEFAULT_SETTINGS.tokens, ...(parsed.tokens || {}) },
+            secrets: { ...DEFAULT_SETTINGS.secrets, ...(parsed.secrets || {}) },
+        };
+    } catch {
+        return { ...DEFAULT_SETTINGS };
+    }
+}
+
+/** Persist settings to localStorage (best-effort; ignores quota errors). */
+function saveSettings(s: Settings): void {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch { /* ignore */ }
+}
+
+/**
+ * Build the ProviderContext for a provider from settings.
+ * Resolves the {worker} placeholder in the CBOE proxy template using workerUrl.
+ */
+function ctxFor(settings: Settings, provider: DataProvider, signal?: AbortSignal): ProviderContext {
+    const template = settings.proxyTemplate.replace('{worker}', (settings.workerUrl || '').replace(/\/$/, ''));
+    return {
+        proxyTemplate: template,
+        proxyBase: settings.proxyBase,
+        token: settings.tokens[provider.id] || '',
+        secret: settings.secrets[provider.id] || '',
+        signal,
+    };
+}
+
+// ============================================================================
+// THEME CONTROLLER (hook)
+// ============================================================================
+
+/**
+ * Applies the chosen theme by toggling the `.dark` class on <html>.
+ * For 'system', it subscribes to the OS color-scheme media query and updates
+ * live if the user flips their system theme while the app is open.
+ */
+function useThemeController(theme: ThemeMode): void {
+    useEffect(() => {
+        const root = document.documentElement;
+        const mql = window.matchMedia('(prefers-color-scheme: dark)');
+        const apply = () => {
+            const isDark = theme === 'dark' || (theme === 'system' && mql.matches);
+            root.classList.toggle('dark', isDark);
+            dbg('theme applied', { theme, isDark });
+        };
+        apply();
+        if (theme === 'system') {
+            mql.addEventListener('change', apply);
+            return () => mql.removeEventListener('change', apply);
+        }
+        return undefined;
+    }, [theme]);
+}
+
+// ============================================================================
+// SMALL PRESENTATIONAL COMPONENTS
+// ============================================================================
+
+/** Inline SVG icons (no external assets — preview-safe, per project rules). */
+const Icon = {
+    Gear: (p: { className?: string }) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+             strokeLinecap="round" strokeLinejoin="round" className={p.className}>
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+    ),
+    Sun: (p: { className?: string }) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+             strokeLinecap="round" strokeLinejoin="round" className={p.className}>
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+        </svg>
+    ),
+    Moon: (p: { className?: string }) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+             strokeLinecap="round" strokeLinejoin="round" className={p.className}>
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+    ),
+    Monitor: (p: { className?: string }) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+             strokeLinecap="round" strokeLinejoin="round" className={p.className}>
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <path d="M8 21h8M12 17v4" />
+        </svg>
+    ),
+    Search: (p: { className?: string }) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+             strokeLinecap="round" strokeLinejoin="round" className={p.className}>
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+        </svg>
+    ),
+    Key: (p: { className?: string }) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+             strokeLinecap="round" strokeLinejoin="round" className={p.className}>
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3" />
+        </svg>
+    ),
+    External: (p: { className?: string }) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+             strokeLinecap="round" strokeLinejoin="round" className={p.className}>
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3" />
+        </svg>
+    ),
+    X: (p: { className?: string }) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+             strokeLinecap="round" strokeLinejoin="round" className={p.className}>
+            <path d="M18 6 6 18M6 6l12 12" />
+        </svg>
+    ),
+};
+
+/** Small pill that communicates how much setup a provider needs. */
+const SetupBadge: React.FC<{ provider: DataProvider; hasKey: boolean }> = ({ provider, hasKey }) => {
+    let text = '';
+    let cls = '';
+    if (provider.setup === 'none') { text = 'No setup'; cls = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400'; }
+    else if (provider.setup === 'key') { text = hasKey ? 'Key set' : 'Free key'; cls = hasKey ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400'; }
+    else { text = 'Needs proxy'; cls = 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'; }
+    return <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${cls}`}>{text}</span>;
+};
+
+/**
+ * Segmented theme switch (Light / System / Dark) — placed on the top bar,
+ * to the right of the API dropdown, per the product specification.
+ */
+const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (t: ThemeMode) => void }> = ({ value, onChange }) => {
+    const options: { id: ThemeMode; icon: React.FC<{ className?: string }>; title: string }[] = [
+        { id: 'light', icon: Icon.Sun, title: 'Light' },
+        { id: 'system', icon: Icon.Monitor, title: 'System' },
+        { id: 'dark', icon: Icon.Moon, title: 'Dark' },
+    ];
+    return (
+        <div className="flex items-center gap-0.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-0.5">
+            {options.map((o) => {
+                const active = value === o.id;
+                const IconCmp = o.icon;
+                return (
+                    <button
+                        key={o.id}
+                        type="button"
+                        title={`${o.title} theme`}
+                        aria-label={`${o.title} theme`}
+                        aria-pressed={active}
+                        onClick={() => onChange(o.id)}
+                        className={
+                            'flex h-7 w-7 items-center justify-center rounded-md transition-colors ' +
+                            (active
+                                ? 'bg-white dark:bg-slate-950 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')
+                        }
+                    >
+                        <IconCmp className="h-4 w-4" />
+                    </button>
+                );
+            })}
+        </div>
+    );
+};
+
+// ============================================================================
+// SETTINGS PANEL (popover opened by the gear button)
+// ============================================================================
+
+const SettingsPanel: React.FC<{
+    settings: Settings;
+    provider: DataProvider;
+    onChange: (patch: Partial<Settings>) => void;
+    onSetToken: (providerId: string, token: string) => void;
+    onSetSecret: (providerId: string, secret: string) => void;
+    onClose: () => void;
+}> = ({ settings, provider, onChange, onSetToken, onSetSecret, onClose }) => {
+    const currentToken = settings.tokens[provider.id] || '';
+    const currentSecret = settings.secrets[provider.id] || '';
+    return (
+        <>
+            {/* Click-away backdrop */}
+            <div className="fixed inset-0 z-40" onClick={onClose} />
+            <div
+                className="themed-scroll absolute right-0 top-11 z-50 max-h-[80vh] w-80 origin-top-right animate-fade-in overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-xl"
+                role="dialog"
+                aria-label="Settings"
+            >
+                <h2 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">Settings</h2>
+
+                <p className="mb-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                    {provider.description}
+                </p>
+
+                {/* API key (and optional secret) — for token-capable providers. */}
+                {provider.supportsToken && (
+                    <div className="mb-3">
+                        <div className="mb-1 flex items-center justify-between">
+                            <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                                {provider.keyLabel || 'API key'}
+                            </span>
+                            {provider.keyUrl && (
+                                <a href={provider.keyUrl} target="_blank" rel="noopener noreferrer"
+                                   className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+                                    Get a free key <Icon.External className="h-3 w-3" />
+                                </a>
+                            )}
+                        </div>
+                        <input
+                            type="password"
+                            value={currentToken}
+                            placeholder={`Paste ${provider.keyLabel || (provider.label.split(' ')[0] + ' key')}`}
+                            onChange={(e) => onSetToken(provider.id, e.target.value.trim())}
+                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        {/* Secret field — only for KEY+SECRET providers (e.g. Alpaca). */}
+                        {provider.supportsSecret && (
+                            <>
+                                <span className="mb-1 mt-2 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                                    {provider.secretLabel || 'API secret'}
+                                </span>
+                                <input
+                                    type="password"
+                                    value={currentSecret}
+                                    placeholder={`Paste ${provider.secretLabel || 'API secret'}`}
+                                    onChange={(e) => onSetSecret(provider.id, e.target.value.trim())}
+                                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </>
+                        )}
+                        <span className="mt-1 block text-[11px] text-slate-400">
+                            {provider.keyHint || 'Stored only in your browser (localStorage).'}
+                        </span>
+                    </div>
+                )}
+
+                {/* Proxy base URL — for request-handling proxies (Yahoo/worker). */}
+                {provider.needsProxyBase && (
+                    <label className="mb-3 block">
+                        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Proxy base URL</span>
+                        <input
+                            type="text"
+                            value={settings.proxyBase}
+                            placeholder="http://localhost:8787 or https://name.you.workers.dev"
+                            onChange={(e) => onChange({ proxyBase: e.target.value.trim() })}
+                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <span className="mt-1 block text-[11px] text-slate-400">
+                            Run <code>bun run scripts/yahoo-proxy.ts</code> locally, or deploy scripts/cloudflare-worker.js.
+                        </span>
+                    </label>
+                )}
+
+                {/* CORS proxy — only for providers that need it (CBOE). */}
+                {provider.needsProxy && (
+                    <>
+                        <label className="mb-2 block">
+                            <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">CORS proxy</span>
+                            <select
+                                value={settings.proxyTemplate}
+                                onChange={(e) => onChange({ proxyTemplate: e.target.value })}
+                                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                            >
+                                {PROXY_PRESETS.map((p) => (
+                                    <option key={p.template} value={p.template}>{p.label}</option>
+                                ))}
+                            </select>
+                            <span className="mt-1 block text-[11px] text-slate-400">
+                                Public proxies can be flaky — switch if one fails, or use your own Worker.
+                            </span>
+                        </label>
+                        {settings.proxyTemplate.includes('{worker}') && (
+                            <label className="mb-1 block">
+                                <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Worker URL</span>
+                                <input
+                                    type="text"
+                                    value={settings.workerUrl}
+                                    placeholder="https://name.you.workers.dev"
+                                    onChange={(e) => onChange({ workerUrl: e.target.value.trim() })}
+                                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </label>
+                        )}
+                    </>
+                )}
+            </div>
+        </>
+    );
+};
+
+// ============================================================================
+// TOP BAR
+// ============================================================================
+
+/**
+ * Top navigation bar. Layout per product spec:
+ *   [ left: brand "Option Desk" ] ................ [ API dropdown | theme | gear ]
+ */
+const TopBar: React.FC<{
+    settings: Settings;
+    provider: DataProvider;
+    onChange: (patch: Partial<Settings>) => void;
+    onSetToken: (providerId: string, token: string) => void;
+    onSetSecret: (providerId: string, secret: string) => void;
+}> = ({ settings, provider, onChange, onSetToken, onSetSecret }) => {
+    const [openSettings, setOpenSettings] = useState(false);
+    // "Key set" badge requires the secret too, when the provider needs both.
+    const hasKey = !!(settings.tokens[provider.id]) &&
+        (!provider.supportsSecret || !!(settings.secrets[provider.id]));
+
+    return (
+        <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 px-4 py-2.5 backdrop-blur">
+            <div className="flex items-center gap-2">
+                <span className="grid h-7 w-7 place-items-center rounded-md bg-indigo-600 text-sm font-black text-white">O</span>
+                <span className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Option Desk</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+                <div className="hidden items-center gap-1.5 sm:flex">
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">API</span>
+                    <select
+                        value={settings.providerId}
+                        onChange={(e) => onChange({ providerId: e.target.value })}
+                        title="Data provider"
+                        className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                        {PROVIDERS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
+                    </select>
+                    <SetupBadge provider={provider} hasKey={hasKey} />
+                </div>
+
+                <ThemeSwitch value={settings.theme} onChange={(t) => onChange({ theme: t })} />
+
+                <div className="relative">
+                    <button
+                        type="button"
+                        onClick={() => setOpenSettings((v) => !v)}
+                        aria-label="Settings"
+                        title="Settings"
+                        className={
+                            'flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ' +
+                            (openSettings
+                                ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                                : 'border-slate-300 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')
+                        }
+                    >
+                        <Icon.Gear className="h-4 w-4" />
+                    </button>
+                    {openSettings && (
+                        <SettingsPanel
+                            settings={settings}
+                            provider={provider}
+                            onChange={onChange}
+                            onSetToken={onSetToken}
+                            onSetSecret={onSetSecret}
+                            onClose={() => setOpenSettings(false)}
+                        />
+                    )}
+                </div>
+            </div>
+        </header>
+    );
+};
+
+// ============================================================================
+// ONBOARDING CARD (shown when the active provider needs a key that isn't set)
+// ============================================================================
+
+const KeyOnboarding: React.FC<{
+    provider: DataProvider;
+    tokenValue: string;
+    secretValue: string;
+    onSave: (token: string, secret: string) => void;
+    onPreview: () => void;
+    previewLabel: string;
+}> = ({ provider, tokenValue, secretValue, onSave, onPreview, previewLabel }) => {
+    const [keyDraft, setKeyDraft] = useState('');
+    const [secretDraft, setSecretDraft] = useState('');
+    // Ready when the key (and, if required, the secret) are filled in.
+    const ready = !!keyDraft && (!provider.supportsSecret || !!secretDraft);
+    const save = () => { if (ready) onSave(keyDraft, secretDraft); };
+    return (
+        <div className="mx-auto max-w-lg animate-fade-in rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 text-center shadow-sm">
+            <div className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
+                <Icon.Key className="h-5 w-5" />
+            </div>
+            <h2 className="mb-1 text-base font-semibold text-slate-900 dark:text-slate-50">
+                One quick step: add your free {provider.label.split(' ')[0]} {provider.supportsSecret ? 'keys' : 'key'}
+            </h2>
+            <p className="mx-auto mb-4 max-w-md text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+                {provider.keyHint || provider.description}
+            </p>
+
+            {provider.keyUrl && (
+                <a href={provider.keyUrl} target="_blank" rel="noopener noreferrer"
+                   className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+                    Get a free key <Icon.External className="h-4 w-4" />
+                </a>
+            )}
+
+            <div className="mt-3 space-y-2 text-left">
+                <input
+                    type="password"
+                    value={keyDraft}
+                    placeholder={provider.keyLabel || 'Paste your key here'}
+                    onChange={(e) => setKeyDraft(e.target.value.trim())}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !provider.supportsSecret) save(); }}
+                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                {provider.supportsSecret && (
+                    <input
+                        type="password"
+                        value={secretDraft}
+                        placeholder={provider.secretLabel || 'Paste your secret here'}
+                        onChange={(e) => setSecretDraft(e.target.value.trim())}
+                        onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
+                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                )}
+                <button
+                    type="button"
+                    disabled={!ready}
+                    onClick={save}
+                    className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                >
+                    Save {provider.supportsSecret ? 'keys' : 'key'} & load
+                </button>
+            </div>
+
+            <button
+                type="button"
+                onClick={onPreview}
+                className="mt-4 text-xs font-medium text-slate-500 underline-offset-2 hover:text-indigo-600 hover:underline dark:text-slate-400"
+            >
+                {previewLabel}
+            </button>
+            {tokenValue && (!provider.supportsSecret || secretValue) && (
+                <p className="mt-3 text-[11px] text-emerald-600 dark:text-emerald-400">Credentials already saved — just search a ticker above.</p>
+            )}
+        </div>
+    );
+};
+
+// ============================================================================
+// OPTION CHAIN TABLE
+// ============================================================================
+
+const ChainTable: React.FC<{
+    calls: Map<number, OptionQuote>;
+    puts: Map<number, OptionQuote>;
+    strikes: number[];
+    spot: number | null;
+}> = ({ calls, puts, strikes, spot }) => {
+    const atmStrike = useMemo(() => {
+        if (spot == null || strikes.length === 0) return null;
+        return strikes.reduce((best, s) => (Math.abs(s - spot) < Math.abs(best - spot) ? s : best), strikes[0]);
+    }, [spot, strikes]);
+
+    const CallCells: React.FC<{ q?: OptionQuote }> = ({ q }) => (
+        <>
+            <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.openInterest)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.volume)}</td>
+            <td className="px-2 py-1 text-right tabular-nums text-slate-500">{fmtPct(q?.iv)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.bid)}</td>
+            <td className="px-2 py-1 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{fmt(q?.mid)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.ask)}</td>
+        </>
+    );
+
+    const PutCells: React.FC<{ q?: OptionQuote }> = ({ q }) => (
+        <>
+            <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.bid)}</td>
+            <td className="px-2 py-1 text-right tabular-nums font-medium text-rose-600 dark:text-rose-400">{fmt(q?.mid)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.ask)}</td>
+            <td className="px-2 py-1 text-right tabular-nums text-slate-500">{fmtPct(q?.iv)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.volume)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.openInterest)}</td>
+        </>
+    );
+
+    return (
+        <div className="table-container max-h-[calc(100vh-260px)] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
+            <table className="w-full border-collapse text-xs">
+                <thead className="bg-slate-100 dark:bg-slate-800 text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    <tr>
+                        <th colSpan={6} className="bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1.5 text-center font-semibold text-emerald-700 dark:text-emerald-400">Calls</th>
+                        <th className="px-2 py-1.5 text-center font-semibold">Strike</th>
+                        <th colSpan={6} className="bg-rose-50 dark:bg-rose-950/40 px-2 py-1.5 text-center font-semibold text-rose-700 dark:text-rose-400">Puts</th>
+                    </tr>
+                    <tr>
+                        <th className="px-2 py-1 text-right font-medium">OI</th>
+                        <th className="px-2 py-1 text-right font-medium">Vol</th>
+                        <th className="px-2 py-1 text-right font-medium">IV</th>
+                        <th className="px-2 py-1 text-right font-medium">Bid</th>
+                        <th className="px-2 py-1 text-right font-medium">Mid</th>
+                        <th className="px-2 py-1 text-right font-medium">Ask</th>
+                        <th className="px-2 py-1 text-center font-medium">$</th>
+                        <th className="px-2 py-1 text-right font-medium">Bid</th>
+                        <th className="px-2 py-1 text-right font-medium">Mid</th>
+                        <th className="px-2 py-1 text-right font-medium">Ask</th>
+                        <th className="px-2 py-1 text-right font-medium">IV</th>
+                        <th className="px-2 py-1 text-right font-medium">Vol</th>
+                        <th className="px-2 py-1 text-right font-medium">OI</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {strikes.map((strike) => {
+                        const isAtm = strike === atmStrike;
+                        return (
+                            <tr
+                                key={strike}
+                                className={
+                                    'text-slate-700 dark:text-slate-200 ' +
+                                    (isAtm
+                                        ? 'bg-indigo-50 dark:bg-indigo-950/40'
+                                        : 'odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-900/40')
+                                }
+                            >
+                                <CallCells q={calls.get(strike)} />
+                                <td className={
+                                    'px-2 py-1 text-center font-semibold tabular-nums ' +
+                                    (isAtm ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-900 dark:text-slate-100')
+                                }>
+                                    {fmt(strike)}
+                                </td>
+                                <PutCells q={puts.get(strike)} />
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+};
 
 // ============================================================================
 // MAIN APPLICATION COMPONENT
 // ============================================================================
 
 const App: React.FC = () => {
+    // ---- Settings state (persisted) ----------------------------------------
+    const [settings, setSettings] = useState<Settings>(() => loadSettings());
+    const patchSettings = useCallback((patch: Partial<Settings>) => {
+        setSettings((prev) => {
+            const next = { ...prev, ...patch };
+            saveSettings(next);
+            return next;
+        });
+    }, []);
+    const setToken = useCallback((providerId: string, token: string) => {
+        setSettings((prev) => {
+            const next = { ...prev, tokens: { ...prev.tokens, [providerId]: token } };
+            saveSettings(next);
+            return next;
+        });
+    }, []);
+    /** Set (or clear) the API secret for a KEY+SECRET provider (e.g. Alpaca). */
+    const setSecret = useCallback((providerId: string, secret: string) => {
+        setSettings((prev) => {
+            const next = { ...prev, secrets: { ...prev.secrets, [providerId]: secret } };
+            saveSettings(next);
+            return next;
+        });
+    }, []);
+
+    useThemeController(settings.theme);
+
+    const provider = useMemo(
+        () => PROVIDERS.find((p) => p.id === settings.providerId) ?? PROVIDERS[0],
+        [settings.providerId],
+    );
+
+    // ---- Chain data state (DEFERRED loading; nothing fetches on mount) ------
+    const [tickerInput, setTickerInput] = useState<string>(settings.lastTicker);
+    const [meta, setMeta] = useState<ChainMeta | null>(null);      // set by "Get dates"
+    const [selectedExp, setSelectedExp] = useState<string>('');    // chosen expiration
+    const [expQuotes, setExpQuotes] = useState<OptionQuote[]>([]); // set by "Load"
+    const [chainSymbol, setChainSymbol] = useState<string>('');    // symbol the table reflects
+    const [metaLoading, setMetaLoading] = useState<boolean>(false);
+    const [expLoading, setExpLoading] = useState<boolean>(false);
+    const [error, setError] = useState<string>('');
+    const [notice, setNotice] = useState<string>('');              // calm info (e.g. cancelled)
+    const [errorNonce, setErrorNonce] = useState<number>(0);
+    // Available tickers for providers that expose a list (Static cache).
+    const [tickerList, setTickerList] = useState<string[]>([]);
+    // AbortControllers so the Cancel button can stop in-flight requests.
+    const metaAbort = useRef<AbortController | null>(null);
+    const expAbort = useRef<AbortController | null>(null);
+
+    const anyLoading = metaLoading || expLoading;
+
+    /** Cancel whatever request is in flight. */
+    const cancelAll = useCallback(() => {
+        metaAbort.current?.abort();
+        expAbort.current?.abort();
+        setMetaLoading(false);
+        setExpLoading(false);
+        setNotice('Request cancelled.');
+        dbg('cancelAll');
+    }, []);
+
+    /** Reset the loaded view when provider or ticker context changes. */
+    const resetView = useCallback(() => {
+        setMeta(null);
+        setExpQuotes([]);
+        setSelectedExp('');
+        setChainSymbol('');
+        setError('');
+        setNotice('');
+    }, []);
+
+    // Load the ticker list for providers that publish one (Static cache).
+    useEffect(() => {
+        let cancelled = false;
+        setTickerList([]);
+        if (provider.listTickers) {
+            const ac = new AbortController();
+            provider.listTickers(ctxFor(settings, provider, ac.signal))
+                .then((list) => { if (!cancelled) setTickerList(list); })
+                .catch(() => { /* ignore */ });
+            return () => { cancelled = true; ac.abort(); };
+        }
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [provider.id, settings.proxyBase]);
+
+    // Reset the view whenever the provider changes (deferred: no auto-fetch).
+    useEffect(() => {
+        resetView();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [provider.id]);
+
+    /**
+     * STEP 1 — "Get dates": load ONLY expirations (+ spot). No chain yet.
+     * `credsOverride` lets the onboarding pass just-entered key/secret without
+     * waiting for the async settings state to commit (avoids a stale-closure race).
+     */
+    const getDates = useCallback(async (symbol: string, credsOverride?: { token?: string; secret?: string }) => {
+        const sym = symbol.trim().toUpperCase();
+        setError('');
+        setNotice('');
+        if (!sym) {
+            setError('Enter a ticker symbol.');
+            setErrorNonce((n) => n + 1);
+            return;
+        }
+        const ac = new AbortController();
+        metaAbort.current = ac;
+        setMetaLoading(true);
+        // Clear any previous chain so the UI reflects the new symbol cleanly.
+        setExpQuotes([]);
+        setChainSymbol('');
+        try {
+            const ctx = ctxFor(settings, provider, ac.signal);
+            if (credsOverride?.token != null) ctx.token = credsOverride.token;
+            if (credsOverride?.secret != null) ctx.secret = credsOverride.secret;
+            const m = await loadMeta(provider, sym, ctx);
+            if (ac.signal.aborted) return;
+            if (m.expirations.length === 0) throw new Error(`No option contracts found for "${sym}".`);
+            setMeta(m);
+            setSelectedExp(m.expirations[0]);
+            patchSettings({ lastTicker: m.symbol });
+            dbg('getDates ok', { expirations: m.expirations.length });
+        } catch (e: unknown) {
+            if (isAbortError(e)) { setNotice('Request cancelled.'); return; }
+            setMeta(null);
+            setError(friendlyError(e, provider));
+            setErrorNonce((n) => n + 1);
+            dbg('getDates error', e);
+        } finally {
+            if (metaAbort.current === ac) { setMetaLoading(false); metaAbort.current = null; }
+        }
+    }, [provider, settings, patchSettings]);
+
+    /** STEP 2 — "Load": fetch the selected expiration's chain. */
+    const loadChain = useCallback(async () => {
+        if (!meta || !selectedExp) return;
+        setError('');
+        setNotice('');
+        const ac = new AbortController();
+        expAbort.current = ac;
+        setExpLoading(true);
+        try {
+            const quotes = await loadExpiration(provider, meta.symbol, selectedExp, ctxFor(settings, provider, ac.signal));
+            if (ac.signal.aborted) return;
+            setExpQuotes(quotes);
+            setChainSymbol(meta.symbol);
+            if (quotes.length === 0) setNotice('No contracts returned for this expiration.');
+            dbg('loadChain ok', { count: quotes.length });
+        } catch (e: unknown) {
+            if (isAbortError(e)) { setNotice('Request cancelled.'); return; }
+            setExpQuotes([]);
+            setError(friendlyError(e, provider));
+            setErrorNonce((n) => n + 1);
+            dbg('loadChain error', e);
+        } finally {
+            if (expAbort.current === ac) { setExpLoading(false); expAbort.current = null; }
+        }
+    }, [provider, settings, meta, selectedExp]);
+
+    // Whether the current provider+settings require a key for the typed ticker.
+    const showOnboarding = useMemo(() => {
+        const sym = tickerInput.trim().toUpperCase() || 'AAPL';
+        return provider.needsKeyFor(sym, ctxFor(settings, provider)) && !meta && !metaLoading;
+    }, [provider, settings, tickerInput, meta, metaLoading]);
+
+    // ---- Derived table data ------------------------------------------------
+    const { calls, puts, strikes } = useMemo(() => {
+        const callMap = new Map<number, OptionQuote>();
+        const putMap = new Map<number, OptionQuote>();
+        const strikeSet = new Set<number>();
+        for (const q of expQuotes) {
+            strikeSet.add(q.strike);
+            (q.side === 'call' ? callMap : putMap).set(q.strike, q);
+        }
+        return { calls: callMap, puts: putMap, strikes: Array.from(strikeSet).sort((a, b) => a - b) };
+    }, [expQuotes]);
+
+    const spot = useMemo(() => {
+        if (!meta) return null;
+        if (meta.underlyingPrice != null) return meta.underlyingPrice;
+        return selectedExp ? estimateSpot(expQuotes, selectedExp) : null;
+    }, [meta, expQuotes, selectedExp]);
+    const spotIsEstimated = meta != null && meta.underlyingPrice == null && spot != null;
+
+    // Onboarding preview: keyless demo, else jump to marketdata AAPL.
+    const onboardingPreview = useCallback(() => {
+        if (provider.demoSymbol) {
+            setTickerInput(provider.demoSymbol);
+            getDates(provider.demoSymbol);
+        } else {
+            patchSettings({ providerId: 'marketdata', lastTicker: 'AAPL' });
+            setTickerInput('AAPL');
+        }
+    }, [provider, getDates, patchSettings]);
+    const previewLabel = provider.demoSymbol
+        ? `or get ${provider.demoSymbol}’s dates now (no key needed)`
+        : 'or switch to marketdata.app’s free AAPL';
+
+    const hasTickerList = tickerList.length > 0;
+
+    // ---- Render ------------------------------------------------------------
     return (
-        <>
-            <div>
-                TODO
-            </div>
-        </>
+        <div className="min-h-screen">
+            <TopBar settings={settings} provider={provider} onChange={patchSettings} onSetToken={setToken} onSetSecret={setSecret} />
+
+            <main className="mx-auto max-w-6xl px-4 py-4">
+                {/* ---- Controls: STEP 1 (ticker → Get dates), STEP 2 (exp → Load) ---- */}
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                    {/* Ticker input — dropdown when the provider lists tickers (Static). */}
+                    <form
+                        onSubmit={(e) => { e.preventDefault(); getDates(tickerInput); }}
+                        className={
+                            'flex items-center gap-2 rounded-lg border bg-white dark:bg-slate-800 px-3 py-1.5 ' +
+                            (error ? 'border-rose-400 animate-shake' : 'border-slate-300 dark:border-slate-700')
+                        }
+                        key={errorNonce}
+                    >
+                        <Icon.Search className="h-4 w-4 text-slate-400" />
+                        {hasTickerList ? (
+                            <select
+                                value={tickerInput}
+                                onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
+                                className="w-40 bg-transparent text-sm text-slate-800 dark:text-slate-100 outline-none"
+                            >
+                                {!tickerList.includes(tickerInput.toUpperCase()) && <option value={tickerInput}>{tickerInput || '—'}</option>}
+                                {tickerList.map((t) => (<option key={t} value={t}>{t}</option>))}
+                            </select>
+                        ) : (
+                            <input
+                                value={tickerInput}
+                                onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
+                                placeholder="Ticker (e.g. AAPL, TSLA, SPX)"
+                                spellCheck={false}
+                                autoCapitalize="characters"
+                                className="w-44 bg-transparent text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400 outline-none"
+                            />
+                        )}
+                        <button
+                            type="submit"
+                            disabled={metaLoading}
+                            className="rounded-md bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                        >
+                            {metaLoading ? 'Getting…' : 'Get dates'}
+                        </button>
+                    </form>
+
+                    {/* Expiration selector + Load — only after "Get dates" succeeds. */}
+                    {meta && (
+                        <div className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5">
+                            <span className="text-xs text-slate-400">Expiration</span>
+                            <select
+                                value={selectedExp}
+                                onChange={(e) => setSelectedExp(e.target.value)}
+                                className="bg-transparent text-sm text-slate-800 dark:text-slate-100 outline-none"
+                            >
+                                {meta.expirations.map((exp) => (<option key={exp} value={exp}>{exp}</option>))}
+                            </select>
+                            <button
+                                type="button"
+                                onClick={loadChain}
+                                disabled={expLoading}
+                                className="rounded-md bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                            >
+                                {expLoading ? 'Loading…' : 'Load'}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Cancel — visible only while a request is in flight. */}
+                    {anyLoading && (
+                        <button
+                            type="button"
+                            onClick={cancelAll}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-300 dark:border-rose-700 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                        >
+                            <Icon.X className="h-3.5 w-3.5" /> Cancel
+                        </button>
+                    )}
+
+                    {/* Underlying spot + provider label. */}
+                    {chainSymbol && (
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{chainSymbol}</span>
+                            {spot != null && (
+                                <span className="text-sm text-slate-500 dark:text-slate-400">
+                                    Spot <span className="font-semibold text-slate-800 dark:text-slate-200">${fmt(spot)}</span>
+                                    {spotIsEstimated && <span className="ml-1 text-[11px] text-amber-500">(est.)</span>}
+                                </span>
+                            )}
+                            <span className="text-xs text-slate-400">· delayed · {provider.label.split(' ')[0]}</span>
+                        </div>
+                    )}
+
+                    {anyLoading && (
+                        <span className="animate-pulse-soft text-xs font-medium text-indigo-500">
+                            {metaLoading ? 'Fetching expirations…' : 'Loading chain…'}
+                        </span>
+                    )}
+                </div>
+
+                {/* Calm notice (e.g. cancelled). */}
+                {notice && !error && (
+                    <div className="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-sm text-slate-500 dark:text-slate-400">
+                        {notice}
+                    </div>
+                )}
+
+                {/* Error banner with retry. */}
+                {error && (
+                    <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
+                        <span>{error}</span>
+                        <button
+                            type="button"
+                            onClick={() => (meta ? loadChain() : getDates(tickerInput))}
+                            className="shrink-0 rounded-md border border-rose-300 dark:border-rose-700 px-2 py-0.5 text-xs font-semibold hover:bg-rose-100 dark:hover:bg-rose-900/40"
+                        >
+                            Retry
+                        </button>
+                    </div>
+                )}
+
+                {/* Onboarding card (key required for this provider + ticker). */}
+                {showOnboarding && (
+                    <div className="py-10">
+                        <KeyOnboarding
+                            provider={provider}
+                            tokenValue={settings.tokens[provider.id] || ''}
+                            secretValue={settings.secrets[provider.id] || ''}
+                            onSave={(t, s) => {
+                                setToken(provider.id, t);
+                                if (provider.supportsSecret) setSecret(provider.id, s);
+                                // Pass creds directly to avoid a stale-closure race
+                                // (settings state hasn't committed yet).
+                                getDates(tickerInput || 'AAPL', { token: t, secret: s });
+                            }}
+                            onPreview={onboardingPreview}
+                            previewLabel={previewLabel}
+                        />
+                    </div>
+                )}
+
+                {/* Option chain table, or guidance/empty states. */}
+                {!showOnboarding && (
+                    chainSymbol && strikes.length > 0 ? (
+                        <ChainTable calls={calls} puts={puts} strikes={strikes} spot={spot} />
+                    ) : meta && !expLoading && !chainSymbol ? (
+                        <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
+                            Pick an expiration and press <span className="mx-1 font-semibold text-indigo-500">Load</span> to fetch the chain.
+                        </div>
+                    ) : (!meta && !metaLoading && !error) ? (
+                        <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
+                            Enter a ticker and press <span className="mx-1 font-semibold text-slate-600 dark:text-slate-300">Get dates</span> to begin.
+                        </div>
+                    ) : null
+                )}
+            </main>
+        </div>
     );
 };
 
@@ -76,4 +1839,4 @@ const App: React.FC = () => {
 
 const rootElement = document.getElementById('root');
 if (rootElement) createRoot(rootElement).render(<React.StrictMode><App /></React.StrictMode>);
-else console.error("Failed to find root element.");
+else console.error('Failed to find root element.');
