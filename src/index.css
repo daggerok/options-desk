@@ -22,6 +22,33 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry):
  * ---------------------------------------------------------------------------
+ * v0.9.13 - Real fix for see-through sticky sub-headers on scroll:
+ *          - ROOT CAUSE: the table used `border-collapse: collapse`. In
+ *            WebKit/Blink, collapsed-border tables paint cell backgrounds at the
+ *            TABLE level, so position:sticky <th> backgrounds render TRANSPARENT
+ *            *while scrolling* (fine when static) — the group (Calls|Strike|Puts)
+ *            and column-label rows let body text clash through.
+ *          - FIX: `.table-container table` now uses `border-collapse: separate;
+ *            border-spacing: 0` (and removed the `border-collapse` class in
+ *            main.tsx). Each sticky header cell keeps its own opaque background,
+ *            so pinned sub-headers stay solid over the rows during scroll.
+ * v0.9.12 - Fix body rows painting OVER sticky headers while scrolling:
+ *          - ROOT CAUSE: the row open/close animations (row-in/row-out) and the
+ *            `expand` keyframe used `transform: translateY(...)` with fill-mode
+ *            `both`. A lingering (even zero) transform creates a STACKING CONTEXT
+ *            on each row, which made body rows paint ABOVE the position:sticky
+ *            headers -> text clashed through the pinned header on scroll.
+ *          - FIX: made these animations OPACITY-ONLY (no transform), so rows no
+ *            longer form their own stacking context and the sticky headers stay
+ *            on top. (Button press / chip hover transforms are unaffected — they
+ *            aren't on table rows.)
+ * v0.9.11 - Fix transparent sticky sub-headers:
+ *          - BUG: the center Strike-column guide set `background-color: rgba(..)`
+ *            on the sticky column-label row's Strike cell, which REPLACED its
+ *            opaque base color -> body text clashed through the pinned header.
+ *            Switched the guide tint to a flat `background-image` gradient so it
+ *            LAYERS over the opaque base instead of replacing it (headers stay
+ *            fully opaque; body cells keep the subtle guide).
  * v0.9.10 - Center Strike column guide:
  *          - Subtle indigo vertical tint on the 7th (Strike) column of body rows
  *            and its label header, so the middle axis is easy to track down a
@@ -212,8 +239,8 @@
  * max-height (to a generous cap) + opacity gives a lightweight accordion feel
  * without needing to measure the content height. */
 @keyframes expand {
-    from { opacity: 0; transform: translateY(-2px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; }
+    to   { opacity: 1; }
 }
 
 /* Per-row entrance used for a subtle STAGGERED fade-in of the option rows when
@@ -221,16 +248,20 @@
  * the rest simply appear, so huge chains (e.g. SPY ~13k contracts) never look
  * like they're "flickering" row-by-row for seconds. */
 @keyframes row-in {
-    from { opacity: 0; transform: translateY(3px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; }
+    to   { opacity: 1; }
 }
 .od-row-in { animation: row-in 0.28s ease-out both; }
 
 /* Mirror of row-in used when a section COLLAPSES, so closing is animated the
- * same way opening is (fade + slight lift), before the rows unmount. */
+ * same way opening is, before the rows unmount.
+ * NOTE: these animations are OPACITY-ONLY (no transform). A lingering transform
+ * (even translateY(0) under fill-mode:both) creates a stacking context on each
+ * row, which would make body rows paint ON TOP of the sticky headers while
+ * scrolling. Fading only keeps the pinned headers above the rows. */
 @keyframes row-out {
-    from { opacity: 1; transform: translateY(0); }
-    to   { opacity: 0; transform: translateY(-3px); }
+    from { opacity: 1; }
+    to   { opacity: 0; }
 }
 .od-row-out { animation: row-out 0.16s ease-in both; }
 
@@ -408,20 +439,24 @@ body {
 .dark .table-container tr.od-group th.od-puts  { background-color: #4c0519; }
 
 /* Center "Strike" column guide — a subtle vertical tint down the middle axis so
- * the eye tracks the strikes column quickly in a long chain. Applies to the
- * 7th cell of body rows and the 7th label header (not the group/expiration bars,
- * which have their own opaque backgrounds). */
-.table-container tbody tr:not(.od-exp-row):not(.od-group) td:nth-child(7) {
-    background-color: rgba(99, 102, 241, 0.06); /* indigo, very light */
+ * the eye tracks the strikes column quickly in a long chain.
+ * IMPORTANT: use `background-image` (a flat gradient), NOT `background-color`,
+ * so the tint LAYERS on top of the opaque base header/cell color instead of
+ * REPLACING it — otherwise the sticky Strike header cell would become
+ * see-through and body text would clash through it. */
+.table-container tbody tr:not(.od-exp-row):not(.od-group):not(.od-labels) td:nth-child(7) {
+    background-image: linear-gradient(rgba(99, 102, 241, 0.06), rgba(99, 102, 241, 0.06));
 }
-.dark .table-container tbody tr:not(.od-exp-row):not(.od-group) td:nth-child(7) {
-    background-color: rgba(129, 140, 248, 0.10);
+.dark .table-container tbody tr:not(.od-exp-row):not(.od-group):not(.od-labels) td:nth-child(7) {
+    background-image: linear-gradient(rgba(129, 140, 248, 0.10), rgba(129, 140, 248, 0.10));
 }
+/* Strike cell of the sticky column-label row: keep its OPAQUE base bg (from the
+ * `.table-container th` rule) and layer the guide tint over it via a gradient. */
 .table-container tr.od-labels th:nth-child(7) {
-    background-color: rgba(99, 102, 241, 0.10);
+    background-image: linear-gradient(rgba(99, 102, 241, 0.12), rgba(99, 102, 241, 0.12));
 }
 .dark .table-container tr.od-labels th:nth-child(7) {
-    background-color: rgba(129, 140, 248, 0.14);
+    background-image: linear-gradient(rgba(129, 140, 248, 0.16), rgba(129, 140, 248, 0.16));
 }
 
 /* ---------------------------------------------------------------------------
@@ -435,6 +470,13 @@ body {
 .table-container table {
     table-layout: fixed;
     min-width: 46rem; /* comfortable floor; below this the desk scrolls sideways */
+    /* CRITICAL for sticky headers: with `border-collapse: collapse`, WebKit/Blink
+     * paint cell backgrounds at the TABLE level, which makes position:sticky <th>
+     * backgrounds render TRANSPARENT while scrolling (they look fine only when
+     * static) — so body rows show through the pinned sub-headers. Using
+     * `separate` keeps each sticky header cell's own opaque background painted. */
+    border-collapse: separate;
+    border-spacing: 0;
 }
 
 /* TODO: future surfaces (charts, greeks heatmap) should reuse these tokens. */

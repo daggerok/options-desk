@@ -23,6 +23,17 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry — NEVER delete history):
  * ---------------------------------------------------------------------------
+ * v0.9.14 - Sticky sub-headers STILL see-through on scroll -> forced fix: the
+ *          CSS `.table-container table { border-collapse: separate }` was being
+ *          overridden by Tailwind Preflight's `table { border-collapse: collapse }`.
+ *          Now set border-collapse:separate + border-spacing:0 as an INLINE style
+ *          on the <table> (guaranteed to win the cascade), so sticky <th>
+ *          backgrounds stay opaque while scrolling.
+ * v0.9.13 - Sticky sub-headers no longer see-through on scroll: the desk table
+ *          switched from `border-collapse` to `border-collapse: separate` (see
+ *          index.css). Collapsed-border tables make WebKit/Blink paint sticky
+ *          <th> backgrounds transparent while scrolling; `separate` fixes it so
+ *          the Calls|Strike|Puts + column-label rows stay opaque over the rows.
  * v0.9.10 - Real fix for active-highlight-on-click + center Strike guide:
  *          - ROOT CAUSE of the persistent bug: the scroll-tracking effect had
  *            `collapsed` in its deps, so every collapse/expand re-ran
@@ -2265,7 +2276,12 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
             {/* Desk: FULL WIDTH, and adaptive height (dvh) so tall screens show
                 more strikes without scrolling. dvh handles mobile browser chrome. */}
             <div ref={scrollRef} className="table-container w-full max-h-[calc(100dvh-210px)] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
-                <table className="w-full border-collapse text-xs">
+                {/* border-collapse MUST be `separate` for sticky <th> backgrounds
+                    to stay opaque while scrolling (WebKit paints collapsed-border
+                    cell backgrounds at the table level -> sticky headers go
+                    see-through). Tailwind Preflight forces `collapse` on <table>,
+                    so we override it with an INLINE style (guaranteed to win). */}
+                <table className="w-full text-xs" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                     {/* 13 columns get EQUAL width (fixed layout): 6 call cells,
                         the Strike column (a bit narrower), then 6 put cells. This
                         makes columns stretch evenly on wide screens while the
