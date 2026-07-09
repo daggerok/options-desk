@@ -44,6 +44,12 @@ function cors() {
     "Access-Control-Allow-Headers": "*",
   };
 }
+// Column-aligned relay logger (visible in `wrangler tail` / Worker logs):
+//   "$proxy | $localPath -> $remoteUrl"  with a fixed-width proxy column.
+const PROXY_LABEL_WIDTH = 6;
+function logProxy(proxy, localPathOrUrl, remoteUrl) {
+  console.log(`${String(proxy).padEnd(PROXY_LABEL_WIDTH)} | ${localPathOrUrl} -> ${remoteUrl}`);
+}
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -92,6 +98,7 @@ async function handleYahooOptions(url) {
     y.searchParams.set("date", ts);
   }
 
+  logProxy("YAHOO", `${url.pathname}?symbol=${symbol}${date ? `&date=${date}` : ""}`, y.toString());
   let res = await fetch(y.toString(), {
     headers: { "User-Agent": UA, Cookie: s.cookies, Accept: "application/json" },
   });
@@ -114,7 +121,25 @@ async function handleCboe(url) {
   const symbol = (url.searchParams.get("symbol") || "").toUpperCase().trim();
   if (!symbol) return json({ error: "missing symbol" }, 400);
   const target = `https://cdn.cboe.com/api/global/delayed_quotes/options/${encodeURIComponent(symbol)}.json`;
+  logProxy("CBOE", `${url.pathname}?symbol=${symbol}`, target);
   const res = await fetch(target, { headers: { "User-Agent": UA, Accept: "application/json" } });
+  return new Response(await res.text(), {
+    status: res.status,
+    headers: { "Content-Type": "application/json", ...cors() },
+  });
+}
+
+// GET /api/nasdaq?symbol=AAPL[&assetclass=stocks|etf|index] -> NASDAQ option-chain JSON.
+async function handleNasdaq(url) {
+  const symbol = (url.searchParams.get("symbol") || "").toUpperCase().trim();
+  if (!symbol) return json({ error: "missing symbol" }, 400);
+  const assetclass = (url.searchParams.get("assetclass") || "stocks").toLowerCase();
+  const target = `https://api.nasdaq.com/api/quote/${encodeURIComponent(symbol)}` +
+    `/option-chain?assetclass=${encodeURIComponent(assetclass)}&limit=10000&fromdate=all`;
+  logProxy("NASDAQ", `${url.pathname}?symbol=${symbol}`, target);
+  const res = await fetch(target, {
+    headers: { "User-Agent": UA, Accept: "application/json", "Accept-Language": "en-US,en;q=0.9" },
+  });
   return new Response(await res.text(), {
     status: res.status,
     headers: { "Content-Type": "application/json", ...cors() },
@@ -125,6 +150,7 @@ async function handleCboe(url) {
 async function handleRaw(url) {
   const target = url.searchParams.get("url");
   if (!target) return json({ error: "missing url" }, 400);
+  logProxy("RAW", `${url.pathname}`, decodeURIComponent(target));
   const res = await fetch(decodeURIComponent(target), {
     headers: { "User-Agent": UA, Accept: "application/json" },
   });
@@ -141,9 +167,10 @@ export default {
     try {
       if (url.pathname === "/api/options") return await handleYahooOptions(url);
       if (url.pathname === "/api/cboe") return await handleCboe(url);
+      if (url.pathname === "/api/nasdaq") return await handleNasdaq(url);
       if (url.pathname === "/raw") return await handleRaw(url);
       if (url.pathname === "/" || url.pathname === "/health") {
-        return json({ ok: true, service: "options-desk-worker", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/raw?url=..."] });
+        return json({ ok: true, service: "options-desk-worker", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/nasdaq?symbol=AAPL", "/raw?url=..."] });
       }
       return json({ error: "not found" }, 404);
     } catch (e) {

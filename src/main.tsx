@@ -23,6 +23,164 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry — NEVER delete history):
  * ---------------------------------------------------------------------------
+ * v0.9.10 - Real fix for active-highlight-on-click + center Strike guide:
+ *          - ROOT CAUSE of the persistent bug: the scroll-tracking effect had
+ *            `collapsed` in its deps, so every collapse/expand re-ran
+ *            recomputeActive() and instantly overwrote the clicked highlight back
+ *            to the top section. Now recomputeActive runs ONLY on real scroll/
+ *            resize (deps: [recomputeActive]); toggleOne sets the clicked header
+ *            active; a separate effect seeds the initial highlight from the first
+ *            section on load. So the highlight follows what you actually click.
+ *          - Added a subtle vertical CENTER "Strike" column guide (index.css) so
+ *            the eye tracks the middle axis quickly in long chains.
+ * v0.9.9 - Active-highlight-on-click fix + even/comfortable columns:
+ *          - BUG FIX: `activeExp` (the highlighted header) was purely scroll-
+ *            based, so collapsing a LOWER section left the highlight on the top
+ *            one. toggleOne() now sets activeExp to the CLICKED expiration; a
+ *            later scroll recomputes it normally. Moved the activeExp state up so
+ *            toggleOne can reference it.
+ *          - COLUMNS: table-layout:fixed + an explicit <colgroup> (6 call cols,
+ *            a narrower Strike col, 6 put cols) so columns are EQUAL and stretch
+ *            evenly to fill wide screens; a table min-width (index.css) keeps
+ *            them comfortable and horizontally scrollable on small screens.
+ * v0.9.8 - Full-width desk, adaptive height, controls placement:
+ *          - Removed the 2xl width cap on the table (it was centering/capping the
+ *            desk while the controls stayed full-width, which both misaligned the
+ *            Collapse-all button AND stopped the table from filling). The desk is
+ *            now genuinely FULL WIDTH (w-full) and its controls align with it.
+ *          - ADAPTIVE HEIGHT: max-h switched to calc(100dvh - 210px) so tall
+ *            screens fit more strikes without scrolling (dvh accounts for mobile
+ *            browser chrome; smaller offset reclaims vertical space).
+ *          - Controls confirmed ABOVE the desk, full width: "N expirations" on
+ *            the LEFT, Collapse-all / Expand-all on the RIGHT.
+ * v0.9.7 - Whole-header toggle, symmetric collapse animation, ultra-wide cap:
+ *          - The ENTIRE expiration bar (chevron + date + strike count) is now a
+ *            SINGLE toggle button: clicking anywhere on it collapses/expands that
+ *            expiration, and clicking again does the opposite (fixes the bug
+ *            where a second click on a collapsed header didn't re-collapse).
+ *            Removed the separate "click date to scroll/jump" action and its
+ *            arrival-flash (superseded; od-flash/flash-bar no longer used) so the
+ *            behavior is uniform across the whole header.
+ *          - COLLAPSE is now ANIMATED symmetrically to expand: rows stay mounted
+ *            briefly and FADE OUT (od-row-out) before unmounting, mirroring the
+ *            open fade-in. New local rendered/closing state drives this.
+ *          - ULTRA-WIDE cap: the desk stays full-width on laptops/normal screens
+ *            but is capped (2xl:max-w-[1600px], centered) so numeric columns
+ *            don't stretch uncomfortably across very large monitors/TVs.
+ * v0.9.6 - Header centering fix, uniform style, wide layout, arrival flash:
+ *          - BUG FIX: when all sections were collapsed the header content
+ *            left-aligned (the colSpan 6|1|6 grid had no body rows to size it).
+ *            The expiration bar is now a SINGLE centered colSpan=13 cell, so it
+ *            looks & sits IDENTICALLY collapsed or expanded — only the chevron
+ *            changes (v / >). Format is now uniform "YYYY-MM-DD  N strikes"
+ *            (single space, no "|" divider, no "Expiration" word, no parens).
+ *          - WIDE LAYOUT on big screens: <main> is a centered max-w-3xl column on
+ *            phones/tablets but goes FULL WIDTH at lg+ (laptops/desktops/TVs) via
+ *            lg:max-w-none + responsive padding, so the desk uses all the space.
+ *            Mobile/tablet keep the readable narrow column (no zoom-out there).
+ *          - ARRIVAL FLASH: jumping to an expiration briefly flashes its bar
+ *            (od-flash / flash-bar keyframe, ~1.1s) so the eye catches the landing.
+ * v0.9.5 - Active-section highlight, expand-on-date-click, header re-layout:
+ *          - The in-view expiration bar gets an `.od-current` highlight (brighter
+ *            tint + left indigo accent) so you can see where you are in the pile.
+ *          - Clicking the DATE now EXPANDS a collapsed section (animated via the
+ *            od-row-in group/label rows); when already expanded it scrolls to it.
+ *            The chevron still always toggles collapse.
+ *          - Header re-laid out to mirror the columns: [chevron DATE] | [N
+ *            strikes], where "|" sits over the Strike column. Removed the word
+ *            "Expiration" (all rows are expirations) and the parentheses.
+ * v0.9.4 - Clickable pile headers (jump-to-expiration):
+ *          - The expiration bar now has TWO targets: the chevron toggles
+ *            collapse (as before); clicking the DATE text calls scrollToSection()
+ *            which smooth-scrolls the desk so that expiration lands right below
+ *            the pinned pile of earlier bars (offset = index * --od-bar). So you
+ *            can tap any accumulated header in the top pile to jump to it.
+ * v0.9.3 - Staggered rows, live cache stats, stacking sticky headers:
+ *          - Staggered fade-in for option rows (od-row-in), CAPPED to the first
+ *            STAGGER_ROWS (15) so huge chains (SPY ~13k rows) don't flicker.
+ *          - LIVE cache stats: added a cache pub/sub (subscribeCache /
+ *            notifyCacheChanged) fired on every store/evict/clear, so Settings →
+ *            Cache updates immediately (fixes "stats didn't recalc after Clear").
+ *          - NOTE on size (answering a question): SPY genuinely has ~13,690
+ *            contracts across ~35 expirations (~3 MB normalized). Because CBOE is
+ *            BULK, one "Get dates" caches the WHOLE chain -> that's the 3.03 MB;
+ *            not a bug. localStorage ~5 MB, so LRU eviction keeps ~1-2 big
+ *            symbols; rounding floats saved only ~1% so it's real data volume.
+ *          - STACKING STICKY HEADERS (#4): the desk is now ONE <table> with one
+ *            <tbody class="od-sec"> per expiration. Each Expiration bar is
+ *            sticky and ACCUMULATES into a pile at the top as you scroll down
+ *            (un-piles scrolling up). A scroll tracker marks the in-view section
+ *            `.od-active` so only its Calls|Strike|Puts + column labels pin below
+ *            the pile; passed sections show just their bar (like collapsed). Per
+ *            section index is passed as CSS var --i (see index.css geometry).
+ * v0.9.2 - Collapse persistence, always-on strike count, motion polish, UX:
+ *          - Collapsed/expanded state per expiration now PERSISTS in
+ *            localStorage (COLLAPSE_KEY), keyed by symbol, and re-hydrates on
+ *            reload / when switching tickers (loadCollapsed/saveCollapsed).
+ *          - The "(N strikes)" count in each expiration header is now shown
+ *            ALWAYS (both collapsed and expanded), not only when collapsed.
+ *          - MOTION POLISH (index.css): app-wide quick transitions on buttons/
+ *            inputs/links, subtle active-press feedback, an accordion "expand"
+ *            animation for a section's body, and a prefers-reduced-motion guard.
+ *          - Ticker text input and the Static-cache ticker <select> now share
+ *            the SAME fixed width (w-44) for a consistent, easy click target.
+ *          - After picking an expiration chip, focus jumps to the Load button
+ *            (via loadBtnRef) and the selector is a <form>, so pressing Enter
+ *            loads immediately without clicking Load.
+ * v0.9.1 - Sticky-header opacity fix + centered expiration + collapse feature:
+ *          - BUG: dark-mode sticky header used semi-transparent rgba tints
+ *            (alpha 0.4/0.6) so scrolled body rows bled through. All header
+ *            backgrounds (neutral, Calls/Puts group tints, and the Expiration
+ *            row) are now FULLY OPAQUE in both light & dark (index.css).
+ *          - BUG: the Expiration row was left-aligned; it is now CENTERED in the
+ *            full-width top sticky row.
+ *          - FEATURE: each expiration section can be COLLAPSED/expanded (click
+ *            its centered header row; a chevron shows state and, when collapsed,
+ *            a "(N strikes)" hint). Added a Collapse-all / Expand-all toggle
+ *            above the desk. Collapsed sections hide rows 2-3 + body.
+ * v0.9.0 - Cache management UI (Settings) + synced infra edits:
+ *          - Settings → Cache panel shows live STATS: number of cached data
+ *            records, data bytes used vs CACHE_MAX_BYTES (with a usage bar),
+ *            settings blob size, and oldest/newest record timestamps.
+ *          - THREE clear actions (each two-click confirm):
+ *              * Clear data     -> removes only queried-data cache (keeps settings)
+ *              * Clear settings -> removes only persisted settings (keeps data),
+ *                                  and resets in-memory settings to defaults
+ *              * Clear everything -> wipes all "options-desk.*" localStorage keys
+ *            Implemented via cacheStats(), clearCacheData(), clearSettingsStore(),
+ *            clearAll(); also clears the in-memory bulkCache where relevant.
+ *          - Synced user infra edits: proxy startup log columns aligned to
+ *            "Yahoo | / CBOE | / NASDAQ |"; GitHub Action switched to uv +
+ *            actions/checkout@v7 + astral-sh/setup-uv with an 8-slot weekday
+ *            cron and REQUEST_SLEEP=1.
+ *          - NOTE (answering a question): CBOE/NASDAQ/marketdata are BULK — one
+ *            "Get dates" request downloads the whole chain (all expirations) and
+ *            caches it, so "Load" filters from cache with NO extra network call
+ *            (hence no proxy log). Lazy providers (Yahoo/DoltHub) DO log on the
+ *            first Load of each expiration, then serve from cache.
+ * v0.8.0 - Multi-expiration desk, sticky 3-row header, persistent cache,
+ *          local-first ordering, NASDAQ provider, proxy request logging:
+ *          - MULTI-EXPIRATION: pick one or MANY expirations (checkbox chips +
+ *            All/None); they render stacked EARLIEST→LATEST, each as its own
+ *            table section. State moved from a single `selectedExp`/`expQuotes`
+ *            to `selectedExps[]` + `expData{exp:quotes}`; loadChain fetches all
+ *            selected (bulk = one cached call, lazy = per-exp cached).
+ *          - STICKY HEADER FIX: the header is now THREE stacked, non-overlapping
+ *            sticky rows — [Expiration] / [Calls|Strike|Puts] / [column labels]
+ *            — via fixed-height rows and per-row `top` offsets in index.css
+ *            (.od-hrow-1/2/3). Previously both rows used top:0 and clashed.
+ *          - PERSISTENT QUERY CACHE (localStorage) with SIZE-AWARE LRU eviction:
+ *            every successful query is stored; before writing we evict the
+ *            OLDEST records until it fits under CACHE_MAX_BYTES, and on
+ *            QuotaExceededError we drop-oldest-and-retry. Survives reloads.
+ *          - LOCAL-FIRST ORDERING: on localhost / 127.x / 0.0.0.0 / LAN the
+ *            provider list is REVERSED (CBOE, NASDAQ, Yahoo first — you have the
+ *            proxy running); on hosted (GitHub Pages) the no-setup order stays.
+ *          - NEW PROVIDER "NASDAQ" (proxy, no key): full chain (all expirations)
+ *            in one call; parses OCC ids from drillDownURL; spot from lastTrade.
+ *          - PROXY LOGGING: the Bun proxy & Worker now log each relay as
+ *            "$proxy | $localPath -> $remoteUrl" with a fixed-width proxy column
+ *            (CBOE/YAHOO/NASDAQ). Added /api/nasdaq to both proxies.
  * v0.7.0 - Trim to privacy-friendly providers + fix DoltHub + CBOE local proxy:
  *          - REMOVED providers that need an account with sensitive sign-up or a
  *            paid/gated plan (per user request & live re-testing):
@@ -759,6 +917,101 @@ const dolthubProvider: DataProvider = {
 };
 
 /**
+ * NASDAQ provider (BULK — free, no key, needs a proxy; no CORS of its own).
+ * Endpoint (via proxy): {base}/api/nasdaq?symbol=AAPL[&assetclass=stocks|etf|index]
+ * - NASDAQ returns the FULL chain (all expirations) in one call, as a table of
+ *   rows where each row carries BOTH the call and put for a strike, plus a
+ *   `drillDownURL` that embeds the OCC contract id (…aapl--260708c00225000).
+ *   We parse expiry/side/strike from that OCC id, and read spot from
+ *   data.lastTrade ("LAST TRADE: $313.39 (AS OF …)").
+ * - No greeks in this feed; bid/ask/last/volume/openInterest per side. "--" and
+ *   "N/A" are treated as null.
+ * - Needs a proxy base ({base}/api/nasdaq) — same pattern as Yahoo/CBOE.
+ */
+/** Parse "$313.39" (or "LAST TRADE: $313.39 (AS OF …)") into a number|null. */
+function parseNasdaqSpot(s: unknown): number | null {
+    const m = /([0-9][0-9,]*\.?[0-9]*)/.exec(String(s ?? ''));
+    return m ? num(m[1].replace(/,/g, '')) : null;
+}
+/** NASDAQ uses "--"/"N/A"/"" for missing cells; coerce those to null. */
+function nq(v: unknown): number | null {
+    const s = String(v ?? '').trim();
+    if (!s || s === '--' || s.toUpperCase() === 'N/A') return null;
+    return num(s.replace(/,/g, ''));
+}
+const nasdaqProvider: DataProvider = {
+    id: 'nasdaq',
+    label: 'NASDAQ — full chain, needs proxy',
+    description:
+        'NASDAQ option chain — free, no key, ALL expirations in one call (bid/ask/last/volume/OI, no greeks). ' +
+        'NASDAQ blocks direct browser calls, so it needs a proxy: run scripts/yahoo-proxy.ts locally (it serves ' +
+        '/api/nasdaq) or deploy the Cloudflare Worker, then set the Proxy base URL in Settings.',
+    mode: 'bulk',
+    setup: 'proxy',
+    supportsToken: false,
+    needsProxy: true,       // generic CORS-proxy fallback allowed
+    needsProxyBase: true,   // recommended path: {base}/api/nasdaq
+    demoSymbol: 'AAPL',
+    needsKeyFor() { return false; },
+    async fetchAll(symbol, ctx) {
+        const raw = symbol.toUpperCase().replace(/^[_.]/, '');
+        const base = (ctx.proxyBase || '').replace(/\/$/, '');
+        // Direct NASDAQ URL (used only if routed via a generic {url} CORS proxy).
+        const direct = `https://api.nasdaq.com/api/quote/${encodeURIComponent(raw)}/option-chain?assetclass=stocks&limit=10000&fromdate=all`;
+        const url = base
+            ? `${base}/api/nasdaq?symbol=${encodeURIComponent(raw)}`
+            : proxied(direct, ctx.proxyTemplate);
+        if (!base && (!ctx.proxyTemplate || ctx.proxyTemplate === '{url}')) {
+            throw new Error('NASDAQ needs a proxy. Set the Proxy base URL in Settings (run scripts/yahoo-proxy.ts, default http://localhost:8787), or pick a CORS proxy.');
+        }
+        dbg('nasdaq fetchAll', { raw, url });
+
+        const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
+        if (!res.ok) throw new Error(`NASDAQ proxy request failed (HTTP ${res.status}). Check the Proxy base URL in Settings, or switch provider.`);
+        const text = await res.text();
+        let json: any;
+        try { json = JSON.parse(text); }
+        catch { throw new Error('The proxy returned a non-JSON page for NASDAQ. Check the Proxy base URL / CORS proxy in Settings.'); }
+
+        const data = json?.data;
+        const rows: any[] = data?.table?.rows;
+        if (!data || !Array.isArray(rows)) {
+            const em = json?.status?.bCodeMessage?.[0]?.errorMessage || json?.message;
+            throw new Error(em ? `NASDAQ: ${em}` : `No option data for "${raw}". Check the ticker symbol.`);
+        }
+
+        const quotes: OptionQuote[] = [];
+        for (const r of rows) {
+            const strike = nq(r.strike);
+            if (strike == null) continue; // skip "expirygroup" separator rows
+            // Derive expiration from the OCC id embedded in drillDownURL.
+            const parsed = parseOccSymbol(String(r.drillDownURL || '').toUpperCase().replace(/[^A-Z0-9]/g, ''));
+            const expiration = parsed?.expiration ?? '';
+            if (!expiration) continue;
+            const cBid = nq(r.c_Bid), cAsk = nq(r.c_Ask);
+            const pBid = nq(r.p_Bid), pAsk = nq(r.p_Ask);
+            quotes.push({
+                symbol: `${raw}C${strike}@${expiration}`,
+                expiration, side: 'call', strike,
+                bid: cBid, ask: cAsk, mid: computeMid(cBid, cAsk),
+                last: nq(r.c_Last), volume: nq(r.c_Volume), openInterest: nq(r.c_Openinterest),
+                iv: null, delta: null, gamma: null, theta: null, vega: null,
+            });
+            quotes.push({
+                symbol: `${raw}P${strike}@${expiration}`,
+                expiration, side: 'put', strike,
+                bid: pBid, ask: pAsk, mid: computeMid(pBid, pAsk),
+                last: nq(r.p_Last), volume: nq(r.p_Volume), openInterest: nq(r.p_Openinterest),
+                iv: null, delta: null, gamma: null, theta: null, vega: null,
+            });
+        }
+        if (quotes.length === 0) throw new Error(`No option data for "${raw}". Check the ticker symbol.`);
+        const expirations = Array.from(new Set(quotes.map((q) => q.expiration).filter(Boolean))).sort();
+        return { symbol: raw, underlyingPrice: parseNasdaqSpot(data.lastTrade), expirations, quotes };
+    },
+};
+
+/**
  * CBOE provider (BULK — free, no key, ALL equities + indices, richest data).
  * Cash indices are prefixed with "_" (_SPX, _VIX...). CBOE's CDN sends NO CORS
  * header, so the browser CANNOT call it directly — it must be relayed. Two ways:
@@ -838,13 +1091,45 @@ const cboeProvider: DataProvider = {
  *   5. proxy, no key              -> CBOE (richest live data)
  * First entry is the DEFAULT.
  */
-const PROVIDERS: DataProvider[] = [
+/**
+ * Base (GitHub-Pages) order: no-setup providers first, proxy providers last —
+ * because on a hosted static site the user has no local proxy running.
+ */
+const PROVIDERS_BASE: DataProvider[] = [
     marketdataProvider,   // no setup: AAPL keyless (the reliable default)
     staticProvider,       // no setup: same-origin data.json (great for Pages)
     dolthubProvider,      // no setup: free SQL-over-HTTP (historical archive)
     yahooProvider,        // proxy: Yahoo via crumb-handling proxy
+    nasdaqProvider,       // proxy: NASDAQ full chain (no key)
     cboeProvider,         // proxy: richest no-key live data (all tickers+indices)
 ];
+
+/**
+ * Are we running locally (localhost / 127.* / 0.0.0.0 / *.local / private LAN)?
+ * When true, the user very likely has the local proxy running, so we surface the
+ * proxy-backed providers (CBOE, NASDAQ, Yahoo) FIRST by reversing the list.
+ */
+function isLocalHost(): boolean {
+    try {
+        const h = window.location.hostname;
+        return (
+            h === 'localhost' || h === '0.0.0.0' || h === '::1' || h.endsWith('.local') ||
+            /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) ||
+            /^172\.(1[6-9]|2\d|3[01])\./.test(h)
+        );
+    } catch { return false; }
+}
+
+/**
+ * Active provider registry — ORDER depends on where we run (per requirement):
+ *   - LOCAL (localhost / 127.x / 0.0.0.0 / LAN): REVERSED so the proxy-backed
+ *     providers (CBOE, NASDAQ, Yahoo…) come FIRST — you have the proxy running.
+ *   - HOSTED (e.g. GitHub Pages): the base order (no-setup providers first).
+ * First entry is the DEFAULT.
+ */
+const PROVIDERS: DataProvider[] = isLocalHost()
+    ? [...PROVIDERS_BASE].reverse()
+    : PROVIDERS_BASE;
 
 /** Curated public CORS proxies for CBOE. "{url}" = encoded target URL. */
 const PROXY_PRESETS: { label: string; template: string }[] = [
@@ -856,39 +1141,258 @@ const PROXY_PRESETS: { label: string; template: string }[] = [
 ];
 
 // ============================================================================
-// PROVIDER DISPATCH + BULK CACHE
+// PERSISTENT QUERY CACHE (localStorage, size-aware LRU eviction)
 // ============================================================================
 
 /**
- * In-memory cache for BULK providers, so switching expirations does not spend
- * another API request (important for quota-limited providers). Keyed by
- * `${providerId}:${SYMBOL}`. Cleared implicitly by page reload.
+ * Every successful query is stored in localStorage so it survives reloads and
+ * lets us serve from cache without spending another request. Because
+ * localStorage is small (~5 MB) and can throw QuotaExceededError, we track the
+ * approximate byte size and, BEFORE writing, evict the LEAST-RECENTLY-USED
+ * (oldest `ts`) records until the new entry fits under CACHE_MAX_BYTES. If a
+ * write still throws quota, we evict-and-retry until it succeeds or the cache
+ * is empty. (Per the requirement: when storage would be exceeded, drop the
+ * oldest records first, then store.)
+ */
+const CACHE_PREFIX = 'options-desk.cache.'; // one localStorage key per entry
+const CACHE_INDEX_KEY = 'options-desk.cache.index.v1'; // {key: {ts,size}} map
+const CACHE_MAX_BYTES = 4_000_000; // stay well under the ~5 MB localStorage cap
+
+/**
+ * Tiny pub/sub so the Settings → Cache stats update LIVE (no manual refresh)
+ * whenever anything writes/clears the cache. React components subscribe with
+ * useCacheVersion(); every mutation calls notifyCacheChanged().
+ */
+const cacheListeners = new Set<() => void>();
+function notifyCacheChanged(): void { cacheListeners.forEach((fn) => { try { fn(); } catch { /* ignore */ } }); }
+function subscribeCache(fn: () => void): () => void { cacheListeners.add(fn); return () => cacheListeners.delete(fn); }
+
+interface CacheMeta { ts: number; size: number; }
+type CacheIndex = Record<string, CacheMeta>;
+
+function cacheLoadIndex(): CacheIndex {
+    try { return JSON.parse(localStorage.getItem(CACHE_INDEX_KEY) || '{}'); }
+    catch { return {}; }
+}
+function cacheSaveIndex(ix: CacheIndex): void {
+    try { localStorage.setItem(CACHE_INDEX_KEY, JSON.stringify(ix)); } catch { /* ignore */ }
+}
+function cacheTotalBytes(ix: CacheIndex): number {
+    let n = 0;
+    for (const k in ix) n += ix[k].size;
+    return n;
+}
+/** Remove a single cache entry (both its data key and its index record). */
+function cacheDrop(ix: CacheIndex, key: string): void {
+    try { localStorage.removeItem(CACHE_PREFIX + key); } catch { /* ignore */ }
+    delete ix[key];
+}
+/** Evict oldest-first until total + `incoming` fits under CACHE_MAX_BYTES. */
+function cacheEvictToFit(ix: CacheIndex, incoming: number): void {
+    if (incoming > CACHE_MAX_BYTES) return; // a single huge entry: caller handles
+    const byOldest = Object.keys(ix).sort((a, b) => ix[a].ts - ix[b].ts);
+    let i = 0;
+    while (cacheTotalBytes(ix) + incoming > CACHE_MAX_BYTES && i < byOldest.length) {
+        dbg('cache evict (size)', byOldest[i]);
+        cacheDrop(ix, byOldest[i]);
+        i++;
+    }
+}
+/** Read a cached JSON value by key (updates its LRU timestamp on hit). */
+function cacheGet<T>(key: string): T | null {
+    try {
+        const raw = localStorage.getItem(CACHE_PREFIX + key);
+        if (raw == null) return null;
+        const ix = cacheLoadIndex();
+        if (ix[key]) { ix[key].ts = Date.now(); cacheSaveIndex(ix); } // touch LRU
+        return JSON.parse(raw) as T;
+    } catch { return null; }
+}
+/**
+ * Write a cached JSON value. Evicts oldest entries first if needed, and retries
+ * on QuotaExceededError by dropping more oldest entries until it fits.
+ */
+function cacheSet(key: string, value: unknown): void {
+    let payload: string;
+    try { payload = JSON.stringify(value); } catch { return; }
+    const size = payload.length + key.length + 32; // rough byte estimate
+    const ix = cacheLoadIndex();
+    // Replacing an existing key frees its old size first.
+    if (ix[key]) cacheDrop(ix, key);
+    cacheEvictToFit(ix, size);
+
+    for (let attempt = 0; attempt < 50; attempt++) {
+        try {
+            localStorage.setItem(CACHE_PREFIX + key, payload);
+            ix[key] = { ts: Date.now(), size };
+            cacheSaveIndex(ix);
+            notifyCacheChanged(); // live-update stats
+            return;
+        } catch {
+            // Quota still exceeded — drop the oldest remaining entry and retry.
+            const oldest = Object.keys(ix).sort((a, b) => ix[a].ts - ix[b].ts)[0];
+            if (!oldest) { dbg('cache: cannot fit even after full eviction'); notifyCacheChanged(); return; }
+            dbg('cache evict (quota retry)', oldest);
+            cacheDrop(ix, oldest);
+            cacheSaveIndex(ix);
+        }
+    }
+}
+
+/**
+ * Format a byte count as a human string (B / KB / MB).
+ */
+function fmtBytes(n: number): string {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+/** Snapshot of cache usage for the Settings → Cache stats panel. */
+interface CacheStats {
+    entries: number;      // number of cached query records
+    bytes: number;        // approx bytes used by cached data (from the index)
+    maxBytes: number;     // configured soft cap (CACHE_MAX_BYTES)
+    oldest: number | null;// ts of the oldest record (ms) or null
+    newest: number | null;// ts of the newest record (ms) or null
+    settingsBytes: number;// approx bytes used by the settings blob
+}
+
+/** Compute current cache statistics (data entries + settings size). */
+function cacheStats(): CacheStats {
+    const ix = cacheLoadIndex();
+    const keys = Object.keys(ix);
+    let oldest: number | null = null;
+    let newest: number | null = null;
+    for (const k of keys) {
+        const ts = ix[k].ts;
+        if (oldest == null || ts < oldest) oldest = ts;
+        if (newest == null || ts > newest) newest = ts;
+    }
+    let settingsBytes = 0;
+    try { settingsBytes = (localStorage.getItem(SETTINGS_KEY) || '').length; } catch { /* ignore */ }
+    return {
+        entries: keys.length,
+        bytes: cacheTotalBytes(ix),
+        maxBytes: CACHE_MAX_BYTES,
+        oldest,
+        newest,
+        settingsBytes,
+    };
+}
+
+/**
+ * CLEAR DATA — remove only the QUERIED DATA cache (everything we downloaded when
+ * fetching chains), leaving user settings intact. Also clears the in-memory
+ * bulk cache so the next query re-fetches fresh.
+ */
+function clearCacheData(): void {
+    const ix = cacheLoadIndex();
+    for (const k of Object.keys(ix)) {
+        try { localStorage.removeItem(CACHE_PREFIX + k); } catch { /* ignore */ }
+    }
+    try { localStorage.removeItem(CACHE_INDEX_KEY); } catch { /* ignore */ }
+    // Defensive sweep: drop any stray cache-prefixed keys not in the index.
+    try {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith(CACHE_PREFIX)) localStorage.removeItem(k);
+        }
+    } catch { /* ignore */ }
+    bulkCache.clear();
+    notifyCacheChanged(); // live-update stats
+    dbg('cache: cleared DATA');
+}
+
+/**
+ * CLEAR SETTINGS — remove only the persisted settings (provider/theme/keys/
+ * proxy/lastTicker), leaving the queried data cache intact. The app reverts to
+ * DEFAULT_SETTINGS on next load / next read.
+ */
+function clearSettingsStore(): void {
+    try { localStorage.removeItem(SETTINGS_KEY); } catch { /* ignore */ }
+    notifyCacheChanged(); // live-update stats (settings size)
+    dbg('cache: cleared SETTINGS');
+}
+
+/**
+ * CLEAR ALL — wipe EVERYTHING this app stored in localStorage (data + settings +
+ * any legacy/older-versioned keys under our namespace).
+ */
+function clearAll(): void {
+    try {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('options-desk.')) localStorage.removeItem(k);
+        }
+    } catch { /* ignore */ }
+    bulkCache.clear();
+    notifyCacheChanged(); // live-update stats
+    dbg('cache: cleared ALL');
+}
+
+// ============================================================================
+// PROVIDER DISPATCH + CACHE
+// ============================================================================
+
+/**
+ * In-memory cache for BULK providers (fast within a session), keyed by
+ * `${providerId}:${SYMBOL}`. Backed by the persistent localStorage cache above
+ * so results also survive reloads.
  */
 const bulkCache = new Map<string, ChainResult>();
 const bulkKey = (providerId: string, symbol: string) => `${providerId}:${symbol.toUpperCase()}`;
+
+/** Get a bulk result from memory, then persistent cache; else null. */
+function getBulk(providerId: string, symbol: string): ChainResult | null {
+    const k = bulkKey(providerId, symbol);
+    const mem = bulkCache.get(k);
+    if (mem) return mem;
+    const disk = cacheGet<ChainResult>(k);
+    if (disk) { bulkCache.set(k, disk); return disk; }
+    return null;
+}
+/** Store a bulk result in both memory and the persistent cache. */
+function putBulk(providerId: string, result: ChainResult): void {
+    const k = bulkKey(providerId, result.symbol);
+    bulkCache.set(k, result);
+    cacheSet(k, result);
+}
+/** Cache key for a single lazy expiration. */
+const lazyKey = (providerId: string, symbol: string, exp: string) =>
+    `${providerId}:${symbol.toUpperCase()}:${exp}`;
 
 /** Load chain metadata (expirations + spot) for the active provider. */
 async function loadMeta(provider: DataProvider, symbol: string, ctx: ProviderContext): Promise<ChainMeta> {
     if (provider.mode === 'bulk') {
         if (!provider.fetchAll) throw new Error('Provider misconfigured (bulk without fetchAll).');
         const result = await provider.fetchAll(symbol, ctx);
-        bulkCache.set(bulkKey(provider.id, result.symbol), result);
+        putBulk(provider.id, result);
         return { symbol: result.symbol, underlyingPrice: result.underlyingPrice, expirations: result.expirations };
     }
     if (!provider.fetchMeta) throw new Error('Provider misconfigured (lazy without fetchMeta).');
-    return provider.fetchMeta(symbol, ctx);
+    const meta = await provider.fetchMeta(symbol, ctx);
+    // Persist meta so expirations survive reloads (cheap; keyed with ":meta").
+    cacheSet(lazyKey(provider.id, meta.symbol, 'meta'), meta);
+    return meta;
 }
 
-/** Load the quotes for one expiration for the active provider. */
+/** Load the quotes for one expiration for the active provider (cached). */
 async function loadExpiration(provider: DataProvider, symbol: string, expiration: string, ctx: ProviderContext): Promise<OptionQuote[]> {
     if (provider.mode === 'bulk') {
-        const cached = bulkCache.get(bulkKey(provider.id, symbol));
+        const cached = getBulk(provider.id, symbol);
         const result = cached ?? (provider.fetchAll ? await provider.fetchAll(symbol, ctx) : null);
-        if (result && !cached) bulkCache.set(bulkKey(provider.id, result.symbol), result);
+        if (result && !cached) putBulk(provider.id, result);
         return (result?.quotes ?? []).filter((q) => q.expiration === expiration);
     }
     if (!provider.fetchExpiration) throw new Error('Provider misconfigured (lazy without fetchExpiration).');
-    return provider.fetchExpiration(symbol, expiration, ctx);
+    // Serve a lazy expiration from the persistent cache when available.
+    const key = lazyKey(provider.id, symbol, expiration);
+    const hit = cacheGet<OptionQuote[]>(key);
+    if (hit) { dbg('cache hit (lazy)', key); return hit; }
+    const quotes = await provider.fetchExpiration(symbol, expiration, ctx);
+    cacheSet(key, quotes);
+    return quotes;
 }
 
 // ============================================================================
@@ -1107,10 +1611,25 @@ const SettingsPanel: React.FC<{
     onChange: (patch: Partial<Settings>) => void;
     onSetToken: (providerId: string, token: string) => void;
     onSetSecret: (providerId: string, secret: string) => void;
+    /** Cache actions (return the fresh stats to refresh the panel). */
+    onClearData: () => void;
+    onClearSettings: () => void;
+    onClearAll: () => void;
     onClose: () => void;
-}> = ({ settings, provider, onChange, onSetToken, onSetSecret, onClose }) => {
+}> = ({ settings, provider, onChange, onSetToken, onSetSecret, onClearData, onClearSettings, onClearAll, onClose }) => {
     const currentToken = settings.tokens[provider.id] || '';
     const currentSecret = settings.secrets[provider.id] || '';
+    // Cache stats — recompute on any cache mutation (LIVE, no manual refresh):
+    // subscribe to the cache pub/sub so fetching or clearing updates the numbers
+    // immediately while the panel is open.
+    const [statsNonce, setStatsNonce] = useState(0);
+    useEffect(() => subscribeCache(() => setStatsNonce((n) => n + 1)), []);
+    const stats = useMemo(() => cacheStats(), [statsNonce]);
+    const pct = stats.maxBytes > 0 ? Math.min(100, Math.round((stats.bytes / stats.maxBytes) * 100)) : 0;
+    const fmtTs = (ts: number | null) => (ts ? new Date(ts).toLocaleString() : '—');
+    // Two-step confirm for destructive actions (armed button id).
+    const [armed, setArmed] = useState<string>('');
+    const bump = () => setStatsNonce((n) => n + 1);
     return (
         <>
             {/* Click-away backdrop */}
@@ -1217,6 +1736,70 @@ const SettingsPanel: React.FC<{
                         )}
                     </>
                 )}
+
+                {/* ---- Cache: stats + clear actions --------------------------- */}
+                <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-3">
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Cache</h3>
+
+                    {/* Stats */}
+                    <div className="mb-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2 text-[11px] text-slate-500 dark:text-slate-400">
+                        <div className="flex items-center justify-between">
+                            <span>Data records</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-200">{stats.entries}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span>Data size</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-200">{fmtBytes(stats.bytes)} / {fmtBytes(stats.maxBytes)} ({pct}%)</span>
+                        </div>
+                        {/* Usage bar */}
+                        <div className="my-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                            <div className={'h-full rounded-full ' + (pct > 85 ? 'bg-rose-500' : pct > 60 ? 'bg-amber-500' : 'bg-emerald-500')} style={{ width: `${pct}%` }} />
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span>Settings size</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-200">{fmtBytes(stats.settingsBytes)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span>Oldest record</span>
+                            <span className="font-medium text-slate-600 dark:text-slate-300">{fmtTs(stats.oldest)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span>Newest record</span>
+                            <span className="font-medium text-slate-600 dark:text-slate-300">{fmtTs(stats.newest)}</span>
+                        </div>
+                    </div>
+
+                    {/* Clear actions — each needs a second click to confirm. */}
+                    {([
+                        { id: 'data', label: 'Clear data', hint: 'Downloaded query results only', run: onClearData },
+                        { id: 'settings', label: 'Clear settings', hint: 'Provider / theme / keys / proxy', run: onClearSettings },
+                        { id: 'all', label: 'Clear everything', hint: 'Data + settings (full reset)', run: onClearAll },
+                    ] as const).map((a) => (
+                        <div key={a.id} className="mb-1.5 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                                <div className="text-xs font-medium text-slate-700 dark:text-slate-200">{a.label}</div>
+                                <div className="truncate text-[10px] text-slate-400">{a.hint}</div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (armed === a.id) { a.run(); setArmed(''); bump(); }
+                                    else { setArmed(a.id); }
+                                }}
+                                onBlur={() => setArmed((cur) => (cur === a.id ? '' : cur))}
+                                className={
+                                    'shrink-0 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors ' +
+                                    (armed === a.id
+                                        ? 'border-rose-500 bg-rose-600 text-white hover:bg-rose-700'
+                                        : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-rose-400 hover:text-rose-600 dark:hover:text-rose-400')
+                                }
+                            >
+                                {armed === a.id ? 'Confirm?' : a.label}
+                            </button>
+                        </div>
+                    ))}
+                    {armed && <p className="mt-1 text-[10px] text-rose-500">Click “Confirm?” again to proceed, or click away to cancel.</p>}
+                </div>
             </div>
         </>
     );
@@ -1236,7 +1819,10 @@ const TopBar: React.FC<{
     onChange: (patch: Partial<Settings>) => void;
     onSetToken: (providerId: string, token: string) => void;
     onSetSecret: (providerId: string, secret: string) => void;
-}> = ({ settings, provider, onChange, onSetToken, onSetSecret }) => {
+    onClearData: () => void;
+    onClearSettings: () => void;
+    onClearAll: () => void;
+}> = ({ settings, provider, onChange, onSetToken, onSetSecret, onClearData, onClearSettings, onClearAll }) => {
     const [openSettings, setOpenSettings] = useState(false);
     // "Key set" badge requires the secret too, when the provider needs both.
     const hasKey = !!(settings.tokens[provider.id]) &&
@@ -1287,6 +1873,9 @@ const TopBar: React.FC<{
                             onChange={onChange}
                             onSetToken={onSetToken}
                             onSetSecret={onSetSecret}
+                            onClearData={onClearData}
+                            onClearSettings={onClearSettings}
+                            onClearAll={onClearAll}
                             onClose={() => setOpenSettings(false)}
                         />
                     )}
@@ -1379,76 +1968,176 @@ const KeyOnboarding: React.FC<{
 // OPTION CHAIN TABLE
 // ============================================================================
 
-const ChainTable: React.FC<{
+/** One expiration's worth of grouped quotes, ready to render as a section. */
+/**
+ * Max number of leading rows that get a staggered animation delay. Keeping this
+ * small means the effect is visible on load but never turns a multi-thousand-row
+ * chain into a long "flickering" cascade.
+ */
+const STAGGER_ROWS = 15;
+
+interface ChainSection {
+    expiration: string;
     calls: Map<number, OptionQuote>;
     puts: Map<number, OptionQuote>;
     strikes: number[];
+}
+
+/** Six call-side cells (OI, Vol, IV, Bid, Mid, Ask). */
+const CallCells: React.FC<{ q?: OptionQuote }> = ({ q }) => (
+    <>
+        <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.openInterest)}</td>
+        <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.volume)}</td>
+        <td className="px-2 py-1 text-right tabular-nums text-slate-500">{fmtPct(q?.iv)}</td>
+        <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.bid)}</td>
+        <td className="px-2 py-1 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{fmt(q?.mid)}</td>
+        <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.ask)}</td>
+    </>
+);
+/** Six put-side cells (Bid, Mid, Ask, IV, Vol, OI). */
+const PutCells: React.FC<{ q?: OptionQuote }> = ({ q }) => (
+    <>
+        <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.bid)}</td>
+        <td className="px-2 py-1 text-right tabular-nums font-medium text-rose-600 dark:text-rose-400">{fmt(q?.mid)}</td>
+        <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.ask)}</td>
+        <td className="px-2 py-1 text-right tabular-nums text-slate-500">{fmtPct(q?.iv)}</td>
+        <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.volume)}</td>
+        <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.openInterest)}</td>
+    </>
+);
+
+/** localStorage key holding the collapsed-expirations set, per symbol. */
+const COLLAPSE_KEY = 'options-desk.collapsed.v1';
+/** Load the persisted collapsed set for a symbol (survives reloads). */
+function loadCollapsed(symbol: string): Set<string> {
+    try {
+        const all = JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}');
+        return new Set<string>(Array.isArray(all[symbol]) ? all[symbol] : []);
+    } catch { return new Set(); }
+}
+/** Persist the collapsed set for a symbol. */
+function saveCollapsed(symbol: string, set: Set<string>): void {
+    try {
+        const all = JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}');
+        all[symbol] = Array.from(set);
+        localStorage.setItem(COLLAPSE_KEY, JSON.stringify(all));
+    } catch { /* ignore */ }
+}
+
+/**
+ * One expiration = one <tbody class="od-sec"> inside the SHARED table. It holds:
+ *   - a header row .od-exp-row (the always-sticky, accumulating Expiration bar,
+ *     centered, clickable to collapse),
+ *   - when expanded: .od-group (Calls|Strike|Puts) + .od-labels (column names)
+ *     which are sticky ONLY while this section is `.od-active` (in view),
+ *   - the strike rows.
+ * The per-section index is passed as a CSS var `--i` (see index.css geometry).
+ */
+const ExpirationSection: React.FC<{
+    section: ChainSection;
+    index: number;
     spot: number | null;
-}> = ({ calls, puts, strikes, spot }) => {
+    collapsed: boolean;
+    active: boolean;
+    onToggle: () => void;
+    innerRef: (el: HTMLTableSectionElement | null) => void;
+}> = ({ section, index, spot, collapsed, active, onToggle, innerRef }) => {
+    const { expiration, calls, puts, strikes } = section;
     const atmStrike = useMemo(() => {
         if (spot == null || strikes.length === 0) return null;
         return strikes.reduce((best, s) => (Math.abs(s - spot) < Math.abs(best - spot) ? s : best), strikes[0]);
     }, [spot, strikes]);
 
-    const CallCells: React.FC<{ q?: OptionQuote }> = ({ q }) => (
-        <>
-            <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.openInterest)}</td>
-            <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.volume)}</td>
-            <td className="px-2 py-1 text-right tabular-nums text-slate-500">{fmtPct(q?.iv)}</td>
-            <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.bid)}</td>
-            <td className="px-2 py-1 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{fmt(q?.mid)}</td>
-            <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.ask)}</td>
-        </>
-    );
+    // Symmetric open/close animation: keep the rows mounted during the close so
+    // they can FADE OUT (mirroring the expand fade-in), then unmount.
+    const [rendered, setRendered] = useState(!collapsed); // are the rows in the DOM?
+    const [closing, setClosing] = useState(false);        // playing the close anim?
+    useEffect(() => {
+        if (!collapsed) {
+            setClosing(false);
+            setRendered(true);
+        } else if (rendered) {
+            setClosing(true);
+            const t = setTimeout(() => { setRendered(false); setClosing(false); }, 180);
+            return () => clearTimeout(t);
+        }
+        return undefined;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [collapsed]);
 
-    const PutCells: React.FC<{ q?: OptionQuote }> = ({ q }) => (
-        <>
-            <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.bid)}</td>
-            <td className="px-2 py-1 text-right tabular-nums font-medium text-rose-600 dark:text-rose-400">{fmt(q?.mid)}</td>
-            <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.ask)}</td>
-            <td className="px-2 py-1 text-right tabular-nums text-slate-500">{fmtPct(q?.iv)}</td>
-            <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.volume)}</td>
-            <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.openInterest)}</td>
-        </>
-    );
+    /** Rows animate in (staggered) when opening, or out (uniform) when closing. */
+    const bodyAnim = closing ? 'od-row-out' : 'od-row-in';
 
     return (
-        <div className="table-container max-h-[calc(100vh-260px)] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
-            <table className="w-full border-collapse text-xs">
-                <thead className="bg-slate-100 dark:bg-slate-800 text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    <tr>
-                        <th colSpan={6} className="bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1.5 text-center font-semibold text-emerald-700 dark:text-emerald-400">Calls</th>
-                        <th className="px-2 py-1.5 text-center font-semibold">Strike</th>
-                        <th colSpan={6} className="bg-rose-50 dark:bg-rose-950/40 px-2 py-1.5 text-center font-semibold text-rose-700 dark:text-rose-400">Puts</th>
+        <tbody
+            ref={innerRef}
+            data-exp={expiration}
+            className={'od-sec ' + (active && !collapsed ? 'od-active ' : '')}
+            style={{ ['--i' as string]: String(index) }}
+        >
+            {/* Expiration bar — always-sticky, accumulates into the top pile.
+                The WHOLE bar is ONE toggle: clicking anywhere (chevron, date, or
+                strike count) collapses/expands this expiration. A single centered
+                colSpan=13 cell keeps it identical whether open or collapsed; only
+                the chevron rotates (v when open, > when collapsed). */}
+            <tr className={'od-exp-row text-[11px] normal-case tracking-normal ' + (active ? 'od-current' : '')}>
+                <th colSpan={13} className="p-0 font-semibold">
+                    <button
+                        type="button"
+                        onClick={onToggle}
+                        aria-expanded={!collapsed}
+                        title={collapsed ? 'Expand this expiration' : 'Collapse this expiration'}
+                        className="flex h-full w-full items-center justify-center gap-2 px-2 hover:opacity-70"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+                             strokeLinecap="round" strokeLinejoin="round"
+                             className={'h-3 w-3 transition-transform ' + (collapsed ? '-rotate-90' : '')}>
+                            <path d="m6 9 6 6 6-6" />
+                        </svg>
+                        <span className="tabular-nums">{expiration}&nbsp; {strikes.length} strikes</span>
+                    </button>
+                </th>
+            </tr>
+
+            {rendered && (
+                <>
+                    {/* Calls | Strike | Puts group row (sticky only when active). */}
+                    <tr className={'od-group ' + bodyAnim + ' text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400'}>
+                        <th colSpan={6} className="od-calls px-2 text-center font-semibold text-emerald-700 dark:text-emerald-400">Calls</th>
+                        <th className="px-2 text-center font-semibold">Strike</th>
+                        <th colSpan={6} className="od-puts px-2 text-center font-semibold text-rose-700 dark:text-rose-400">Puts</th>
                     </tr>
-                    <tr>
-                        <th className="px-2 py-1 text-right font-medium">OI</th>
-                        <th className="px-2 py-1 text-right font-medium">Vol</th>
-                        <th className="px-2 py-1 text-right font-medium">IV</th>
-                        <th className="px-2 py-1 text-right font-medium">Bid</th>
-                        <th className="px-2 py-1 text-right font-medium">Mid</th>
-                        <th className="px-2 py-1 text-right font-medium">Ask</th>
-                        <th className="px-2 py-1 text-center font-medium">$</th>
-                        <th className="px-2 py-1 text-right font-medium">Bid</th>
-                        <th className="px-2 py-1 text-right font-medium">Mid</th>
-                        <th className="px-2 py-1 text-right font-medium">Ask</th>
-                        <th className="px-2 py-1 text-right font-medium">IV</th>
-                        <th className="px-2 py-1 text-right font-medium">Vol</th>
-                        <th className="px-2 py-1 text-right font-medium">OI</th>
+                    {/* Column labels (sticky only when active). */}
+                    <tr className={'od-labels ' + bodyAnim + ' text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400'}>
+                        <th className="px-2 text-right font-medium">OI</th>
+                        <th className="px-2 text-right font-medium">Vol</th>
+                        <th className="px-2 text-right font-medium">IV</th>
+                        <th className="px-2 text-right font-medium">Bid</th>
+                        <th className="px-2 text-right font-medium">Mid</th>
+                        <th className="px-2 text-right font-medium">Ask</th>
+                        <th className="px-2 text-center font-medium">$</th>
+                        <th className="px-2 text-right font-medium">Bid</th>
+                        <th className="px-2 text-right font-medium">Mid</th>
+                        <th className="px-2 text-right font-medium">Ask</th>
+                        <th className="px-2 text-right font-medium">IV</th>
+                        <th className="px-2 text-right font-medium">Vol</th>
+                        <th className="px-2 text-right font-medium">OI</th>
                     </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {strikes.map((strike) => {
+                    {/* Strike rows: staggered fade-in when opening; uniform fade-out
+                        when closing (no per-row delay so the collapse feels quick). */}
+                    {strikes.map((strike, i) => {
                         const isAtm = strike === atmStrike;
+                        const stagger = !closing && i < STAGGER_ROWS;
                         return (
                             <tr
                                 key={strike}
                                 className={
-                                    'text-slate-700 dark:text-slate-200 ' +
+                                    'text-slate-700 dark:text-slate-200 ' + bodyAnim + ' ' +
                                     (isAtm
                                         ? 'bg-indigo-50 dark:bg-indigo-950/40'
                                         : 'odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-900/40')
                                 }
+                                style={stagger ? { animationDelay: `${i * 18}ms` } : undefined}
                             >
                                 <CallCells q={calls.get(strike)} />
                                 <td className={
@@ -1461,8 +2150,146 @@ const ChainTable: React.FC<{
                             </tr>
                         );
                     })}
-                </tbody>
-            </table>
+                </>
+            )}
+        </tbody>
+    );
+};
+
+/**
+ * The scrolling desk: renders ALL selected expirations as sibling <tbody>s in a
+ * SINGLE <table>, ordered EARLIEST -> LATEST. Because they share one scroll
+ * container, each expiration bar can stay sticky and PILE UP as you scroll down
+ * (and un-pile scrolling up). A scroll listener marks the section currently in
+ * view as `.od-active` so only its Calls|Strike|Puts + column labels stay pinned
+ * below the pile. Sections can be collapsed individually or via Collapse-all.
+ */
+const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: number | null }> = ({ symbol, sections, spot }) => {
+    // Collapsed set — restored/persisted per symbol.
+    const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed(symbol));
+    useEffect(() => { setCollapsed(loadCollapsed(symbol)); }, [symbol]);
+    useEffect(() => { saveCollapsed(symbol, collapsed); }, [symbol, collapsed]);
+
+    const allCollapsed = sections.length > 0 && sections.every((s) => collapsed.has(s.expiration));
+
+    // Which section's header is highlighted / whose sub-headers stay pinned.
+    // Declared here so toggleOne can set it on click (see below).
+    const [activeExp, setActiveExp] = useState<string>('');
+
+    const toggleOne = useCallback((exp: string) => {
+        setCollapsed((prev) => {
+            const next = new Set(prev);
+            if (next.has(exp)) next.delete(exp); else next.add(exp);
+            return next;
+        });
+        // Highlight the header the user actually clicked (otherwise the purely
+        // scroll-based `activeExp` would keep the highlight on the top section,
+        // e.g. when collapsing a lower one without scrolling). A later scroll
+        // recomputes it normally.
+        setActiveExp(exp);
+    }, []);
+    const toggleAll = useCallback(() => {
+        setCollapsed((prev) => (
+            sections.every((s) => prev.has(s.expiration)) ? new Set() : new Set(sections.map((s) => s.expiration))
+        ));
+    }, [sections]);
+
+    // ---- Active-section tracking (which section's sub-headers stay pinned) ----
+    const scrollRef = useRef<HTMLDivElement | null>(null);
+    const bodyRefs = useRef<Map<string, HTMLTableSectionElement>>(new Map());
+
+    // Pixels of accumulated expiration bars above the fold = index * barPx.
+    // We pick the section whose body still extends below that pinned pile.
+    const recomputeActive = useCallback(() => {
+        const container = scrollRef.current;
+        if (!container) return;
+        const barPx = parseFloat(getComputedStyle(container).getPropertyValue('--od-bar')) * 16 || 30;
+        const top = container.getBoundingClientRect().top;
+        let current = '';
+        sections.forEach((s, i) => {
+            const el = bodyRefs.current.get(s.expiration);
+            if (!el) return;
+            const rel = el.getBoundingClientRect().bottom - top; // section bottom vs viewport top
+            // Active while the section bottom is still below its own pinned bar.
+            if (rel > (i + 1) * barPx) { if (!current) current = s.expiration; }
+        });
+        // Fallback: last section when scrolled to the very bottom.
+        if (!current && sections.length) current = sections[sections.length - 1].expiration;
+        setActiveExp(current);
+    }, [sections]);
+
+    useEffect(() => {
+        const c = scrollRef.current;
+        if (!c) return;
+        // Recompute the active (highlighted) section ONLY on real user scrolling
+        // (and window resize). We deliberately do NOT recompute on `collapsed`
+        // changes: a collapse/expand click sets activeExp to the clicked header
+        // directly (see toggleOne), and re-running recomputeActive here would
+        // immediately snap the highlight back to the top section.
+        const onScroll = () => recomputeActive();
+        c.addEventListener('scroll', onScroll, { passive: true });
+        window.addEventListener('resize', onScroll);
+        return () => { c.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); };
+    }, [recomputeActive]);
+
+    // Seed the initial highlight once sections first load (no click/scroll yet).
+    useEffect(() => {
+        setActiveExp((cur) => (cur && sections.some((s) => s.expiration === cur))
+            ? cur
+            : (sections[0]?.expiration ?? ''));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sections.length]);
+
+    return (
+        <div>
+            {/* Controls ABOVE the desk, full width so they align with the table:
+                "N expirations" on the LEFT, Collapse-all/Expand-all on the RIGHT. */}
+            <div className="mb-2 flex w-full items-center justify-between">
+                <span className="text-xs text-slate-400">
+                    {sections.length} expiration{sections.length === 1 ? '' : 's'}
+                </span>
+                <button
+                    type="button"
+                    onClick={toggleAll}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+                >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+                         strokeLinecap="round" strokeLinejoin="round"
+                         className={'h-3 w-3 transition-transform ' + (allCollapsed ? '-rotate-90' : '')}>
+                        <path d="m6 9 6 6 6-6" />
+                    </svg>
+                    {allCollapsed ? 'Expand all' : 'Collapse all'}
+                </button>
+            </div>
+
+            {/* Desk: FULL WIDTH, and adaptive height (dvh) so tall screens show
+                more strikes without scrolling. dvh handles mobile browser chrome. */}
+            <div ref={scrollRef} className="table-container w-full max-h-[calc(100dvh-210px)] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full border-collapse text-xs">
+                    {/* 13 columns get EQUAL width (fixed layout): 6 call cells,
+                        the Strike column (a bit narrower), then 6 put cells. This
+                        makes columns stretch evenly on wide screens while the
+                        table min-width (index.css) keeps them comfortable/narrow-
+                        scrollable on small screens. */}
+                    <colgroup>
+                        {Array.from({ length: 6 }).map((_, c) => <col key={`c${c}`} style={{ width: '7.9%' }} />)}
+                        <col style={{ width: '5.4%' }} />
+                        {Array.from({ length: 6 }).map((_, p) => <col key={`p${p}`} style={{ width: '7.9%' }} />)}
+                    </colgroup>
+                    {sections.map((s, i) => (
+                        <ExpirationSection
+                            key={s.expiration}
+                            section={s}
+                            index={i}
+                            spot={spot}
+                            collapsed={collapsed.has(s.expiration)}
+                            active={activeExp === s.expiration}
+                            onToggle={() => toggleOne(s.expiration)}
+                            innerRef={(el) => { if (el) bodyRefs.current.set(s.expiration, el); else bodyRefs.current.delete(s.expiration); }}
+                        />
+                    ))}
+                </table>
+            </div>
         </div>
     );
 };
@@ -1507,8 +2334,10 @@ const App: React.FC = () => {
     // ---- Chain data state (DEFERRED loading; nothing fetches on mount) ------
     const [tickerInput, setTickerInput] = useState<string>(settings.lastTicker);
     const [meta, setMeta] = useState<ChainMeta | null>(null);      // set by "Get dates"
-    const [selectedExp, setSelectedExp] = useState<string>('');    // chosen expiration
-    const [expQuotes, setExpQuotes] = useState<OptionQuote[]>([]); // set by "Load"
+    // MULTIPLE selected expirations (set by checkboxes); loaded top→bottom.
+    const [selectedExps, setSelectedExps] = useState<string[]>([]);
+    // Loaded quotes per expiration: { "YYYY-MM-DD": OptionQuote[] }.
+    const [expData, setExpData] = useState<Record<string, OptionQuote[]>>({});
     const [chainSymbol, setChainSymbol] = useState<string>('');    // symbol the table reflects
     const [metaLoading, setMetaLoading] = useState<boolean>(false);
     const [expLoading, setExpLoading] = useState<boolean>(false);
@@ -1520,6 +2349,8 @@ const App: React.FC = () => {
     // AbortControllers so the Cancel button can stop in-flight requests.
     const metaAbort = useRef<AbortController | null>(null);
     const expAbort = useRef<AbortController | null>(null);
+    // Focused after picking an expiration so Enter immediately triggers Load.
+    const loadBtnRef = useRef<HTMLButtonElement | null>(null);
 
     const anyLoading = metaLoading || expLoading;
 
@@ -1536,8 +2367,8 @@ const App: React.FC = () => {
     /** Reset the loaded view when provider or ticker context changes. */
     const resetView = useCallback(() => {
         setMeta(null);
-        setExpQuotes([]);
-        setSelectedExp('');
+        setExpData({});
+        setSelectedExps([]);
         setChainSymbol('');
         setError('');
         setNotice('');
@@ -1582,7 +2413,7 @@ const App: React.FC = () => {
         metaAbort.current = ac;
         setMetaLoading(true);
         // Clear any previous chain so the UI reflects the new symbol cleanly.
-        setExpQuotes([]);
+        setExpData({});
         setChainSymbol('');
         try {
             const ctx = ctxFor(settings, provider, ac.signal);
@@ -1592,7 +2423,8 @@ const App: React.FC = () => {
             if (ac.signal.aborted) return;
             if (m.expirations.length === 0) throw new Error(`No option contracts found for "${sym}".`);
             setMeta(m);
-            setSelectedExp(m.expirations[0]);
+            // Pre-select the nearest expiration by default (user can add more).
+            setSelectedExps([m.expirations[0]]);
             patchSettings({ lastTicker: m.symbol });
             dbg('getDates ok', { expirations: m.expirations.length });
         } catch (e: unknown) {
@@ -1606,31 +2438,51 @@ const App: React.FC = () => {
         }
     }, [provider, settings, patchSettings]);
 
-    /** STEP 2 — "Load": fetch the selected expiration's chain. */
+    /**
+     * STEP 2 — "Load": fetch ALL selected expirations (earliest→latest) and
+     * store each under expData[expiration]. Bulk providers fetch once (cached)
+     * and each call just filters; lazy providers fetch per-expiration (cached).
+     */
     const loadChain = useCallback(async () => {
-        if (!meta || !selectedExp) return;
+        if (!meta || selectedExps.length === 0) return;
         setError('');
         setNotice('');
         const ac = new AbortController();
         expAbort.current = ac;
         setExpLoading(true);
+        const ordered = [...selectedExps].sort(); // earliest -> latest
+        const collected: Record<string, OptionQuote[]> = {};
         try {
-            const quotes = await loadExpiration(provider, meta.symbol, selectedExp, ctxFor(settings, provider, ac.signal));
-            if (ac.signal.aborted) return;
-            setExpQuotes(quotes);
+            for (const exp of ordered) {
+                const quotes = await loadExpiration(provider, meta.symbol, exp, ctxFor(settings, provider, ac.signal));
+                if (ac.signal.aborted) return;
+                collected[exp] = quotes;
+            }
+            setExpData(collected);
             setChainSymbol(meta.symbol);
-            if (quotes.length === 0) setNotice('No contracts returned for this expiration.');
-            dbg('loadChain ok', { count: quotes.length });
+            const total = Object.values(collected).reduce((n, q) => n + q.length, 0);
+            if (total === 0) setNotice('No contracts returned for the selected expiration(s).');
+            dbg('loadChain ok', { expirations: ordered.length, total });
         } catch (e: unknown) {
             if (isAbortError(e)) { setNotice('Request cancelled.'); return; }
-            setExpQuotes([]);
+            setExpData({});
             setError(friendlyError(e, provider));
             setErrorNonce((n) => n + 1);
             dbg('loadChain error', e);
         } finally {
             if (expAbort.current === ac) { setExpLoading(false); expAbort.current = null; }
         }
-    }, [provider, settings, meta, selectedExp]);
+    }, [provider, settings, meta, selectedExps]);
+
+    /** Toggle one expiration in the multi-select, then focus the Load button so
+     *  pressing Enter immediately loads (no need to click Load). */
+    const toggleExpiration = useCallback((exp: string) => {
+        setSelectedExps((prev) =>
+            prev.includes(exp) ? prev.filter((e) => e !== exp) : [...prev, exp],
+        );
+        // Focus after the state/DOM settles.
+        requestAnimationFrame(() => loadBtnRef.current?.focus());
+    }, []);
 
     // Whether the current provider+settings require a key for the typed ticker.
     const showOnboarding = useMemo(() => {
@@ -1638,23 +2490,29 @@ const App: React.FC = () => {
         return provider.needsKeyFor(sym, ctxFor(settings, provider)) && !meta && !metaLoading;
     }, [provider, settings, tickerInput, meta, metaLoading]);
 
-    // ---- Derived table data ------------------------------------------------
-    const { calls, puts, strikes } = useMemo(() => {
-        const callMap = new Map<number, OptionQuote>();
-        const putMap = new Map<number, OptionQuote>();
-        const strikeSet = new Set<number>();
-        for (const q of expQuotes) {
-            strikeSet.add(q.strike);
-            (q.side === 'call' ? callMap : putMap).set(q.strike, q);
-        }
-        return { calls: callMap, puts: putMap, strikes: Array.from(strikeSet).sort((a, b) => a - b) };
-    }, [expQuotes]);
+    // ---- Derived table data: one section per loaded expiration -------------
+    const sections: ChainSection[] = useMemo(() => {
+        const exps = Object.keys(expData).sort(); // earliest -> latest
+        return exps.map((expiration) => {
+            const callMap = new Map<number, OptionQuote>();
+            const putMap = new Map<number, OptionQuote>();
+            const strikeSet = new Set<number>();
+            for (const q of expData[expiration]) {
+                strikeSet.add(q.strike);
+                (q.side === 'call' ? callMap : putMap).set(q.strike, q);
+            }
+            return { expiration, calls: callMap, puts: putMap, strikes: Array.from(strikeSet).sort((a, b) => a - b) };
+        });
+    }, [expData]);
+    const hasRows = sections.some((s) => s.strikes.length > 0);
 
     const spot = useMemo(() => {
         if (!meta) return null;
         if (meta.underlyingPrice != null) return meta.underlyingPrice;
-        return selectedExp ? estimateSpot(expQuotes, selectedExp) : null;
-    }, [meta, expQuotes, selectedExp]);
+        // Estimate from the earliest loaded expiration via put-call parity.
+        const first = Object.keys(expData).sort()[0];
+        return first ? estimateSpot(expData[first], first) : null;
+    }, [meta, expData]);
     const spotIsEstimated = meta != null && meta.underlyingPrice == null && spot != null;
 
     // Onboarding preview: keyless demo, else jump to marketdata AAPL.
@@ -1676,9 +2534,22 @@ const App: React.FC = () => {
     // ---- Render ------------------------------------------------------------
     return (
         <div className="min-h-screen">
-            <TopBar settings={settings} provider={provider} onChange={patchSettings} onSetToken={setToken} onSetSecret={setSecret} />
+            <TopBar
+                settings={settings}
+                provider={provider}
+                onChange={patchSettings}
+                onSetToken={setToken}
+                onSetSecret={setSecret}
+                onClearData={() => { clearCacheData(); resetView(); }}
+                onClearSettings={() => { clearSettingsStore(); setSettings({ ...DEFAULT_SETTINGS }); resetView(); }}
+                onClearAll={() => { clearAll(); setSettings({ ...DEFAULT_SETTINGS }); resetView(); }}
+            />
 
-            <main className="mx-auto max-w-6xl px-4 py-4">
+            {/* Width: comfortable centered column on phones/tablets, but on LARGE
+                screens (laptops/desktops/TVs, lg: ≥1024px) go full-width so the
+                option desk uses all the horizontal space instead of a narrow
+                column. See index.css for the matching container note. */}
+            <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
                 {/* ---- Controls: STEP 1 (ticker → Get dates), STEP 2 (exp → Load) ---- */}
                 <div className="mb-4 flex flex-wrap items-center gap-2">
                     {/* Ticker input — dropdown when the provider lists tickers (Static). */}
@@ -1695,7 +2566,8 @@ const App: React.FC = () => {
                             <select
                                 value={tickerInput}
                                 onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
-                                className="w-40 bg-transparent text-sm text-slate-800 dark:text-slate-100 outline-none"
+                                /* Same fixed width as the text input for a consistent, easy-to-click target. */
+                                className="w-44 bg-transparent text-sm text-slate-800 dark:text-slate-100 outline-none"
                             >
                                 {!tickerList.includes(tickerInput.toUpperCase()) && <option value={tickerInput}>{tickerInput || '—'}</option>}
                                 {tickerList.map((t) => (<option key={t} value={t}>{t}</option>))}
@@ -1719,26 +2591,55 @@ const App: React.FC = () => {
                         </button>
                     </form>
 
-                    {/* Expiration selector + Load — only after "Get dates" succeeds. */}
+                    {/* Multi-expiration selector + Load — after "Get dates" succeeds.
+                        Pick one or MANY dates (checkboxes); they render stacked
+                        earliest→latest. "All"/"None" quick toggles included. */}
                     {meta && (
-                        <div className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5">
-                            <span className="text-xs text-slate-400">Expiration</span>
-                            <select
-                                value={selectedExp}
-                                onChange={(e) => setSelectedExp(e.target.value)}
-                                className="bg-transparent text-sm text-slate-800 dark:text-slate-100 outline-none"
-                            >
-                                {meta.expirations.map((exp) => (<option key={exp} value={exp}>{exp}</option>))}
-                            </select>
+                        /* A <form> so pressing Enter (once the Load button is focused
+                           after picking a date) submits and loads immediately. */
+                        <form
+                            onSubmit={(e) => { e.preventDefault(); loadChain(); }}
+                            className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5"
+                        >
+                            <span className="text-xs text-slate-400">Expirations</span>
+                            <div className="themed-scroll flex max-w-[46vw] items-center gap-1 overflow-x-auto">
+                                {meta.expirations.map((exp) => {
+                                    const on = selectedExps.includes(exp);
+                                    return (
+                                        <button
+                                            key={exp}
+                                            type="button"
+                                            onClick={() => toggleExpiration(exp)}
+                                            aria-pressed={on}
+                                            className={
+                                                'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' +
+                                                (on
+                                                    ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm'
+                                                    : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-indigo-400 hover:-translate-y-px')
+                                            }
+                                        >
+                                            {exp}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                             <button
                                 type="button"
-                                onClick={loadChain}
-                                disabled={expLoading}
-                                className="rounded-md bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                                onClick={() => setSelectedExps(selectedExps.length === meta.expirations.length ? [] : [...meta.expirations])}
+                                className="shrink-0 rounded-md border border-slate-300 dark:border-slate-700 px-2 py-0.5 text-[11px] font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                                title="Select all / none"
                             >
-                                {expLoading ? 'Loading…' : 'Load'}
+                                {selectedExps.length === meta.expirations.length ? 'None' : 'All'}
                             </button>
-                        </div>
+                            <button
+                                ref={loadBtnRef}
+                                type="submit"
+                                disabled={expLoading || selectedExps.length === 0}
+                                className="shrink-0 rounded-md bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900"
+                            >
+                                {expLoading ? 'Loading…' : `Load${selectedExps.length > 1 ? ` (${selectedExps.length})` : ''}`}
+                            </button>
+                        </form>
                     )}
 
                     {/* Cancel — visible only while a request is in flight. */}
@@ -1814,13 +2715,13 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                {/* Option chain table, or guidance/empty states. */}
+                {/* Option chain desk (one section per expiration), or guidance. */}
                 {!showOnboarding && (
-                    chainSymbol && strikes.length > 0 ? (
-                        <ChainTable calls={calls} puts={puts} strikes={strikes} spot={spot} />
+                    chainSymbol && hasRows ? (
+                        <ChainTable symbol={chainSymbol} sections={sections} spot={spot} />
                     ) : meta && !expLoading && !chainSymbol ? (
                         <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
-                            Pick an expiration and press <span className="mx-1 font-semibold text-indigo-500">Load</span> to fetch the chain.
+                            Pick one or more expirations and press <span className="mx-1 font-semibold text-indigo-500">Load</span> to fetch the chain.
                         </div>
                     ) : (!meta && !metaLoading && !error) ? (
                         <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">

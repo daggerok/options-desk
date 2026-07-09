@@ -37,10 +37,10 @@ on:
     - cron: "21 5,13,21 * * 1-4"  # Tue-Fri: 05:21, 13:21, 21:21
     - cron: "34 6,14,22 * * 2-5"  # Wed-Sat: 06:34, 14:34, 22:03
     - cron: "55 7,15,23 * * 3-6"  # Thu-Sun: 07:55, 15:55, 23:04
-  workflow_dispatch: {}   # allow manual runs from the Actions tab
+  workflow_dispatch: {} # allow manual runs from the Actions tab
 
 permissions:
-  contents: write         # needed to commit the refreshed JSON
+  contents: write # needed to commit the refreshed JSON
 
 jobs:
   update:
@@ -51,10 +51,10 @@ jobs:
       # screener), skips files already refreshed today, and fetches top-down
       # until the per-run budget is hit or the source rate-limits us. Each run
       # APPENDS to the cache and the next run resumes where this one stopped.
-      MAX_FETCHES: "60"        # NEW (non-skipped) fetches per run
-      UNIVERSE_SIZE: "400"     # how deep the market-cap ranking goes
-      MAX_EXPIRATIONS: "12"    # expirations stored per ticker (keeps JSON small)
-      REQUEST_SLEEP: "0.6"     # politeness delay between fetches (seconds)
+      MAX_FETCHES: "60"     # NEW (non-skipped) fetches per run
+      UNIVERSE_SIZE: "400"  # how deep the market-cap ranking goes
+      MAX_EXPIRATIONS: "12" # expirations stored per ticker (keeps JSON small)
+      REQUEST_SLEEP: "1"    # politeness delay between fetches (seconds)
     steps:
       - name: Checkout
         uses: actions/checkout@v7

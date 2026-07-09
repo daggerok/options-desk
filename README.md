@@ -1,7 +1,67 @@
 # Options Desk [![CI](https://github.com/daggerok/options-desk/actions/workflows/ci.yaml/badge.svg)](https://github.com/daggerok/options-desk/actions/workflows/ci.yaml)
 A single-page **options board** — enter a ticker, pick an expiration, and view the classic **Calls | Strike | Puts** chain with bid / mid / ask, IV, volume, open interest and (where the source provides them) greeks. Built as a **static** web app: TypeScript + React (`.tsx`) + Tailwind CSS v4, deployable to **GitHub Pages** with no backend.
 
+<!-- old:
+
+---
+
+## 🚀 Features & Architecture
+TODO
+
+---
+
+## 🛠️ Tech Stack
+
+* **Runtime:** and **Build Tool:** [Bun](https://bun.sh/)
+* **Frontend Library:** React (TypeScript: TSX)
+* **Styling Framework:** TailwindCSS v4 (Utility-first, fully embedded optimized SVGs)
+
+---
+
+## 📦 Getting Started
+
+### Prerequisites
+Ensure you have [Bun](https://bun.sh/) installed locally on your development machine.
+
+### Installation & Local Run
+
+1. Clone the repository and navigate to the root directory:
+   ```bash
+   git clone https://github.com/daggerok/options-desk.git && cd $_
+   ```
+
+2. Install the necessary development dependencies:
+   ```bash
+   bun install -E
+   ```
+
+3. Launch the local Vite development server with Hot Module Replacement (HMR):
+   ```bash
+   bun serve
+   ```
+
+4. Upgrade all ecosystem packages to their latest absolute versions:
+   ```bash
+   bunx npm-check-updates -u
+   ```
+
+## 📖 Production Deployment & Standalone Build
+
+Since the entire system compiles into a self-contained Single Page Application (SPA) without requiring any heavy node
+backend or cloud infrastructure, you can generate a static deployment bundle:
+
+```bash
+bun run build && bunx serve ./dist
+```
+
+The resulting optimized assets will be located inside the `./dist` folder, ready to be served from any static hosting
+architecture or local offline workspace.
+
+-->
+
 > **RU:** Одностраничная **опционная доска** — вводишь тикер, выбираешь дату экспирации и смотришь классическую цепочку **Calls | Strike | Puts** с bid / mid / ask, подразумеваемой волатильностью (IV), объёмом, открытым интересом и греками (где источник их отдаёт). Это **статическое** веб-приложение: TypeScript + React (`.tsx`) + Tailwind CSS v4, разворачивается на **GitHub Pages** без бэкенда.
+
+---
 
 ## Table of contents / Оглавление
 
@@ -77,9 +137,17 @@ Every provider below is **privacy-friendly**: none require an account with sensi
 | **Static cache (data.json)** | No setup | Only cached tickers | If cached | Reads the site's own `./data/*.json` (built by the GitHub Action). 100% CORS-free on Pages, no keys. |
 | **DoltHub** | No setup | Many US tickers | Yes | Free SQL-over-HTTP, no key. **Historical archive (frozen 2024-11-11)** — research/backtesting, **not live**. No volume/OI/spot. |
 | **Yahoo (via proxy)** | Needs proxy | Any ticker | No | Needs the crumb-handling proxy (local Bun server or Cloudflare Worker). Set the Proxy base URL in Settings. |
-| **CBOE** | Needs proxy | All equities + indices | Yes | Richest live no-key data (greeks/IV/OI + spot), but CBOE sends no CORS header → run it through the same proxy (`/api/cboe`). |
+| **NASDAQ (via proxy)** | Needs proxy | Any ticker | No | Full chain (all expirations) in one call: bid/ask/last/volume/OI. No CORS → same proxy (`/api/nasdaq`). |
+| **CBOE (via proxy)** | Needs proxy | All equities + indices | Yes | Richest live no-key data (greeks/IV/OI + spot), but CBOE sends no CORS header → same proxy (`/api/cboe`). |
 
 **Removed** (each required a brokerage-style account with sensitive sign-up, or a paid/gated plan that made the free tier unusable for options): **Tradier**, **Alpaca**, **Polygon/Massive**, **Alpha Vantage**.
+
+**Extra behaviors**
+- **Multiple expirations:** after *Get dates*, tick one or many expirations (or *All*), then *Load* — they render stacked earliest→latest. As you scroll down, each expiration's header **piles up** at the top (so you always see the ones you've passed) and un-piles as you scroll back up; the header of the section you're currently viewing is **highlighted** in the pile. Each header reads `YYYY-MM-DD  N strikes` (centered, identical whether collapsed or expanded — only the chevron changes). **Click anywhere on a header** to collapse/expand that expiration (animated both ways); state is **remembered per ticker** across reloads, and there's **Collapse all / Expand all**. On large screens (laptops/desktops/TVs) the desk uses the **full window width** (capped on very wide monitors so the number columns stay readable); phones/tablets keep a readable narrow column. Tip: after clicking an expiration, just press **Enter** to load (the Load button auto-focuses).
+- **Persistent cache:** every successful query is saved to `localStorage` (survives reloads). When storage would overflow, the **oldest** cached records are dropped first.
+- **Cache management (Settings → Cache):** see live stats (number of cached records, data size vs the ~4 MB cap with a usage bar, settings size, oldest/newest timestamps) and three two-click clear actions — **Clear data** (query results only), **Clear settings** (provider/theme/keys/proxy), and **Clear everything** (full reset).
+- **Local-first provider order:** when the app runs on `localhost` / `127.*` / `0.0.0.0` / a LAN IP, the provider dropdown is reversed so the **proxy-backed** providers (CBOE, NASDAQ, Yahoo) come first (you have the proxy running). On GitHub Pages the no-setup providers come first.
+- **Proxy logs:** the Bun proxy / Worker print each relay as `PROXY | localPath -> remoteUrl` with a fixed-width proxy column, e.g. `NASDAQ | /api/nasdaq?symbol=AAPL -> https://api.nasdaq.com/...`.
 
 **How to get the free marketdata.app token**
 - **marketdata.app** → <https://www.marketdata.app> (no card; AAPL needs no key at all)
@@ -96,7 +164,7 @@ The simplest **100% free, no-server** setup is the **Static cache** provider:
 4. The Action runs on a schedule (and on demand), fetches chains with `yfinance`, and commits fresh `data/*.json`.
 5. In the app, pick **Static cache** — it reads your own JSON, so there are **no CORS issues and no keys** in the browser.
 
-Want **live** data on the public site? Deploy `scripts/cloudflare-worker.js` (free), put its URL in **Settings → Proxy base URL**, then choose **Yahoo (via proxy)** or **CBOE** — the Worker serves both (`/api/options` and `/api/cboe`).
+Want **live** data on the public site? Deploy `scripts/cloudflare-worker.js` (free), put its URL in **Settings → Proxy base URL**, then choose **Yahoo**, **NASDAQ**, or **CBOE** — the Worker serves all three (`/api/options`, `/api/nasdaq`, `/api/cboe`).
 
 **Local live data (no deploy):** run `bun run scripts/yahoo-proxy.ts`, keep the default **Proxy base URL** `http://localhost:8787`, and pick **Yahoo** or **CBOE**. CBOE gives the richest no-key chain (greeks/IV/OI + spot) for any equity or index (`SPX`, `VIX`, …).
 
@@ -106,8 +174,8 @@ These files are **optional** and live outside the 3-file app source:
 
 - `scripts/fetch_data.py` — **smart** `yfinance` → `data/*.json` fetcher. It discovers a market-cap-ranked US universe (NASDAQ screener), **skips files already refreshed today**, fetches top-down until its per-run budget or a rate-limit, and **appends** to the cache (resumable across runs). No hand-maintained ticker list. Tunables: `MAX_FETCHES`, `UNIVERSE_SIZE`, `MAX_EXPIRATIONS`, `REQUEST_SLEEP` (or `TICKERS="AAPL MSFT"` to override).
 - `.github/workflows/update-data.yml` — runs the smart fetcher several times each weekday and commits the JSON (each run only does new work).
-- `scripts/yahoo-proxy.ts` — local **Bun** proxy serving **both** `/api/options` (Yahoo, crumb/cookie-handled) **and** `/api/cboe` (CBOE relay). Run: `bun run scripts/yahoo-proxy.ts` (default `http://localhost:8787`).
-- `scripts/cloudflare-worker.js` — deployable proxy: `/api/options` (Yahoo), `/api/cboe` (CBOE), and `/raw?url=…` (generic CORS passthrough).
+- `scripts/yahoo-proxy.ts` — local **Bun** proxy serving `/api/options` (Yahoo, crumb/cookie-handled), `/api/nasdaq` (NASDAQ relay), and `/api/cboe` (CBOE relay). It logs each relay as `PROXY | localPath -> remoteUrl`. Run: `bun run scripts/yahoo-proxy.ts` (default `http://localhost:8787`).
+- `scripts/cloudflare-worker.js` — deployable proxy: `/api/options` (Yahoo), `/api/nasdaq` (NASDAQ), `/api/cboe` (CBOE), and `/raw?url=…` (generic CORS passthrough).
 
 ## Project structure
 
@@ -188,9 +256,17 @@ bun run dev        # открой напечатанный localhost-адрес
 | **Static cache (data.json)** | Без настройки | Только закэшированные тикеры | Если закэшировано | Читает собственные `./data/*.json` (создаёт GitHub Action). 100% без CORS на Pages, без ключей. |
 | **DoltHub** | Без настройки | Многие тикеры США | Да | Бесплатный SQL-по-HTTP, без ключа. **Исторический архив (заморожен 2024-11-11)** — для исследований/бэктеста, **не live**. Без объёма/OI/спота. |
 | **Yahoo (via proxy)** | Нужен прокси | Любой тикер | Нет | Нужен прокси с обработкой crumb (локальный Bun-сервер или Cloudflare Worker). Укажи Proxy base URL в настройках. |
-| **CBOE** | Нужен прокси | Все акции + индексы | Да | Самые богатые live-данные без ключа (греки/IV/OI + спот), но CBOE не отдаёт CORS-заголовок → через тот же прокси (`/api/cboe`). |
+| **NASDAQ (via proxy)** | Нужен прокси | Любой тикер | Нет | Полная цепочка (все экспирации) за один вызов: bid/ask/last/объём/OI. Нет CORS → тот же прокси (`/api/nasdaq`). |
+| **CBOE (via proxy)** | Нужен прокси | Все акции + индексы | Да | Самые богатые live-данные без ключа (греки/IV/OI + спот), но CBOE не отдаёт CORS-заголовок → тот же прокси (`/api/cboe`). |
 
 **Удалены** (каждый требовал аккаунта брокерского типа с чувствительной регистрацией либо платного/закрытого плана, из-за чего бесплатный доступ к опционам был непригоден): **Tradier**, **Alpaca**, **Polygon/Massive**, **Alpha Vantage**.
+
+**Дополнительно**
+- **Несколько экспираций:** после *Get dates* отметь одну или несколько дат (или *All*), затем *Load* — они показываются стопкой от ранней к поздней. При прокрутке вниз заголовок каждой экспирации **накапливается** сверху (видно все пройденные), а при прокрутке вверх — разбирается обратно; заголовок текущей (видимой) секции **подсвечивается** в стопке. Каждый заголовок выглядит как `YYYY-MM-DD  N страйков` (по центру, одинаково в свёрнутом и развёрнутом виде — меняется только стрелка). **Клик в любом месте заголовка** сворачивает/разворачивает эту экспирацию (с анимацией в обе стороны); состояние **запоминается по тикеру** между перезагрузками; есть **Collapse all / Expand all**. На больших экранах (ноутбуки/десктопы/ТВ) доска занимает **всю ширину окна** (с ограничением на очень широких мониторах, чтобы колонки чисел оставались читаемыми); на телефонах/планшетах — читаемая узкая колонка. Совет: выбрав экспирацию, просто нажми **Enter** — кнопка Load уже в фокусе.
+- **Постоянный кэш:** каждый успешный запрос сохраняется в `localStorage` (переживает перезагрузку). При переполнении хранилища сначала удаляются **самые старые** записи.
+- **Управление кэшем (Settings → Cache):** живая статистика (число записей, размер данных относительно лимита ~4 МБ с полосой заполнения, размер настроек, время старейшей/новейшей записи) и три действия очистки (в два клика) — **Clear data** (только результаты запросов), **Clear settings** (провайдер/тема/ключи/прокси) и **Clear everything** (полный сброс).
+- **Локальный порядок провайдеров:** если приложение открыто на `localhost` / `127.*` / `0.0.0.0` / LAN-IP, список провайдеров переворачивается — сначала идут прокси-провайдеры (CBOE, NASDAQ, Yahoo), т.к. у тебя запущен прокси. На GitHub Pages первыми идут провайдеры без настройки.
+- **Логи прокси:** Bun-прокси / Worker печатают каждый релей как `PROXY | localPath -> remoteUrl` с колонкой прокси фиксированной ширины, напр. `NASDAQ | /api/nasdaq?symbol=AAPL -> https://api.nasdaq.com/...`.
 
 **Где взять бесплатный токен marketdata.app**
 - **marketdata.app** → <https://www.marketdata.app> (без карты; AAPL вообще без ключа)
@@ -215,8 +291,8 @@ bun run dev        # открой напечатанный localhost-адрес
 
 - `scripts/fetch_data.py` — **умный** сборщик `yfinance` → `data/*.json`. Сам находит вселенную тикеров США, отсортированную по капитализации (скринер NASDAQ), **пропускает файлы, уже обновлённые сегодня**, идёт сверху вниз до лимита запуска или рейт-лимита и **дописывает** кэш (возобновляемо между запусками). Список тикеров вручную вести не нужно. Параметры: `MAX_FETCHES`, `UNIVERSE_SIZE`, `MAX_EXPIRATIONS`, `REQUEST_SLEEP` (или `TICKERS="AAPL MSFT"` для ручного списка).
 - `.github/workflows/update-data.yml` — запускает умный сборщик несколько раз в будни и коммитит JSON (каждый запуск делает только новую работу).
-- `scripts/yahoo-proxy.ts` — локальный прокси на **Bun**, отдаёт **и** `/api/options` (Yahoo, обработка crumb/cookie), **и** `/api/cboe` (релей CBOE). Запуск: `bun run scripts/yahoo-proxy.ts` (по умолчанию `http://localhost:8787`).
-- `scripts/cloudflare-worker.js` — прокси для деплоя: `/api/options` (Yahoo), `/api/cboe` (CBOE) и `/raw?url=…` (универсальный проброс с CORS).
+- `scripts/yahoo-proxy.ts` — локальный прокси на **Bun**, отдаёт `/api/options` (Yahoo, crumb/cookie), `/api/nasdaq` (релей NASDAQ) и `/api/cboe` (релей CBOE). Логирует каждый релей как `PROXY | localPath -> remoteUrl`. Запуск: `bun run scripts/yahoo-proxy.ts` (по умолчанию `http://localhost:8787`).
+- `scripts/cloudflare-worker.js` — прокси для деплоя: `/api/options` (Yahoo), `/api/nasdaq` (NASDAQ), `/api/cboe` (CBOE) и `/raw?url=…` (универсальный проброс с CORS).
 
 ## Структура проекта
 
@@ -251,61 +327,3 @@ scripts/
 ---
 
 *Agentic developer note: this README is kept in sync with `main.tsx` / `index.css` — update the provider table and changelog references whenever a provider or feature changes.*
-
-<!-- old:
-
----
-
-## 🚀 Features & Architecture
-TODO
-
----
-
-## 🛠️ Tech Stack
-
-* **Runtime:** and **Build Tool:** [Bun](https://bun.sh/)
-* **Frontend Library:** React (TypeScript: TSX)
-* **Styling Framework:** TailwindCSS v4 (Utility-first, fully embedded optimized SVGs)
-
----
-
-## 📦 Getting Started
-
-### Prerequisites
-Ensure you have [Bun](https://bun.sh/) installed locally on your development machine.
-
-### Installation & Local Run
-
-1. Clone the repository and navigate to the root directory:
-   ```bash
-   git clone https://github.com/daggerok/options-desk.git && cd $_
-   ```
-
-2. Install the necessary development dependencies:
-   ```bash
-   bun install -E
-   ```
-
-3. Launch the local Vite development server with Hot Module Replacement (HMR):
-   ```bash
-   bun serve
-   ```
-
-4. Upgrade all ecosystem packages to their latest absolute versions:
-   ```bash
-   bunx npm-check-updates -u
-   ```
-
-## 📖 Production Deployment & Standalone Build
-
-Since the entire system compiles into a self-contained Single Page Application (SPA) without requiring any heavy node
-backend or cloud infrastructure, you can generate a static deployment bundle:
-
-```bash
-bun run build && bunx serve ./dist
-```
-
-The resulting optimized assets will be located inside the `./dist` folder, ready to be served from any static hosting
-architecture or local offline workspace.
-
--->

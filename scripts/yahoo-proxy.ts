@@ -43,6 +43,18 @@ const UA =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
+/**
+ * Column-aligned proxy logger. Prints one line per relayed request:
+ *   "$proxy | $localPathOrUrl -> $remoteUrl"
+ * The "$proxy | " column is PADDED to a fixed width so the log lines form neat
+ * columns regardless of which upstream (CBOE / YAHOO / NASDAQ) handled it.
+ */
+const PROXY_LABEL_WIDTH = 6; // fits "YAHOO", "NASDAQ", "CBOE" left-padded
+function logProxy(proxy: string, localPathOrUrl: string, remoteUrl: string): void {
+    const col = proxy.padEnd(PROXY_LABEL_WIDTH);
+    console.log(`${col} | ${localPathOrUrl} -> ${remoteUrl}`);
+}
+
 /** Extract Set-Cookie values into a single Cookie header string. */
 function collectCookies(res: Response): string {
     // Bun exposes multiple Set-Cookie via getSetCookie(); fall back to single.
@@ -106,7 +118,30 @@ async function handleCboe(url: URL): Promise<Response> {
     const symbol = (url.searchParams.get("symbol") || "").toUpperCase().trim();
     if (!symbol) return json({ error: "missing symbol" }, 400);
     const target = `https://cdn.cboe.com/api/global/delayed_quotes/options/${encodeURIComponent(symbol)}.json`;
+    logProxy("CBOE", `${url.pathname}?symbol=${symbol}`, target);
     const res = await fetch(target, { headers: { "User-Agent": UA, Accept: "application/json" } });
+    return new Response(await res.text(), {
+        status: res.status,
+        headers: { "Content-Type": "application/json", ...CORS },
+    });
+}
+
+/**
+ * GET /api/nasdaq?symbol=AAPL[&assetclass=stocks|etf|index]
+ * Relays NASDAQ's option-chain JSON (no CORS of its own). Returns the FULL chain
+ * (all expirations) in one call; the app parses expiry/side/strike from each
+ * row's drillDownURL (OCC symbol) and reads spot from data.lastTrade.
+ */
+async function handleNasdaq(url: URL): Promise<Response> {
+    const symbol = (url.searchParams.get("symbol") || "").toUpperCase().trim();
+    if (!symbol) return json({ error: "missing symbol" }, 400);
+    const assetclass = (url.searchParams.get("assetclass") || "stocks").toLowerCase();
+    const target = `https://api.nasdaq.com/api/quote/${encodeURIComponent(symbol)}` +
+        `/option-chain?assetclass=${encodeURIComponent(assetclass)}&limit=10000&fromdate=all`;
+    logProxy("NASDAQ", `${url.pathname}?symbol=${symbol}`, target);
+    const res = await fetch(target, {
+        headers: { "User-Agent": UA, Accept: "application/json", "Accept-Language": "en-US,en;q=0.9" },
+    });
     return new Response(await res.text(), {
         status: res.status,
         headers: { "Content-Type": "application/json", ...CORS },
@@ -127,6 +162,7 @@ async function handleOptions(url: URL): Promise<Response> {
         y.searchParams.set("date", ts);
     }
 
+    logProxy("YAHOO", `${url.pathname}?symbol=${symbol}${date ? `&date=${date}` : ""}`, y.toString());
     const res = await fetch(y.toString(), {
         headers: { "User-Agent": UA, Cookie: s.cookies, Accept: "application/json" },
     });
@@ -157,13 +193,19 @@ Bun.serve({
             try { return await handleCboe(url); }
             catch (e) { return json({ error: String(e) }, 502); }
         }
+        if (url.pathname === "/api/nasdaq") {
+            try { return await handleNasdaq(url); }
+            catch (e) { return json({ error: String(e) }, 502); }
+        }
         if (url.pathname === "/" || url.pathname === "/health") {
-            return json({ ok: true, service: "options-desk-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL"] });
+            return json({ ok: true, service: "options-desk-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/nasdaq?symbol=AAPL"] });
         }
         return json({ error: "not found" }, 404);
     },
 });
 
 console.log(`\n🚀 Options Desk proxy running at http://localhost:${PORT}`);
-console.log(`   Yahoo: http://localhost:${PORT}/api/options?symbol=AAPL`);
-console.log(`   CBOE : http://localhost:${PORT}/api/cboe?symbol=AAPL   (indices: _SPX, _VIX)\n`);
+console.log(`   Yahoo  | http://localhost:${PORT}/api/options?symbol=AAPL`);
+console.log(`   CBOE   | http://localhost:${PORT}/api/cboe?symbol=AAPL   (indices: _SPX, _VIX)`);
+console.log(`   NASDAQ | http://localhost:${PORT}/api/nasdaq?symbol=AAPL`);
+console.log(`   (relay logs below: "$proxy | $localPath -> $remoteUrl")\n`);
