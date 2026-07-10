@@ -29,14 +29,14 @@ name: Update options data
 on:
   schedule:
     # The script is resumable, so more runs simply grow the cache faster.
-    - cron: "2 0,8,16 * * 0-3"    # Mon-Thu: 00:02, 08:02, 16:02
-    - cron: "3 1,9,17 * * 1-4"    # Tue-Fri: 01:03, 09:03, 17:03
-    - cron: "5 2,10,18 * * 2-5"   # Wed-Sat: 02:05, 10:05, 18:05
-    - cron: "8 3,11,19 * * 3-6"   # Thu-Sun: 03:08, 11:08, 19:08
-    - cron: "13 4,12,20 * * 0-3"  # Mon-Thu: 04:13, 12:13, 20:13
-    - cron: "21 5,13,21 * * 1-4"  # Tue-Fri: 05:21, 13:21, 21:21
-    - cron: "34 6,14,22 * * 2-5"  # Wed-Sat: 06:34, 14:34, 22:03
-    - cron: "55 7,15,23 * * 3-6"  # Thu-Sun: 07:55, 15:55, 23:04
+    - cron: "2 0,8,16 * * 0-6"    # Mon-Thu: 00:02, 08:02, 16:02
+    - cron: "3 1,9,17 * * 0-6"    # Tue-Fri: 01:03, 09:03, 17:03
+    - cron: "5 2,10,18 * * 0-6"   # Wed-Sat: 02:05, 10:05, 18:05
+    - cron: "8 3,11,19 * * 0-6"   # Thu-Sun: 03:08, 11:08, 19:08
+    - cron: "13 4,12,20 * * 0-6"  # Mon-Thu: 04:13, 12:13, 20:13
+    - cron: "21 5,13,21 * * 0-6"  # Tue-Fri: 05:21, 13:21, 21:21
+    - cron: "34 6,14,22 * * 0-6"  # Wed-Sat: 06:34, 14:34, 22:03
+    - cron: "55 7,15,23 * * 0-6"  # Thu-Sun: 07:55, 15:55, 23:04
   workflow_dispatch: {} # allow manual runs from the Actions tab
 
 permissions:
