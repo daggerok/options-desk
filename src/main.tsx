@@ -23,6 +23,24 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry — NEVER delete history):
  * ---------------------------------------------------------------------------
+ * v0.9.23 - Fix two expand bugs (both rooted in centerStrike timing):
+ *          - BUG: clicking a COLLAPSED header while scrolled down only flipped
+ *            the chevron; the section didn't appear. ROOT CAUSE: centerStrike ran
+ *            a ONE-SHOT requestAnimationFrame, but an expanding section mounts its
+ *            rows a couple of renders later (the `rendered` state flips in an
+ *            effect, then staggered rows paint). The rAF found no ATM row and
+ *            bailed, so the (now-rendered) desk was never scrolled into view — it
+ *            sat above the fold. FIX: centerStrike now RETRIES across frames until
+ *            the ATM row exists (and nudges again until the scroll delta is ~0),
+ *            so expand reliably lands on the strike whether the section was
+ *            already open or just opening.
+ *          - BUG: scrolling back UP re-expanded upper sections at the BEGINNING
+ *            of their data (and with no visible animation, since it happened off
+ *            screen). FIX: the auto UP-expand branch now CENTERS the re-expanded
+ *            section on its current strike (via centerStrike) instead of merely
+ *            anchoring its bar — symmetric with load / manual-click behavior. A
+ *            `suppressAuto` guard stops that programmatic scroll from being read
+ *            as a user "scroll down" and re-collapsing what we just opened.
  * v0.9.22 - AUTO scroll-driven collapse/expand for multi-expiration chains:
  *          - When multiple expirations are loaded, scrolling DOWN now auto-
  *            collapses each earlier section once you've fully scrolled past it
@@ -2406,14 +2424,27 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
     /**
      * Scroll so the ATM row of `exp` sits in the vertical middle of the desk.
      * Accounts for the sticky expiration-bar pile above the section so the strike
-     * lands in the visible center, not underneath the pinned headers. Runs on the
-     * next animation frame so it fires AFTER expand layout/animation settles.
+     * lands in the visible center, not underneath the pinned headers.
+     *
+     * IMPORTANT: when a section is EXPANDING from collapsed, its rows are NOT in
+     * the DOM yet on the next frame — ExpirationSection mounts them a couple of
+     * renders later (the `rendered` state flips in an effect, then the staggered
+     * rows paint). So we RETRY across animation frames until the ATM row actually
+     * exists (bug: clicking a collapsed header only flipped the chevron because
+     * the one-shot rAF found no row and bailed, leaving the desk off-screen).
      */
-    const centerStrike = useCallback((exp: string) => {
-        requestAnimationFrame(() => {
+    const centerStrike = useCallback((exp: string, onSettled?: () => void) => {
+        let tries = 0;
+        const attempt = () => {
             const container = scrollRef.current;
             const row = atmRefs.current.get(exp);
-            if (!container || !row) return;
+            if (!container) { onSettled?.(); return; }
+            if (!row) {
+                // Row not mounted yet (section still expanding): retry a few frames.
+                if (tries++ < 30) requestAnimationFrame(attempt);
+                else onSettled?.();
+                return;
+            }
             const cRect = container.getBoundingClientRect();
             const rRect = row.getBoundingClientRect();
             // Sticky pile height above this section (bars stack at index*--od-bar).
@@ -2424,8 +2455,14 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
             const usableTop = cRect.top + pile;
             const usableCenter = usableTop + (cRect.bottom - usableTop) / 2;
             const rowCenter = rRect.top + rRect.height / 2;
-            container.scrollTop += rowCenter - usableCenter;
-        });
+            const delta = rowCenter - usableCenter;
+            container.scrollTop += delta;
+            // If the row was far off-screen it may still be settling (staggered
+            // fade-in changes heights); nudge once more next frame to land exact.
+            if (Math.abs(delta) > 1 && tries++ < 30) requestAnimationFrame(attempt);
+            else onSettled?.();
+        };
+        requestAnimationFrame(attempt);
     }, [sections]);
 
     /**
@@ -2522,6 +2559,15 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
     const collapsedRef = useRef(collapsed);
     useEffect(() => { collapsedRef.current = collapsed; }, [collapsed]);
     const lastScrollTop = useRef(0);
+    // When TRUE, the scroll handler ignores auto recompute — set while we are
+    // PROGRAMMATICALLY scrolling to center a just-expanded section, so that our
+    // own scroll isn't mistaken for a user "scroll down" and doesn't re-collapse
+    // (or otherwise fight) the section we just opened on the way up.
+    const suppressAuto = useRef(false);
+    // Set to a section index by the UP-expand branch: after that section re-mounts
+    // its rows, a layout effect centers it on its strike (instead of anchoring the
+    // bar). -1 = nothing pending.
+    const expandUpIdx = useRef<number>(-1);
     // Anchor to restore after a prefix change so the view doesn't jump.
     const pendingAnchor = useRef<{ exp: string; viewportTop: number } | null>(null);
 
@@ -2559,11 +2605,14 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
             }
         } else if (dir < 0 && k > 0) {
             // UP: when scrolled to the very top with a collapsed prefix, expand the
-            // last-collapsed section (k-1) so its rows come back into view.
+            // last-collapsed section (k-1) so its rows come back into view. Instead
+            // of just anchoring the bar (which revealed the END of the section), we
+            // CENTER the re-expanded section on its current strike — same as a
+            // manual expand — so scrolling up feels symmetric with the initial
+            // load / manual-click behavior (fixes "opens at the beginning").
             if (st <= 1) {
-                anchorIdx = k;               // bar k is pinned at k*barPx right now
-                beforeTop = barVpTop(k) ?? k * barPx;
                 newK = k - 1;
+                expandUpIdx.current = newK; // ask the layout effect to center it
             }
         }
 
@@ -2575,15 +2624,36 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
 
         // Remember the anchor bar + its current viewport position; a layout effect
         // shifts scrollTop after the reflow so that bar stays visually put.
+        // (Skipped for the UP-expand case, which centers on the strike instead.)
         pendingAnchor.current = anchorIdx >= 0 && sections[anchorIdx]
             ? { exp: sections[anchorIdx].expiration, viewportTop: beforeTop }
             : null;
         setCollapsed(desired);
     }, [sections]);
 
-    // Restore the anchor after an AUTO prefix change so the view doesn't jump.
-    // (Manual toggles do their own scrolling and leave pendingAnchor null.)
+    // After an AUTO prefix change: either CENTER the re-expanded section on its
+    // strike (UP-expand), or restore the anchor bar so the view doesn't jump
+    // (DOWN-collapse). Manual toggles do their own scrolling and set neither.
     useLayoutEffect(() => {
+        // UP-expand: center the freshly re-expanded section on its current strike.
+        if (expandUpIdx.current >= 0) {
+            const idx = expandUpIdx.current;
+            expandUpIdx.current = -1;
+            pendingAnchor.current = null; // centering supersedes bar anchoring
+            const exp = sections[idx]?.expiration;
+            if (exp) {
+                // Suppress auto while we programmatically scroll so this doesn't
+                // read as a user "scroll down" and immediately re-collapse it.
+                suppressAuto.current = true;
+                centerStrike(exp, () => {
+                    const container = scrollRef.current;
+                    if (container) lastScrollTop.current = container.scrollTop;
+                    suppressAuto.current = false;
+                });
+            }
+            return;
+        }
+        // DOWN-collapse: keep the anchor bar visually put across the reflow.
         const a = pendingAnchor.current;
         if (!a) return;
         pendingAnchor.current = null;
@@ -2594,14 +2664,14 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
         const afterTop = bar.getBoundingClientRect().top - cTop;
         container.scrollTop += afterTop - a.viewportTop;
         lastScrollTop.current = container.scrollTop;
-    }, [collapsed]);
+    }, [collapsed, sections, centerStrike]);
 
     useEffect(() => {
         const c = scrollRef.current;
         if (!c) return;
         const onScroll = () => {
             recomputeActive();
-            if (autoMode) recomputeAuto();
+            if (autoMode && !suppressAuto.current) recomputeAuto();
         };
         c.addEventListener('scroll', onScroll, { passive: true });
         window.addEventListener('resize', onScroll);
