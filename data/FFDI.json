@@ -1,0 +1,1 @@
+{"symbol":"FFDI","updated":"2026-07-10T16:40:53.225199-04:00","underlyingPrice":32.46030044555664,"expirations":["2026-09-18"],"quotes":[{"symbol":"FFDI260918C00029000","expiration":"2026-09-18","side":"call","strike":29.0,"bid":1.95,"ask":5.5,"mid":3.725,"last":4.4,"volume":null,"openInterest":1.0,"iv":0.65039412109375,"delta":null,"gamma":null,"theta":null,"vega":null}]}
