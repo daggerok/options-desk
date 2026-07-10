@@ -1,0 +1,1 @@
+{"symbol":"GTPE","updated":"2026-07-10T17:20:29.034348-04:00","underlyingPrice":60.98590087890625,"expirations":["2026-09-18"],"quotes":[{"symbol":"GTPE260918C00060000","expiration":"2026-09-18","side":"call","strike":60.0,"bid":0.1,"ask":4.9,"mid":2.5,"last":2.0,"volume":null,"openInterest":3.0,"iv":0.4128476684570312,"delta":null,"gamma":null,"theta":null,"vega":null}]}
