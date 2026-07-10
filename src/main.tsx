@@ -23,6 +23,21 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry — NEVER delete history):
  * ---------------------------------------------------------------------------
+ * v0.9.25 - FOCUS-ON-CLICK for multi-expiration desks (BDD requested):
+ *          - GIVEN 4 expirations loaded and scrolled to the latest (4th),
+ *            WHEN user clicks any date bar above (2nd or 3rd) in the sticky pile,
+ *            THEN: (1) the CURRENT active expiration (e.g. 4th, the one in view)
+ *            is collapsed — chevron flips v -> > — (2) the CLICKED expiration is
+ *            expanded (if it was collapsed) and becomes the ONLY expanded one
+ *            when many (>1) were expanded (smart exclusive mode per user choice),
+ *            otherwise just swaps active <-> clicked, (3) view scrolls to the
+ *            vertical middle where the ATM strike is (centerStrike, accounts for
+ *            the sticky pile). If the clicked bar is ALREADY expanded, it still
+ *            collapses the current active and scrolls to its ATM (scroll-and-
+ *            collapse). Clicking the active bar itself still toggles collapse.
+ *          - Implementation: rewritten toggleOne() in ChainTable to detect
+ *            activeExp vs clicked exp, compute expandedCount, perform exclusive
+ *            collapse when >1 expanded, else swap, then centerStrike().
  * v0.9.24 - REMOVE the scroll-driven auto collapse/expand feature entirely (user
  *          request). Collapse/expand is now PURELY MANUAL: per-section header
  *          click and Expand all / Collapse all. Deleted: the `autoMode` state,
@@ -2489,23 +2504,54 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
         container.scrollTo({ top: target, behavior: 'smooth' });
     }, [sections]);
 
+    /**
+     * Focus-on-click (v0.9.25 BDD):
+     * GIVEN 4 expirations loaded and user scrolled to latest (4th),
+     * WHEN clicking any date bar above (2nd/3rd) in the sticky pile,
+     * THEN:
+     *  - current active expiration collapses (v -> >)
+     *  - clicked expiration expands (and, when many >1 were expanded, becomes
+     *    the ONLY expanded one — smart exclusive per user choice)
+     *  - view scrolls to ATM strike in the vertical middle (centerStrike)
+     * If clicked is already expanded but not active, it still collapses current
+     * active and scrolls to its ATM. Clicking the active bar itself still toggles.
+     */
     const toggleOne = useCallback((exp: string) => {
+        // If clicking a different expiration than the active one -> focus it.
+        if (exp !== activeExp) {
+            const expandedCount = sections.filter((s) => !collapsed.has(s.expiration)).length;
+            if (expandedCount > 1) {
+                // Smart: many expanded -> exclusive, only clicked stays open.
+                // This satisfies "collapse current date (4th) and expand clicked"
+                // plus cleans up the other expanded ones for a focused view.
+                setCollapsed(new Set(sections.map((s) => s.expiration).filter((e) => e !== exp)));
+            } else {
+                // Only current active is expanded (or all collapsed): swap.
+                setCollapsed((prev) => {
+                    const next = new Set(prev);
+                    if (activeExp) next.add(activeExp); // collapse current
+                    next.delete(exp); // expand clicked
+                    return next;
+                });
+            }
+            setActiveExp(exp);
+            centerStrike(exp);
+            return;
+        }
+        // Clicking the active expiration itself -> toggle collapse/expand.
         let willExpand = false;
         setCollapsed((prev) => {
             const next = new Set(prev);
             if (next.has(exp)) { next.delete(exp); willExpand = true; } else { next.add(exp); }
             return next;
         });
-        setActiveExp(exp); // highlight the header actually clicked
+        setActiveExp(exp);
         if (willExpand) {
-            // Expanding: bring this section's current strike to the center.
             centerStrike(exp);
         } else {
-            // Collapsing: after the close animation removes the rows (~180ms),
-            // scroll the now-squashed bar to its pinned slot so it stays in view.
             window.setTimeout(() => scrollBarToPinned(exp), 200);
         }
-    }, [centerStrike, scrollBarToPinned]);
+    }, [activeExp, collapsed, sections, centerStrike, scrollBarToPinned]);
     const toggleAll = useCallback(() => {
         setCollapsed((prev) => (
             sections.every((s) => prev.has(s.expiration)) ? new Set() : new Set(sections.map((s) => s.expiration))
