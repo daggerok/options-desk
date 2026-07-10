@@ -23,6 +23,24 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry — NEVER delete history):
  * ---------------------------------------------------------------------------
+ * v0.9.22 - AUTO scroll-driven collapse/expand for multi-expiration chains:
+ *          - When multiple expirations are loaded, scrolling DOWN now auto-
+ *            collapses each earlier section once you've fully scrolled past it
+ *            (only its pinned header bar remains in the top pile); scrolling UP
+ *            auto-expands them again. The collapsed set is always a PREFIX
+ *            [0..k-1]; the LAST section never auto-collapses. View is ANCHORED
+ *            across each prefix change so the scrollbar doesn't jump; the UP
+ *            expand triggers when scrollTop reaches the top with a collapsed
+ *            prefix, restoring that section's height so you can keep scrolling up.
+ *          - AUTO-MODE lifecycle (per user spec): ON by default right after a
+ *            Load (new symbol OR a different set of loaded expirations resets it
+ *            to fully-expanded + auto ON). It turns OFF — and stays off until the
+ *            next Load — the moment the user takes ANY manual collapse action:
+ *            clicking a single header (toggleOne) OR Expand all / Collapse all
+ *            (toggleAll). So manual layout is never fought by the scroll logic.
+ *          - Clicking a collapsed header still expands it AND jumps to that
+ *            section's current (ATM) strike (centerStrike), satisfying "expand →
+ *            land on the money, not the top of the data".
  * v0.9.20 - Static cache: replace the vague "Bad static data" with ACTIONABLE
  *          diagnostics. The old code did `await res.json().catch(() => null)`,
  *          which swallowed the real cause. Root cause in the wild: a dev/preview
@@ -420,7 +438,7 @@
  */
 
 // @ts-ignore -- resolved by the Vite/Bun build toolchain (see ENVIRONMENT above)
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
 
@@ -2352,7 +2370,23 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
     // new chain is expanded too. (See the v0.9.16 note above loadCollapsed's
     // removal for the rationale.)
     const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-    useEffect(() => { setCollapsed(new Set()); }, [symbol]);
+
+    // AUTO-MODE: when ON, scrolling DOWN auto-collapses each section you've fully
+    // scrolled past (only its header stays pinned in the pile) and scrolling UP
+    // auto-expands them again. It is ON right after a Load and turns OFF (until
+    // the next Load) as soon as the user takes ANY manual collapse action —
+    // clicking a single header, or Expand all / Collapse all. (Per the user's
+    // spec: manual actions "pin" the layout; only a fresh Load re-enables auto.)
+    const [autoMode, setAutoMode] = useState<boolean>(true);
+
+    // A fresh chain (new symbol OR a different set of loaded expirations) resets
+    // everything: fully expanded + auto-mode back ON.
+    const expKeyReset = sections.map((s) => s.expiration).join(',');
+    useEffect(() => {
+        setCollapsed(new Set());
+        setAutoMode(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [symbol, expKeyReset]);
 
     const allCollapsed = sections.length > 0 && sections.every((s) => collapsed.has(s.expiration));
 
@@ -2418,6 +2452,9 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
     }, [sections]);
 
     const toggleOne = useCallback((exp: string) => {
+        // Any manual single-header toggle is an explicit user action: disable the
+        // scroll-driven auto collapse/expand until the next Load.
+        setAutoMode(false);
         let willExpand = false;
         setCollapsed((prev) => {
             const next = new Set(prev);
@@ -2435,6 +2472,8 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
         }
     }, [centerStrike, scrollBarToPinned]);
     const toggleAll = useCallback(() => {
+        // Expand all / Collapse all is also a manual action -> lock auto-mode off.
+        setAutoMode(false);
         setCollapsed((prev) => (
             sections.every((s) => prev.has(s.expiration)) ? new Set() : new Set(sections.map((s) => s.expiration))
         ));
@@ -2464,14 +2503,110 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
         setActiveExp(current);
     }, [sections]);
 
+    // ---- AUTO scroll-driven collapse / expand ----
+    // When auto-mode is ON (default right after a Load), scrolling DOWN collapses
+    // each earlier section once you've fully scrolled past it (only its pinned
+    // header bar stays in the top pile), and scrolling UP expands it again. The
+    // collapsed set is always a PREFIX [0..k-1] of the sections (you collapse from
+    // the top as you go down). The LAST section never auto-collapses (nothing
+    // below it to reveal). Manual actions (single toggle / Expand all / Collapse
+    // all) switch autoMode off, so this logic is inert then.
+    //
+    // The tricky part is that collapsing/expanding sections ABOVE the fold changes
+    // total height and would make the native scrollbar JUMP. We fix that by
+    // ANCHORING: when we change the prefix, we shift scrollTop by the same amount
+    // the content above moved, so the visible content stays put. Because a
+    // collapsed prefix removes real scroll range, the UP-expand trigger fires when
+    // scrollTop reaches the top (0) with k>0 — expanding one section restores its
+    // height and lets the user keep scrolling up. This is symmetric/reversible.
+    const collapsedRef = useRef(collapsed);
+    useEffect(() => { collapsedRef.current = collapsed; }, [collapsed]);
+    const lastScrollTop = useRef(0);
+    // Anchor to restore after a prefix change so the view doesn't jump.
+    const pendingAnchor = useRef<{ exp: string; viewportTop: number } | null>(null);
+
+    const recomputeAuto = useCallback(() => {
+        const container = scrollRef.current;
+        if (!container) return;
+        const barPx = parseFloat(getComputedStyle(container).getPropertyValue('--od-bar')) * 16 || 30;
+        const cTop = container.getBoundingClientRect().top;
+        const st = container.scrollTop;
+        const dir = Math.sign(st - lastScrollTop.current);
+        lastScrollTop.current = st;
+
+        // Current prefix length k (collapsed set is exactly sections[0..k-1]).
+        let k = 0;
+        while (k < sections.length && collapsedRef.current.has(sections[k].expiration)) k++;
+
+        // Viewport top of a bar by index, from its live rect.
+        const barVpTop = (i: number): number | null => {
+            const b = barRefs.current.get(sections[i]?.expiration);
+            return b ? b.getBoundingClientRect().top - cTop : null;
+        };
+
+        let newK = k;
+        let anchorIdx = -1;
+        let beforeTop = 0;
+
+        if (dir >= 0 && k < sections.length - 1) {
+            // DOWN: collapse section k once the NEXT bar (k+1) has reached its
+            // pinned slot at (k+1)*barPx — meaning section k's body is gone.
+            const nextTop = barVpTop(k + 1);
+            if (nextTop != null && nextTop <= (k + 1) * barPx + 1) {
+                anchorIdx = k + 1;
+                beforeTop = nextTop;
+                newK = k + 1;
+            }
+        } else if (dir < 0 && k > 0) {
+            // UP: when scrolled to the very top with a collapsed prefix, expand the
+            // last-collapsed section (k-1) so its rows come back into view.
+            if (st <= 1) {
+                anchorIdx = k;               // bar k is pinned at k*barPx right now
+                beforeTop = barVpTop(k) ?? k * barPx;
+                newK = k - 1;
+            }
+        }
+
+        if (newK === k) return; // no change
+
+        // Build the new prefix collapsed set.
+        const desired = new Set<string>();
+        for (let i = 0; i < newK; i++) desired.add(sections[i].expiration);
+
+        // Remember the anchor bar + its current viewport position; a layout effect
+        // shifts scrollTop after the reflow so that bar stays visually put.
+        pendingAnchor.current = anchorIdx >= 0 && sections[anchorIdx]
+            ? { exp: sections[anchorIdx].expiration, viewportTop: beforeTop }
+            : null;
+        setCollapsed(desired);
+    }, [sections]);
+
+    // Restore the anchor after an AUTO prefix change so the view doesn't jump.
+    // (Manual toggles do their own scrolling and leave pendingAnchor null.)
+    useLayoutEffect(() => {
+        const a = pendingAnchor.current;
+        if (!a) return;
+        pendingAnchor.current = null;
+        const container = scrollRef.current;
+        const bar = barRefs.current.get(a.exp);
+        if (!container || !bar) return;
+        const cTop = container.getBoundingClientRect().top;
+        const afterTop = bar.getBoundingClientRect().top - cTop;
+        container.scrollTop += afterTop - a.viewportTop;
+        lastScrollTop.current = container.scrollTop;
+    }, [collapsed]);
+
     useEffect(() => {
         const c = scrollRef.current;
         if (!c) return;
-        const onScroll = () => recomputeActive();
+        const onScroll = () => {
+            recomputeActive();
+            if (autoMode) recomputeAuto();
+        };
         c.addEventListener('scroll', onScroll, { passive: true });
         window.addEventListener('resize', onScroll);
         return () => { c.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); };
-    }, [recomputeActive]);
+    }, [recomputeActive, recomputeAuto, autoMode]);
 
     useEffect(() => {
         setActiveExp((cur) => (cur && sections.some((s) => s.expiration === cur)) ? cur : (sections[0]?.expiration ?? ''));
@@ -2481,12 +2616,12 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
     // After data loads (or the symbol / selected expirations change), bring the
     // FIRST expiration's current strike to the vertical center so the user lands
     // on the money instead of at the top of a long chain. Keyed on symbol +
-    // the joined expiration list so it re-centers whenever the loaded set changes.
-    const expKey = sections.map((s) => s.expiration).join(',');
+    // the joined expiration list (expKeyReset, declared above) so it re-centers
+    // whenever the loaded set changes.
     useEffect(() => {
         if (sections.length) centerStrike(sections[0].expiration);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [symbol, expKey]);
+    }, [symbol, expKeyReset]);
 
     return (
         <div style={{ ['--od-grid' as string]: GRID_COLS }}>
