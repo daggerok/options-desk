@@ -22,6 +22,14 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry):
  * ---------------------------------------------------------------------------
+ * v0.9.17 - .od-sec set to `display: contents` — the sticky-bar PILE fix. As a
+ *          block wrapper it was the containing block of its sticky .od-bar and
+ *          CLIPPED it to the section, so a bar scrolled AWAY with its section
+ *          instead of accumulating at the top (leaving a "hole" where the prior
+ *          section's rows showed through, and stacking multiple date bars failed).
+ *          With `display: contents` the wrapper makes no box: every bar/sub-header/
+ *          row becomes a direct child of .od-desk, so each bar's containing block
+ *          is the whole desk and the bars pile up correctly while scrolling.
  * v0.9.15 - Desk moved from <table> to DIV/CSS-GRID (fixes see-through sticky
  *          headers on scroll for good). New rules: .od-desk / .od-sec / .od-bar
  *          (sticky, accumulates via inline top=index*--od-bar) / .od-sub (sticky
@@ -392,6 +400,18 @@ body {
     display: grid;
     grid-template-columns: var(--od-grid);
     align-items: center;
+}
+
+/* Section wrapper: `display: contents` is ESSENTIAL. Without it the wrapper is a
+ * block box that becomes the CONTAINING BLOCK of its sticky expiration bar, which
+ * CLIPS the bar to the section's own bounds — so when the section scrolls off the
+ * top the bar leaves with it (instead of piling at the top), leaving a "hole"
+ * where the previous section's last rows show through above the current bar. With
+ * `display: contents` the wrapper generates NO box: the bar, sub-headers and rows
+ * become direct children of .od-desk, so every bar's containing block is the whole
+ * desk and the bars correctly ACCUMULATE at the top as you scroll. */
+.od-sec {
+    display: contents;
 }
 
 /* Expiration bar — ALWAYS sticky, accumulates into a pile at the top. `top` and

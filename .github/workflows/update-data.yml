@@ -73,7 +73,10 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Stage the refreshed chains AND the no-options skiplist (so a ticker
+          # that has no options isn't re-fetched every run across CI runners).
           git add data/
+          [ -f scripts/no_options.json ] && git add scripts/no_options.json
           if git diff --staged --quiet; then
             echo "No data changes."
           else

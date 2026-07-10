@@ -23,6 +23,21 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry — NEVER delete history):
  * ---------------------------------------------------------------------------
+ * v0.9.17 - Sticky expiration-bar PILE fix (the "hole" bug):
+ *          - ROOT CAUSE: each sticky .od-bar lived inside its own .od-sec block
+ *            wrapper, which became the bar's CONTAINING BLOCK and CLIPPED it to
+ *            that section's bounds. So when a section scrolled off the top, its
+ *            bar left WITH it instead of accumulating in the top pile — leaving a
+ *            gap where the previous section's last rows showed through above the
+ *            current bar (and multiple date bars failed to stack). FIX: .od-sec is
+ *            now `display: contents` (see index.css) so it generates no box; every
+ *            bar's containing block becomes the whole .od-desk and the bars
+ *            correctly PILE UP as you scroll (earlier expirations stay pinned as
+ *            thin collapsed bars above the expanded one).
+ *          - Because .od-sec now has no box, the measurement ref moved from the
+ *            wrapper onto the sticky BAR element (barRefs), and active-section
+ *            tracking was rewritten to find the LAST bar that has reached its
+ *            pinned slot (the section whose content is on screen below the pile).
  * v0.9.16 - Always-expanded-on-load + center-strike + per-ticker static index:
  *          - Collapse/expand state is NO LONGER persisted to localStorage
  *            (removed COLLAPSE_KEY / loadCollapsed / saveCollapsed). A freshly
@@ -2097,7 +2112,10 @@ const ExpirationSection: React.FC<{
     collapsed: boolean;
     active: boolean;
     onToggle: () => void;
-    innerRef: (el: HTMLDivElement | null) => void;
+    /** Registers this section's sticky expiration BAR element (a real box we can
+     *  measure; the .od-sec wrapper is `display: contents` and has no box). Used
+     *  for active-section tracking. */
+    innerRef: (el: HTMLButtonElement | null) => void;
     /** Registers this section's ATM (at-the-money) row element so the desk can
      *  scroll it to the vertical center on load / expand (center-strike view). */
     atmRef: (el: HTMLDivElement | null) => void;
@@ -2130,10 +2148,15 @@ const ExpirationSection: React.FC<{
     const labelsTop = { top: `calc((${index} + 1) * var(--od-bar) + var(--od-hrow))`, zIndex: 30 } as React.CSSProperties;
 
     return (
-        <div ref={innerRef} data-exp={expiration} className="od-sec">
+        <div data-exp={expiration} className="od-sec">
             {/* Expiration bar — always sticky, accumulates into the top pile.
-                Whole bar is one toggle; only the chevron rotates (v / >). */}
+                Whole bar is one toggle; only the chevron rotates (v / >).
+                NOTE: the measurement ref lives HERE (on the bar), not on the
+                .od-sec wrapper: the wrapper is `display: contents` (no box), so
+                its getBoundingClientRect() would be all-zeros. The bar is a real
+                box we can measure to know which section is pinned/active. */}
             <button
+                ref={innerRef}
                 type="button"
                 onClick={onToggle}
                 aria-expanded={!collapsed}
@@ -2283,20 +2306,28 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
     }, [sections]);
 
     // ---- Active-section tracking ----
-    const bodyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    // barRefs holds each section's sticky expiration bar (a real, measurable box;
+    // the .od-sec wrapper is display:contents so it has none). The ACTIVE section
+    // is the LAST one whose bar has already reached its pinned slot in the top
+    // pile — i.e. the section whose content is currently on screen below the pile.
+    const barRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
     const recomputeActive = useCallback(() => {
         const container = scrollRef.current;
         if (!container) return;
         const barPx = parseFloat(getComputedStyle(container).getPropertyValue('--od-bar')) * 16 || 30;
         const top = container.getBoundingClientRect().top;
         let current = '';
+        // A bar is "pinned" when it has scrolled up to its accumulated top offset
+        // (index * barPx). Walk in order; the last pinned bar is the active one,
+        // because everything above it is already stacked in the pile.
         sections.forEach((s, i) => {
-            const el = bodyRefs.current.get(s.expiration);
-            if (!el) return;
-            const rel = el.getBoundingClientRect().bottom - top;
-            if (rel > (i + 1) * barPx) { if (!current) current = s.expiration; }
+            const bar = barRefs.current.get(s.expiration);
+            if (!bar) return;
+            const rel = bar.getBoundingClientRect().top - top;
+            // Small tolerance so the very-first (top=0) bar counts as pinned.
+            if (rel <= i * barPx + 1) current = s.expiration;
         });
-        if (!current && sections.length) current = sections[sections.length - 1].expiration;
+        if (!current && sections.length) current = sections[0].expiration;
         setActiveExp(current);
     }, [sections]);
 
@@ -2360,7 +2391,7 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
                             collapsed={collapsed.has(s.expiration)}
                             active={activeExp === s.expiration}
                             onToggle={() => toggleOne(s.expiration)}
-                            innerRef={(el) => { if (el) bodyRefs.current.set(s.expiration, el); else bodyRefs.current.delete(s.expiration); }}
+                            innerRef={(el) => { if (el) barRefs.current.set(s.expiration, el); else barRefs.current.delete(s.expiration); }}
                             atmRef={(el) => { if (el) atmRefs.current.set(s.expiration, el); else atmRefs.current.delete(s.expiration); }}
                         />
                     ))}

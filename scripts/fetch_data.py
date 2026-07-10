@@ -11,7 +11,28 @@
 #
 # PROJECT: Options Desk — SMART build-time data fetcher
 #
-# WHAT IT DOES (v4 — missing-first then oldest-first rotation, per-ticker index):
+# CHANGELOG (append newest at top; keep every entry — NEVER delete history):
+#   v5 - Class-share symbols + no-options skiplist + updated-file report:
+#        * SYMBOL ALIASES / canonicalization (_canonical): the NASDAQ screener
+#          spells class shares "BRK.B" / "BRK/B" but Yahoo/yfinance wants the DASH
+#          form "BRK-B". Symbols are now canonicalized everywhere (universe, file
+#          name, index key, skiplist) so BRK.B & co. actually fetch. Explicit
+#          SYMBOL_ALIASES map (+ SYMBOL_ALIASES env) covers irregular cases; the
+#          class-share "^"-only filter no longer drops "." / "/" tickers.
+#        * NO-OPTIONS SKIPLIST (scripts/no_options.json): a ticker that genuinely
+#          returns no chain is recorded with the date checked and SKIPPED on
+#          future runs (re-checked after SKIP_RECHECK_DAYS, default 30), so we
+#          stop wasting the budget re-fetching dead tickers. A real network/source
+#          ERROR is distinguished from "no options" (only errors count toward the
+#          rate-limit streak; only true no-option results are skiplisted). A
+#          symbol that later lists options is auto-removed from the skiplist.
+#        * index.json no longer churns: it is rewritten ONLY when the per-ticker
+#          `files` map actually changes (so `generated` isn't bumped on no-op runs).
+#        * The run now PRINTS the exact list of files it wrote ("UPDATED FILES")
+#          so you know precisely what to copy & replace.
+#   v4 - Missing-first then oldest-first rotation, per-ticker index (see below).
+#
+# WHAT IT DOES (v5 — canonical symbols, skiplist, then v4 queue + per-ticker index):
 #   1. Builds a UNIVERSE of US stocks (NASDAQ / NYSE / NYSE American / NYSE Arca)
 #      sorted DESC by market cap, pulled live from the NASDAQ screener (no key).
 #      Filters to the Microcap floor (>= $10M) so it walks the tiers
@@ -78,8 +99,12 @@
 #   UNIVERSE_SIZE    default 6000    how many top-market-cap symbols to consider.
 #   MIN_MARKET_CAP   default 1e7     Microcap floor in USD (drops nano-caps).
 #   MAX_EXPIRATIONS  default 12      expirations stored per ticker (keeps JSON small)
-#   RATE_LIMIT_HITS  default 3    consecutive failures that mean "we're blocked".
+#   RATE_LIMIT_HITS  default 3    consecutive ERRORS that mean "we're blocked".
 #   REQUEST_SLEEP    default 0.6  seconds between fetches (be polite to Yahoo).
+#   SKIP_RECHECK_DAYS default 30  days before a no-options ticker is re-checked.
+#   SYMBOL_ALIASES   default ""   extra "SCREENER=YAHOO" aliases, comma-separated
+#                                 (e.g. "BRK.B=BRK-B,FOO=BAR"). Class shares are
+#                                 auto-canonicalized ("."/"/" -> "-") regardless.
 # =============================================================================
 
 import json
@@ -114,6 +139,31 @@ MIN_MARKET_CAP = float(os.environ.get("MIN_MARKET_CAP", "10000000"))
 MAX_EXPIRATIONS = int(os.environ.get("MAX_EXPIRATIONS", "12"))
 RATE_LIMIT_HITS = int(os.environ.get("RATE_LIMIT_HITS", "3"))
 REQUEST_SLEEP = float(os.environ.get("REQUEST_SLEEP", "0.6"))
+# Days before a symbol on the "no options" skiplist is re-checked. A ticker that
+# yields no chain is remembered so we DON'T keep re-fetching it every run, but we
+# re-try after this many days in case it later lists options (self-healing).
+SKIP_RECHECK_DAYS = int(os.environ.get("SKIP_RECHECK_DAYS", "30"))
+
+# ---- Ticker symbol aliases --------------------------------------------------
+# Some data sources use a different symbol spelling than the NASDAQ screener.
+# yfinance/Yahoo uses a DASH for class shares (e.g. screener "BRK.B" -> Yahoo
+# "BRK-B"). Explicit aliases below win; otherwise _canonical() rewrites any "."
+# or "/" separator to "-". Extend via the SYMBOL_ALIASES env: "BRK.B=BRK-B,FOO=BAR".
+SYMBOL_ALIASES = {
+    "BRK.B": "BRK-B",
+    "BRK/B": "BRK-B",
+    "BRKB":  "BRK-B",
+    "BF.B":  "BF-B",
+    "BF/B":  "BF-B",
+    "HEI.A": "HEI-A",
+    "LEN.B": "LEN-B",
+}
+# Merge any user-provided aliases from the environment.
+for _pair in os.environ.get("SYMBOL_ALIASES", "").split(","):
+    if "=" in _pair:
+        _k, _v = _pair.split("=", 1)
+        if _k.strip() and _v.strip():
+            SYMBOL_ALIASES[_k.strip().upper()] = _v.strip().upper()
 
 # Small, dependable fallback universe (already market-cap-ish ordered) used only
 # if the live NASDAQ screener cannot be reached.
@@ -123,6 +173,33 @@ FALLBACK_UNIVERSE = [
     "NFLX", "BAC", "ORCL", "CRM", "AMD", "KO", "PEP", "TMUS", "ADBE", "CVX",
     "QQQ", "SPY", "IWM", "DIA",  # popular ETFs traders watch
 ]
+
+
+def _canonical(sym):
+    """
+    Normalize a screener/user symbol to the spelling the data source (Yahoo)
+    expects, so we don't fail on class-share tickers like BRK.B.
+      * Explicit SYMBOL_ALIASES win (e.g. BRK.B -> BRK-B).
+      * Otherwise class-share separators are converted: NASDAQ screener uses "."
+        or "/" for share classes (BRK.B, BRK/B) while Yahoo uses "-" (BRK-B).
+    The canonical form is used EVERYWHERE (universe, file name, index key,
+    missing-check) so a ticker is fetched, named, and skipped consistently.
+    """
+    sym = sym.upper().strip()
+    if sym in SYMBOL_ALIASES:
+        return SYMBOL_ALIASES[sym]
+    return sym.replace(".", "-").replace("/", "-")
+
+
+def _dedupe(seq):
+    """Order-preserving de-duplication (canonicalization can collapse dupes)."""
+    seen = set()
+    out = []
+    for s in seq:
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
 
 
 def _num(v):
@@ -223,11 +300,11 @@ def load_universe():
     # Explicit override wins (kept for convenience / testing).
     override = os.environ.get("TICKERS")
     if override:
-        return [t.upper() for t in override.replace(",", " ").split() if t.strip()]
+        return _dedupe([_canonical(t) for t in override.replace(",", " ").split() if t.strip()])
 
     if requests is None:
         print("  (requests not installed; using fallback universe)")
-        return FALLBACK_UNIVERSE[:UNIVERSE_SIZE]
+        return _dedupe([_canonical(s) for s in FALLBACK_UNIVERSE])[:UNIVERSE_SIZE]
 
     # The unfiltered NASDAQ screener already spans ALL US exchanges
     # (NASDAQ / NYSE / NYSE American / NYSE Arca) in one response (~7k rows).
@@ -248,14 +325,16 @@ def load_universe():
             except ValueError:
                 return 0.0
 
-        # Keep real, optionable-looking tickers (drop warrants/units/odd chars)
-        # and enforce the Microcap floor (>= MIN_MARKET_CAP). Sort DESC by cap so
-        # runs walk Mega -> Large -> Mid -> Small -> Micro, top to bottom.
+        # Keep real, optionable-looking tickers and enforce the Microcap floor
+        # (>= MIN_MARKET_CAP). We DROP warrant/preferred rows carrying "^", but we
+        # KEEP class shares (BRK.B / BRK/B): _canonical() rewrites their separator
+        # to the Yahoo dash form (BRK-B) so yfinance can actually fetch them.
+        # Sort DESC by cap so runs walk Mega -> Large -> Mid -> Small -> Micro.
         clean = [x for x in rows if x.get("symbol")
-                 and "^" not in x["symbol"] and "/" not in x["symbol"]
+                 and "^" not in x["symbol"]
                  and cap(x) >= MIN_MARKET_CAP]
         clean.sort(key=cap, reverse=True)
-        syms = [x["symbol"].upper().strip() for x in clean]
+        syms = _dedupe([_canonical(x["symbol"]) for x in clean])
         if syms:
             # Tier breakdown (Mega 176B+, Large 36B+, Mid 6B+, Small 2B+, Micro 10M+).
             def tier(c):
@@ -272,7 +351,7 @@ def load_universe():
     except Exception as e:
         print(f"  ! NASDAQ screener failed ({e}); using fallback universe",
               file=sys.stderr)
-    return FALLBACK_UNIVERSE[:UNIVERSE_SIZE]
+    return _dedupe([_canonical(s) for s in FALLBACK_UNIVERSE])[:UNIVERSE_SIZE]
 
 
 # ---- Per-ticker fetch -------------------------------------------------------
@@ -369,6 +448,43 @@ def is_fresh(path):
     return _file_is_fresh(_file_updated(path))
 
 
+# ---- "No options" skiplist --------------------------------------------------
+# Tickers that returned NO option chain are recorded here so we don't waste the
+# per-run budget re-fetching them every time. Each entry stores the date we last
+# checked; after SKIP_RECHECK_DAYS we re-try (a ticker may start listing options
+# later). Kept OUTSIDE data/ so it isn't served to the app.
+SKIP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "no_options.json")
+
+
+def load_skiplist():
+    """Return {SYMBOL: 'YYYY-MM-DD last-checked'} of known no-option tickers."""
+    try:
+        with open(SKIP_PATH) as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_skiplist(skip):
+    """Persist the no-option skiplist (sorted for stable diffs)."""
+    try:
+        with open(SKIP_PATH, "w") as f:
+            json.dump({k: skip[k] for k in sorted(skip)}, f, indent=2)
+    except Exception as e:
+        print(f"  ! could not write skiplist: {e}", file=sys.stderr)
+
+
+def _skip_is_active(last_checked):
+    """True if a skiplist entry is still within its re-check window (skip it)."""
+    try:
+        d = datetime.strptime(str(last_checked)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return False
+    age = (datetime.now(timezone.utc).date() - d).days
+    return age < SKIP_RECHECK_DAYS
+
+
 # ---- Main loop --------------------------------------------------------------
 
 def _cached_symbols():
@@ -394,12 +510,19 @@ def build_work_queue(universe):
         across the whole cache rather than always hitting the biggest names.
 
     Files that are still FRESH today are excluded from BOTH phases (skipped).
+    Symbols on the active "no options" skiplist are also excluded (see
+    load_skiplist / SKIP_RECHECK_DAYS) so we don't keep retrying dead tickers.
     Returns (queue, n_missing, n_stale, n_fresh_skipped).
     """
     cached = _cached_symbols()
+    skip = load_skiplist()
+
+    def blocked(sym):
+        return sym in skip and _skip_is_active(skip[sym])
 
     # PHASE 1: missing universe symbols, in market-cap order (universe order).
-    missing = [s for s in universe if s not in cached]
+    # Exclude ones we already know have no options (within the re-check window).
+    missing = [s for s in universe if s not in cached and not blocked(s)]
 
     # PHASE 2: existing files that are stale (need refresh), oldest-updated first.
     #  We consider ALL cached files on disk (even ones no longer in the universe)
@@ -424,14 +547,18 @@ def main():
     universe = load_universe()
 
     queue, n_missing, n_stale, n_fresh = build_work_queue(universe)
+    skip = load_skiplist()
 
     fetched = 0        # NEW fetches performed this run
     consecutive_fail = 0
+    updated_files = []  # relative paths we wrote this run (reported at the end)
+    no_option_syms = []  # symbols newly added to the skiplist this run
 
     print(f"Smart fetch v4: budget={MAX_FETCHES} new, universe={len(universe)}, "
           f"today={_today_iso()}")
     print(f"  queue: {n_missing} missing (coverage) + {n_stale} stale (refresh, "
-          f"oldest-first); {n_fresh} fresh skipped.")
+          f"oldest-first); {n_fresh} fresh skipped; "
+          f"{len(skip)} on no-options skiplist.")
     if n_missing == 0 and n_stale:
         print("  coverage complete — cycling oldest files for refresh.")
 
@@ -443,37 +570,68 @@ def main():
         path = os.path.join(DATA_DIR, f"{sym}.json")
 
         # Fetch (missing OR stale -> overwrite). The queue already excludes fresh
-        # files, so no per-item freshness check is needed here.
+        # files, so no per-item freshness check is needed here. fetch_ticker
+        # returns None ONLY when the ticker genuinely has NO option chain; a real
+        # network/source error RAISES, so we can tell the two cases apart.
+        errored = False
         try:
             payload = fetch_ticker(sym)
         except Exception as e:
             payload = None
+            errored = True
             print(f"  ERROR {sym}: {e}", file=sys.stderr)
 
         if payload is None:
-            # No options for this symbol, or a failure. Treat repeated failures
-            # as a possible rate-limit / block and bail out early.
-            consecutive_fail += 1
-            print(f"  - {sym}: no data (fail streak {consecutive_fail})")
-            if consecutive_fail >= RATE_LIMIT_HITS:
-                print(f"  {RATE_LIMIT_HITS} consecutive failures — assuming "
-                      f"rate-limited/blocked. Stopping; will resume next run.")
-                break
+            if errored:
+                # A source/network failure. A streak likely means we're being
+                # rate-limited/blocked — bail out and resume next run. Do NOT
+                # skiplist (the ticker might be fine; it was a transient error).
+                consecutive_fail += 1
+                print(f"  ! {sym}: fetch error (fail streak {consecutive_fail})")
+                if consecutive_fail >= RATE_LIMIT_HITS:
+                    print(f"  {RATE_LIMIT_HITS} consecutive errors — assuming "
+                          f"rate-limited/blocked. Stopping; will resume next run.")
+                    break
+            else:
+                # Genuinely no options: remember it so we don't refetch every run
+                # (re-checked after SKIP_RECHECK_DAYS). Reset the error streak —
+                # this is a normal, expected outcome, not a block.
+                consecutive_fail = 0
+                skip[sym] = _today_iso()
+                no_option_syms.append(sym)
+                print(f"  - {sym}: no options — added to skiplist "
+                      f"(re-check in {SKIP_RECHECK_DAYS}d)")
             continue
 
         consecutive_fail = 0
+        # A ticker that used to be optionless now has data: drop it from skiplist.
+        skip.pop(sym, None)
         with open(path, "w") as f:
             json.dump(payload, f, separators=(",", ":"))
         fetched += 1
+        updated_files.append(os.path.relpath(path, os.path.dirname(DATA_DIR)))
         print(f"  + {sym}: {len(payload['quotes'])} quotes "
               f"({fetched}/{MAX_FETCHES})")
         time.sleep(REQUEST_SLEEP)  # be polite to the data source
 
-    write_index()
+    save_skiplist(skip)
+    index_changed = write_index()
+    if index_changed:
+        updated_files.append(os.path.relpath(
+            os.path.join(DATA_DIR, "index.json"), os.path.dirname(DATA_DIR)))
 
     total = len(_cached_symbols())
     print(f"Done. new={fetched}, missing_left={max(0, n_missing - fetched)}, "
-          f"total_cached={total}")
+          f"no_options_added={len(no_option_syms)}, total_cached={total}")
+
+    # ---- Report EXACTLY which files changed (so you know what to copy/replace) --
+    print("\n=== UPDATED FILES (copy & replace these) ===")
+    if updated_files:
+        for p in updated_files:
+            print(f"  * {p}")
+        print(f"  ({len(updated_files)} file(s) written this run)")
+    else:
+        print("  (none — everything was already fresh / skiplisted)")
 
 
 def write_index():
@@ -483,16 +641,34 @@ def write_index():
                   "generated": <ISO> }.
     Each ticker keeps ITS OWN `updated` (read from its file), so the manifest
     reflects real per-ticker freshness and unchanged tickers keep their old
-    timestamp — no single global `updated` that churns every run.
+    timestamp.
+
+    To avoid churn, the file is only REWRITTEN when the per-ticker `files` map
+    actually changed vs. what's on disk (so a run that fetched nothing leaves
+    index.json byte-for-byte untouched, and `generated` is NOT bumped). Returns
+    True if index.json was (re)written this call, else False.
     """
     files = {}
     for sym in sorted(_cached_symbols()):
         files[sym] = _file_updated(os.path.join(DATA_DIR, f"{sym}.json"))
-    with open(os.path.join(DATA_DIR, "index.json"), "w") as f:
+
+    index_path = os.path.join(DATA_DIR, "index.json")
+    try:
+        with open(index_path) as f:
+            prev = json.load(f)
+    except Exception:
+        prev = None
+
+    # Compare only the meaningful part (the per-ticker map); ignore `generated`.
+    if isinstance(prev, dict) and prev.get("files") == files:
+        return False
+
+    with open(index_path, "w") as f:
         json.dump(
             {"files": files, "count": len(files), "generated": _now_iso()},
             f, indent=2,
         )
+    return True
 
 
 if __name__ == "__main__":
