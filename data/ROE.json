@@ -1,0 +1,1 @@
+{"symbol":"ROE","updated":"2026-07-10T13:56:07.456120-04:00","underlyingPrice":42.470001220703125,"expirations":["2026-09-18"],"quotes":[{"symbol":"ROE260918C00036000","expiration":"2026-09-18","side":"call","strike":36.0,"bid":0.0,"ask":4.6,"mid":null,"last":4.1,"volume":null,"openInterest":2.0,"iv":1.0000000000000003e-05,"delta":null,"gamma":null,"theta":null,"vega":null}]}
