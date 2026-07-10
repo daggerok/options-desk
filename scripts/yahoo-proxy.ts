@@ -21,6 +21,10 @@
  *   - Provider "CBOE" calls:
  *       GET {base}/api/cboe?symbol=AAPL     (equities)   returns CBOE JSON as-is
  *       GET {base}/api/cboe?symbol=_SPX     (cash indices use the "_" prefix)
+ *   - Ticker suggestions for providers that expose a searchable universe call:
+ *       GET {base}/api/search?provider=yahoo&q=apple
+ *       GET {base}/api/search?provider=nasdaq&q=tesla
+ *       GET {base}/api/search?provider=cboe&q=spx
  *
  * DEPLOY (optional): the same logic works on any Node/Bun host or can be ported
  *   to a Cloudflare Worker (see scripts/cloudflare-worker.js) so it also works
@@ -148,6 +152,143 @@ async function handleNasdaq(url: URL): Promise<Response> {
     });
 }
 
+interface TickerSuggestion {
+    symbol: string;
+    name?: string;
+    exchange?: string;
+    source: string;
+    hasOptions: boolean;
+}
+
+const SEARCH_LIMIT = 24;
+const CBOE_SYMBOL_BOOK_URL = "https://cdn.cboe.com/api/global/delayed_quotes/symbol_book/symbol-book.json";
+const CBOE_SYMBOL_BOOK_TTL_MS = 6 * 60 * 60 * 1000;
+let cboeSymbolBook: { fetchedAt: number; rows: Array<{ name?: string; company_name?: string }> } | null = null;
+
+const CBOE_INDEX_SUGGESTIONS: TickerSuggestion[] = [
+    { symbol: "SPX", name: "S&P 500 Index options (CBOE _SPX)", exchange: "CBOE", source: "CBOE", hasOptions: true },
+    { symbol: "XSP", name: "Mini-SPX Index options (CBOE _XSP)", exchange: "CBOE", source: "CBOE", hasOptions: true },
+    { symbol: "VIX", name: "Cboe Volatility Index options (CBOE _VIX)", exchange: "CBOE", source: "CBOE", hasOptions: true },
+    { symbol: "NDX", name: "Nasdaq-100 Index options (CBOE _NDX)", exchange: "CBOE", source: "CBOE", hasOptions: true },
+    { symbol: "RUT", name: "Russell 2000 Index options (CBOE _RUT)", exchange: "CBOE", source: "CBOE", hasOptions: true },
+    { symbol: "DJX", name: "Dow Jones Industrial Average Index options (CBOE _DJX)", exchange: "CBOE", source: "CBOE", hasOptions: true },
+    { symbol: "OEX", name: "S&P 100 Index options (CBOE _OEX)", exchange: "CBOE", source: "CBOE", hasOptions: true },
+    { symbol: "VXN", name: "Nasdaq-100 Volatility Index options (CBOE _VXN)", exchange: "CBOE", source: "CBOE", hasOptions: true },
+];
+
+function normalizeSuggestionSymbol(v: unknown): string {
+    return String(v ?? "").trim().toUpperCase();
+}
+function isTickerLike(symbol: string): boolean {
+    return /^[A-Z][A-Z0-9.\-]{0,15}$/.test(symbol);
+}
+function rankSuggestion(query: string, symbol: string, name = ""): number | null {
+    const q = query.toUpperCase().trim();
+    const s = symbol.toUpperCase();
+    const n = name.toUpperCase();
+    if (!q) return 50;
+    if (s === q) return 0;
+    if (s.startsWith(q)) return 10 + Math.min(s.length, 20);
+    if (n.startsWith(q)) return 35 + Math.min(s.length, 20);
+    const si = s.indexOf(q);
+    if (si >= 0) return 60 + si + Math.min(s.length, 20);
+    const ni = n.indexOf(q);
+    if (ni >= 0) return 90 + ni + Math.min(s.length, 20);
+    return null;
+}
+function dedupeSuggestions(items: TickerSuggestion[]): TickerSuggestion[] {
+    const seen = new Set<string>();
+    const out: TickerSuggestion[] = [];
+    for (const item of items) {
+        const symbol = normalizeSuggestionSymbol(item.symbol);
+        if (!symbol || seen.has(symbol) || !isTickerLike(symbol)) continue;
+        seen.add(symbol);
+        out.push({ ...item, symbol, hasOptions: item.hasOptions !== false });
+        if (out.length >= SEARCH_LIMIT) break;
+    }
+    return out;
+}
+
+async function handleYahooSearch(q: string): Promise<TickerSuggestion[]> {
+    const target = new URL("https://query1.finance.yahoo.com/v1/finance/search");
+    target.searchParams.set("q", q);
+    target.searchParams.set("quotesCount", String(SEARCH_LIMIT));
+    target.searchParams.set("newsCount", "0");
+    target.searchParams.set("enableFuzzyQuery", "true");
+    logProxy("YAHOO", `/api/search?provider=yahoo&q=${q}`, target.toString());
+    const res = await fetch(target.toString(), { headers: { "User-Agent": UA, Accept: "application/json" } });
+    const data: any = await res.json();
+    const rows: any[] = Array.isArray(data?.quotes) ? data.quotes : [];
+    return dedupeSuggestions(rows
+        .filter((r) => /^(EQUITY|ETF|INDEX)$/i.test(String(r.quoteType || r.typeDisp || "")))
+        .map((r) => ({
+            symbol: normalizeSuggestionSymbol(r.symbol),
+            name: String(r.longname || r.shortname || r.name || ""),
+            exchange: String(r.exchDisp || r.exchange || ""),
+            source: "Yahoo",
+            hasOptions: true,
+        })));
+}
+
+async function handleNasdaqSearch(q: string): Promise<TickerSuggestion[]> {
+    const target = `https://api.nasdaq.com/api/autocomplete/slookup/${SEARCH_LIMIT}?search=${encodeURIComponent(q)}`;
+    logProxy("NASDAQ", `/api/search?provider=nasdaq&q=${q}`, target);
+    const res = await fetch(target, {
+        headers: { "User-Agent": UA, Accept: "application/json", "Accept-Language": "en-US,en;q=0.9" },
+    });
+    const data: any = await res.json();
+    const rows: any[] = Array.isArray(data?.data) ? data.data : [];
+    return dedupeSuggestions(rows
+        .filter((r) => /^(STOCKS|ETF|INDEX)$/i.test(String(r.asset || "")))
+        .map((r) => ({
+            symbol: normalizeSuggestionSymbol(r.symbol),
+            name: String(r.name || ""),
+            exchange: String(r.exchange || ""),
+            source: "NASDAQ",
+            hasOptions: true,
+        })));
+}
+
+async function loadCboeSymbolBook(): Promise<Array<{ name?: string; company_name?: string }>> {
+    if (cboeSymbolBook && Date.now() - cboeSymbolBook.fetchedAt < CBOE_SYMBOL_BOOK_TTL_MS) {
+        return cboeSymbolBook.rows;
+    }
+    logProxy("CBOE", "/api/search?provider=cboe", CBOE_SYMBOL_BOOK_URL);
+    const res = await fetch(CBOE_SYMBOL_BOOK_URL, { headers: { "User-Agent": UA, Accept: "application/json" } });
+    const data: any = await res.json();
+    const rows = Array.isArray(data?.data) ? data.data : [];
+    cboeSymbolBook = { fetchedAt: Date.now(), rows };
+    return rows;
+}
+async function handleCboeSearch(q: string): Promise<TickerSuggestion[]> {
+    const qNorm = q.toUpperCase().trim();
+    const builtIns = CBOE_INDEX_SUGGESTIONS
+        .map((s) => ({ s, rank: rankSuggestion(qNorm, s.symbol, s.name || "") }))
+        .filter((x): x is { s: TickerSuggestion; rank: number } => x.rank != null);
+    const rows = await loadCboeSymbolBook();
+    const book = rows
+        .map((r) => {
+            const symbol = normalizeSuggestionSymbol(r.name);
+            const name = String(r.company_name || "");
+            const rank = rankSuggestion(qNorm, symbol, name);
+            return { s: { symbol, name, exchange: "CBOE", source: "CBOE", hasOptions: true } as TickerSuggestion, rank };
+        })
+        .filter((x): x is { s: TickerSuggestion; rank: number } => x.rank != null && !x.s.symbol.startsWith("^") && isTickerLike(x.s.symbol));
+    return dedupeSuggestions([...builtIns, ...book]
+        .sort((a, b) => a.rank - b.rank || a.s.symbol.localeCompare(b.s.symbol))
+        .map((x) => x.s));
+}
+
+async function handleSearch(url: URL): Promise<Response> {
+    const provider = (url.searchParams.get("provider") || "").toLowerCase();
+    const q = (url.searchParams.get("q") || "").trim();
+    if (!q) return json({ suggestions: [] });
+    if (provider === "yahoo") return json({ suggestions: await handleYahooSearch(q) });
+    if (provider === "nasdaq") return json({ suggestions: await handleNasdaqSearch(q) });
+    if (provider === "cboe") return json({ suggestions: await handleCboeSearch(q) });
+    return json({ error: "unsupported search provider" }, 400);
+}
+
 /** GET /api/options?symbol=AAPL[&date=YYYY-MM-DD] -> Yahoo optionChain JSON. */
 async function handleOptions(url: URL): Promise<Response> {
     const symbol = (url.searchParams.get("symbol") || "").toUpperCase().trim();
@@ -197,8 +338,12 @@ Bun.serve({
             try { return await handleNasdaq(url); }
             catch (e) { return json({ error: String(e) }, 502); }
         }
+        if (url.pathname === "/api/search") {
+            try { return await handleSearch(url); }
+            catch (e) { return json({ error: String(e) }, 502); }
+        }
         if (url.pathname === "/" || url.pathname === "/health") {
-            return json({ ok: true, service: "options-desk-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/nasdaq?symbol=AAPL"] });
+            return json({ ok: true, service: "options-desk-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx"] });
         }
         return json({ error: "not found" }, 404);
     },
@@ -208,4 +353,5 @@ console.log(`\n🚀 Options Desk proxy running at http://localhost:${PORT}`);
 console.log(`   Yahoo  | http://localhost:${PORT}/api/options?symbol=AAPL`);
 console.log(`   CBOE   | http://localhost:${PORT}/api/cboe?symbol=AAPL   (indices: _SPX, _VIX)`);
 console.log(`   NASDAQ | http://localhost:${PORT}/api/nasdaq?symbol=AAPL`);
+console.log(`   SEARCH | http://localhost:${PORT}/api/search?provider=yahoo&q=apple`);
 console.log(`   (relay logs below: "$proxy | $localPath -> $remoteUrl")\n`);
