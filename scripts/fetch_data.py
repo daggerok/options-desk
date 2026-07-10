@@ -12,6 +12,15 @@
 # PROJECT: Options Desk — SMART build-time data fetcher
 #
 # CHANGELOG (append newest at top; keep every entry — NEVER delete history):
+#   v7 - Reliable optionable universe fallback/merge:
+#        * Adds the Cboe optionable-underlying CSV as a broad universe source.
+#          If the NASDAQ screener is blocked/slow/unreachable, the fetcher now
+#          still sees thousands of optionable underlyings instead of falling back
+#          to the tiny built-in mega-cap seed list. When both sources work, the
+#          Cboe list is used to keep the NASDAQ market-cap ordering focused on
+#          symbols that actually list options, with Cboe-only names appended.
+#        * Adds NASDAQ_TIMEOUT (default 20s) so a blocked NASDAQ API does not
+#          stall every CI run for 45 seconds before the script can grow cache.
 #   v6 - Market timezone + robust symbol-variant resolution:
 #        * All "today" / working-day freshness logic now runs in a MARKET timezone
 #          (TIMEZONE env, default America/New_York) instead of UTC, so "fetched
@@ -42,12 +51,16 @@
 #          so you know precisely what to copy & replace.
 #   v4 - Missing-first then oldest-first rotation, per-ticker index (see below).
 #
-# WHAT IT DOES (v5 — canonical symbols, skiplist, then v4 queue + per-ticker index):
-#   1. Builds a UNIVERSE of US stocks (NASDAQ / NYSE / NYSE American / NYSE Arca)
-#      sorted DESC by market cap, pulled live from the NASDAQ screener (no key).
-#      Filters to the Microcap floor (>= $10M) so it walks the tiers
-#      Mega(176B+) -> Large(36B+) -> Mid(6B+) -> Small(2B+) -> Micro(10M+).
-#      Falls back to a small built-in list if the screener is unreachable.
+# WHAT IT DOES (v7 — Cboe optionable universe, then v5/v4 queue + index):
+#   1. Builds a UNIVERSE of optionable US underlyings. Preferred path: pull the
+#      NASDAQ screener (no key), sort DESC by market cap, and keep/merge symbols
+#      that appear in Cboe's optionable-underlying directory so the queue mostly
+#      walks liquid optionable names first. If NASDAQ is unreachable, use the
+#      broad Cboe directory directly (thousands of underlyings) instead of the
+#      tiny built-in seed list. Filters NASDAQ rows to the Microcap floor
+#      (>= $10M) so it walks the tiers Mega(176B+) -> Large(36B+) -> Mid(6B+) ->
+#      Small(2B+) -> Micro(10M+). Falls back to the small built-in list only if
+#      BOTH live universe sources fail.
 #   2. Builds a WORK QUEUE in two phases (this is the v4 change — see below):
 #        PHASE 1 (COVERAGE): every universe symbol that has NO cached file yet,
 #          in market-cap order (Mega -> Micro). The #1 goal is to get data for
@@ -106,8 +119,9 @@
 #
 # TUNABLES (env):
 #   MAX_FETCHES      default 40      NEW (non-skipped) fetches per run.
-#   UNIVERSE_SIZE    default 6000    how many top-market-cap symbols to consider.
-#   MIN_MARKET_CAP   default 1e7     Microcap floor in USD (drops nano-caps).
+#   UNIVERSE_SIZE    default 6000    how many top-market-cap/optionable symbols to consider.
+#   MIN_MARKET_CAP   default 1e7     Microcap floor in USD for NASDAQ rows (drops nano-caps).
+#   NASDAQ_TIMEOUT   default 20      seconds to wait for NASDAQ before using Cboe fallback.
 #   MAX_EXPIRATIONS  default 12      expirations stored per ticker (keeps JSON small)
 #   RATE_LIMIT_HITS  default 3    consecutive ERRORS that mean "we're blocked".
 #   REQUEST_SLEEP    default 0.6  seconds between fetches (be polite to Yahoo).
@@ -119,6 +133,8 @@
 #                                 Set TIMEZONE=UTC for the old UTC behavior.
 # =============================================================================
 
+import csv
+import io
 import json
 import os
 import sys
@@ -182,6 +198,7 @@ MIN_MARKET_CAP = float(os.environ.get("MIN_MARKET_CAP", "10000000"))
 MAX_EXPIRATIONS = int(os.environ.get("MAX_EXPIRATIONS", "12"))
 RATE_LIMIT_HITS = int(os.environ.get("RATE_LIMIT_HITS", "3"))
 REQUEST_SLEEP = float(os.environ.get("REQUEST_SLEEP", "0.6"))
+NASDAQ_TIMEOUT = float(os.environ.get("NASDAQ_TIMEOUT", "20"))
 # Days before a symbol on the "no options" skiplist is re-checked. A ticker that
 # yields no chain is remembered so we DON'T keep re-fetching it every run, but we
 # re-try after this many days in case it later lists options (self-healing).
@@ -212,8 +229,18 @@ for _pair in os.environ.get("SYMBOL_ALIASES", "").split(","):
         if _k.strip() and _v.strip():
             SYMBOL_ALIASES[_k.strip().upper()] = _v.strip().upper()
 
-# Small, dependable fallback universe (already market-cap-ish ordered) used only
-# if the live NASDAQ screener cannot be reached.
+# Broad Cboe directory of optionable underlyings. This is much more reliable for
+# cache growth than the NASDAQ screener alone: if NASDAQ is blocked/slow in CI,
+# this endpoint still gives us thousands of symbols that should have listed
+# options, so the coverage queue can continue beyond the tiny seed list.
+CBOE_UNDERLYINGS_URL = (
+    "https://cdn.cboe.com/data/us/options/market_statistics/"
+    "symbol_reference/opt-underlying.csv"
+)
+
+# Small, dependable seed/final fallback universe (already market-cap-ish ordered)
+# used to front-load liquid names and as a last resort if all live universe
+# sources fail.
 FALLBACK_UNIVERSE = [
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "BRK.B", "AVGO",
     "JPM", "LLY", "V", "XOM", "UNH", "MA", "COST", "HD", "PG", "JNJ", "WMT",
@@ -378,19 +405,51 @@ def _file_is_fresh(updated_iso):
 
 # ---- Universe discovery ------------------------------------------------------
 
-def load_universe():
+def _live_cboe_universe():
     """
-    Return a list of tickers sorted DESC by market cap.
-    Source: NASDAQ stock screener API (no key). Falls back to FALLBACK_UNIVERSE.
-    """
-    # Explicit override wins (kept for convenience / testing).
-    override = os.environ.get("TICKERS")
-    if override:
-        return _dedupe([_canonical(t) for t in override.replace(",", " ").split() if t.strip()])
+    Return Cboe's broad list of optionable underlyings (Equity/ETF/etc.).
 
+    This is intentionally separate from the NASDAQ screener. NASDAQ gives useful
+    market-cap ordering when it works, but it is not reliable in CI (timeouts /
+    bot blocking are common). Cboe's CSV is smaller, plain static content, and is
+    already restricted to underlyings with listed options, so it is the right
+    fallback for a cache whose main job is to GROW coverage.
+    """
     if requests is None:
-        print("  (requests not installed; using fallback universe)")
-        return _dedupe([_canonical(s) for s in FALLBACK_UNIVERSE])[:UNIVERSE_SIZE]
+        return []
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; OptionsDeskBot/1.0)",
+        "Accept": "text/csv,*/*",
+    }
+    try:
+        r = requests.get(CBOE_UNDERLYINGS_URL, headers=headers, timeout=20)
+        r.raise_for_status()
+        rows = csv.DictReader(io.StringIO(r.text))
+        syms = []
+        for row in rows:
+            sym = (row.get("Symbol") or "").strip()
+            if not sym:
+                continue
+            # Ignore adjusted/odd OCC-style symbols when present; keep class
+            # shares because _canonical() rewrites BRK.B/BRK/B to BRK-B.
+            if "^" in sym:
+                continue
+            syms.append(_canonical(sym))
+        return _dedupe(syms)
+    except Exception as e:
+        print(f"  ! Cboe optionable universe failed ({e})", file=sys.stderr)
+        return []
+
+
+def _live_nasdaq_marketcap_universe():
+    """
+    Return NASDAQ screener symbols sorted DESC by market cap, or [] if the
+    screener is unavailable. This source is nice-to-have for ordering; it must
+    NOT be the only way to discover work, because it often times out/blocks bots.
+    """
+    if requests is None:
+        return []
 
     # The unfiltered NASDAQ screener already spans ALL US exchanges
     # (NASDAQ / NYSE / NYSE American / NYSE Arca) in one response (~7k rows).
@@ -398,10 +457,13 @@ def load_universe():
            "?tableonly=true&limit=25000&download=true")
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; OptionsDeskBot/1.0)",
-        "Accept": "application/json",
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Origin": "https://www.nasdaq.com",
+        "Referer": "https://www.nasdaq.com/market-activity/stocks/screener",
     }
     try:
-        r = requests.get(url, headers=headers, timeout=45)
+        r = requests.get(url, headers=headers, timeout=NASDAQ_TIMEOUT)
         r.raise_for_status()
         rows = r.json().get("data", {}).get("rows", []) or []
 
@@ -421,6 +483,7 @@ def load_universe():
                  and cap(x) >= MIN_MARKET_CAP]
         clean.sort(key=cap, reverse=True)
         syms = _dedupe([_canonical(x["symbol"]) for x in clean])
+
         if syms:
             # Tier breakdown (Mega 176B+, Large 36B+, Mid 6B+, Small 2B+, Micro 10M+).
             def tier(c):
@@ -428,15 +491,68 @@ def load_universe():
                         'Mid' if c >= 6e9 else 'Small' if c >= 2e9 else 'Micro')
             from collections import Counter
             counts = Counter(tier(cap(x)) for x in clean)
-            print(f"  universe: {len(syms)} symbols from NASDAQ screener "
+            print(f"  NASDAQ screener: {len(syms)} symbols "
                   f"(>= ${MIN_MARKET_CAP:,.0f}); "
                   f"tiers={{'Mega':{counts['Mega']}, 'Large':{counts['Large']}, "
                   f"'Mid':{counts['Mid']}, 'Small':{counts['Small']}, "
                   f"'Micro':{counts['Micro']}}}; top: {', '.join(syms[:5])}")
-            return syms[:UNIVERSE_SIZE]
+        return syms
     except Exception as e:
-        print(f"  ! NASDAQ screener failed ({e}); using fallback universe",
-              file=sys.stderr)
+        print(f"  ! NASDAQ screener failed ({e})", file=sys.stderr)
+        return []
+
+
+def load_universe():
+    """
+    Return the symbols to consider this run.
+
+    Order is:
+      1. explicit TICKERS env override;
+      2. NASDAQ market-cap order, filtered/extended by Cboe optionable symbols
+         when Cboe is available;
+      3. broad Cboe optionable list (seeded with mega-cap FALLBACK_UNIVERSE) if
+         NASDAQ is unavailable;
+      4. tiny built-in fallback only if live sources fail.
+    """
+    # Explicit override wins (kept for convenience / testing).
+    override = os.environ.get("TICKERS")
+    if override:
+        return _dedupe([_canonical(t) for t in override.replace(",", " ").split() if t.strip()])
+
+    if requests is None:
+        print("  (requests not installed; using built-in fallback universe)")
+        return _dedupe([_canonical(s) for s in FALLBACK_UNIVERSE])[:UNIVERSE_SIZE]
+
+    cboe = _live_cboe_universe()
+    nasdaq = _live_nasdaq_marketcap_universe()
+
+    if nasdaq and cboe:
+        # Keep NASDAQ's market-cap ordering, but avoid wasting the queue on the
+        # thousands of equities that have no listed options. Append Cboe-only
+        # names afterward so class ETFs/new listings not present in NASDAQ still
+        # become eligible for coverage.
+        optionable = set(cboe)
+        syms = _dedupe([s for s in nasdaq if s in optionable] + cboe)
+        print(f"  universe: {len(syms)} optionable symbols "
+              f"(NASDAQ market-cap ordered + Cboe append); top: {', '.join(syms[:5])}")
+        return syms[:UNIVERSE_SIZE]
+
+    if nasdaq:
+        # Better than Cboe if it is the only live source because it preserves the
+        # original market-cap walk; no-options skiplist will prune non-optionable
+        # names over time.
+        print(f"  universe: {len(nasdaq)} symbols from NASDAQ only; "
+              f"top: {', '.join(nasdaq[:5])}")
+        return nasdaq[:UNIVERSE_SIZE]
+
+    if cboe:
+        syms = _dedupe([_canonical(s) for s in FALLBACK_UNIVERSE] + cboe)
+        print(f"  universe: {len(syms)} optionable symbols from Cboe "
+              f"(NASDAQ unavailable); top: {', '.join(syms[:5])}")
+        return syms[:UNIVERSE_SIZE]
+
+    print("  ! all live universe sources failed; using tiny built-in fallback",
+          file=sys.stderr)
     return _dedupe([_canonical(s) for s in FALLBACK_UNIVERSE])[:UNIVERSE_SIZE]
 
 
@@ -607,7 +723,9 @@ def build_work_queue(universe):
     Build the ordered list of symbols to fetch this run, in TWO PHASES:
 
       PHASE 1 — COVERAGE (missing first): every universe symbol WITHOUT a cached
-        file yet, kept in the universe's market-cap order (Mega -> Micro). This
+        file yet, kept in universe order. When NASDAQ works this is market-cap
+        order (Mega -> Micro); when NASDAQ is blocked it is the broad Cboe
+        optionable-underlying order seeded by the mega-cap fallback list. This
         makes the run RESUME DOWN the list where prior runs stopped, so we work
         toward caching ALL tickers instead of re-looping the top-cap names.
 
@@ -627,7 +745,7 @@ def build_work_queue(universe):
     def blocked(sym):
         return sym in skip and _skip_is_active(skip[sym])
 
-    # PHASE 1: missing universe symbols, in market-cap order (universe order).
+    # PHASE 1: missing universe symbols, in the order returned by load_universe.
     # Exclude ones we already know have no options (within the re-check window).
     missing = [s for s in universe if s not in cached and not blocked(s)]
 
@@ -661,7 +779,7 @@ def main():
     updated_files = []  # relative paths we wrote this run (reported at the end)
     no_option_syms = []  # symbols newly added to the skiplist this run
 
-    print(f"Smart fetch v4: budget={MAX_FETCHES} new, universe={len(universe)}, "
+    print(f"Smart fetch v7: budget={MAX_FETCHES} new, universe={len(universe)}, "
           f"today={_today_iso()}")
     print(f"  queue: {n_missing} missing (coverage) + {n_stale} stale (refresh, "
           f"oldest-first); {n_fresh} fresh skipped; "
