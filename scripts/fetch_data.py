@@ -12,6 +12,13 @@
 # PROJECT: Options Desk — SMART build-time data fetcher
 #
 # CHANGELOG (append newest at top; keep every entry — NEVER delete history):
+#   v8 - Human-visible CI progress logging:
+#        * Adds timestamped, flush-on-every-line log helpers so GitHub Actions
+#          shows progress immediately instead of buffering output.
+#        * Each queued symbol now emits a START line before yfinance is called
+#          and a DONE/NO_OPTIONS/ERROR line with elapsed seconds, phase, queue
+#          position, quote count, and budget progress. Universe loading and
+#          index writing also log clear progress messages.
 #   v7 - Reliable optionable universe fallback/merge:
 #        * Adds the Cboe optionable-underlying CSV as a broad universe source.
 #          If the NASDAQ screener is blocked/slow/unreachable, the fetcher now
@@ -51,7 +58,7 @@
 #          so you know precisely what to copy & replace.
 #   v4 - Missing-first then oldest-first rotation, per-ticker index (see below).
 #
-# WHAT IT DOES (v7 — Cboe optionable universe, then v5/v4 queue + index):
+# WHAT IT DOES (v8 — logged Cboe optionable universe, then v5/v4 queue + index):
 #   1. Builds a UNIVERSE of optionable US underlyings. Preferred path: pull the
 #      NASDAQ screener (no key), sort DESC by market cap, and keep/merge symbols
 #      that appear in Cboe's optionable-underlying directory so the queue mostly
@@ -167,7 +174,7 @@ def _market_tz():
         return ZoneInfo(MARKET_TZ_NAME)
     except Exception:
         print(f"  ! unknown TIMEZONE={MARKET_TZ_NAME!r}; falling back to UTC",
-              file=sys.stderr)
+              file=sys.stderr, flush=True)
         return timezone.utc
 
 
@@ -176,7 +183,7 @@ MARKET_TZ = _market_tz()
 try:
     import yfinance as yf
 except ImportError:
-    print("ERROR: yfinance not installed. Run: pip install yfinance", file=sys.stderr)
+    print("ERROR: yfinance not installed. Run: pip install yfinance", file=sys.stderr, flush=True)
     sys.exit(1)
 
 try:
@@ -341,6 +348,16 @@ def _now_iso():
     return datetime.now(MARKET_TZ).isoformat()
 
 
+def _log(message):
+    """Print one timestamped progress line and flush immediately for CI logs."""
+    print(f"[{_now_iso()}] {message}", flush=True)
+
+
+def _log_err(message):
+    """Print one timestamped error/progress line to stderr and flush immediately."""
+    print(f"[{_now_iso()}] {message}", file=sys.stderr, flush=True)
+
+
 # ---- Working-day / freshness helpers ----------------------------------------
 # US market holidays (NYSE/NASDAQ full-day closures). Extend yearly as needed.
 US_MARKET_HOLIDAYS = {
@@ -423,6 +440,7 @@ def _live_cboe_universe():
         "Accept": "text/csv,*/*",
     }
     try:
+        _log("universe/cboe: downloading optionable-underlying CSV...")
         r = requests.get(CBOE_UNDERLYINGS_URL, headers=headers, timeout=20)
         r.raise_for_status()
         rows = csv.DictReader(io.StringIO(r.text))
@@ -436,9 +454,11 @@ def _live_cboe_universe():
             if "^" in sym:
                 continue
             syms.append(_canonical(sym))
-        return _dedupe(syms)
+        syms = _dedupe(syms)
+        _log(f"universe/cboe: loaded {len(syms)} optionable symbols")
+        return syms
     except Exception as e:
-        print(f"  ! Cboe optionable universe failed ({e})", file=sys.stderr)
+        _log_err(f"universe/cboe: failed ({e})")
         return []
 
 
@@ -463,6 +483,7 @@ def _live_nasdaq_marketcap_universe():
         "Referer": "https://www.nasdaq.com/market-activity/stocks/screener",
     }
     try:
+        _log(f"universe/nasdaq: downloading market-cap screener (timeout={NASDAQ_TIMEOUT}s)...")
         r = requests.get(url, headers=headers, timeout=NASDAQ_TIMEOUT)
         r.raise_for_status()
         rows = r.json().get("data", {}).get("rows", []) or []
@@ -491,14 +512,14 @@ def _live_nasdaq_marketcap_universe():
                         'Mid' if c >= 6e9 else 'Small' if c >= 2e9 else 'Micro')
             from collections import Counter
             counts = Counter(tier(cap(x)) for x in clean)
-            print(f"  NASDAQ screener: {len(syms)} symbols "
-                  f"(>= ${MIN_MARKET_CAP:,.0f}); "
-                  f"tiers={{'Mega':{counts['Mega']}, 'Large':{counts['Large']}, "
-                  f"'Mid':{counts['Mid']}, 'Small':{counts['Small']}, "
-                  f"'Micro':{counts['Micro']}}}; top: {', '.join(syms[:5])}")
+            _log(f"universe/nasdaq: loaded {len(syms)} symbols "
+                 f"(>= ${MIN_MARKET_CAP:,.0f}); "
+                 f"tiers={{'Mega':{counts['Mega']}, 'Large':{counts['Large']}, "
+                 f"'Mid':{counts['Mid']}, 'Small':{counts['Small']}, "
+                 f"'Micro':{counts['Micro']}}}; top: {', '.join(syms[:5])}")
         return syms
     except Exception as e:
-        print(f"  ! NASDAQ screener failed ({e})", file=sys.stderr)
+        _log_err(f"universe/nasdaq: failed ({e})")
         return []
 
 
@@ -517,10 +538,12 @@ def load_universe():
     # Explicit override wins (kept for convenience / testing).
     override = os.environ.get("TICKERS")
     if override:
-        return _dedupe([_canonical(t) for t in override.replace(",", " ").split() if t.strip()])
+        syms = _dedupe([_canonical(t) for t in override.replace(",", " ").split() if t.strip()])
+        _log(f"universe/override: using {len(syms)} symbols from TICKERS env: {', '.join(syms[:20])}")
+        return syms
 
     if requests is None:
-        print("  (requests not installed; using built-in fallback universe)")
+        _log("universe/fallback: requests not installed; using built-in fallback universe")
         return _dedupe([_canonical(s) for s in FALLBACK_UNIVERSE])[:UNIVERSE_SIZE]
 
     cboe = _live_cboe_universe()
@@ -533,26 +556,25 @@ def load_universe():
         # become eligible for coverage.
         optionable = set(cboe)
         syms = _dedupe([s for s in nasdaq if s in optionable] + cboe)
-        print(f"  universe: {len(syms)} optionable symbols "
-              f"(NASDAQ market-cap ordered + Cboe append); top: {', '.join(syms[:5])}")
+        _log(f"universe/final: {len(syms)} optionable symbols "
+             f"(NASDAQ market-cap ordered + Cboe append); top: {', '.join(syms[:5])}")
         return syms[:UNIVERSE_SIZE]
 
     if nasdaq:
         # Better than Cboe if it is the only live source because it preserves the
         # original market-cap walk; no-options skiplist will prune non-optionable
         # names over time.
-        print(f"  universe: {len(nasdaq)} symbols from NASDAQ only; "
-              f"top: {', '.join(nasdaq[:5])}")
+        _log(f"universe/final: {len(nasdaq)} symbols from NASDAQ only; "
+             f"top: {', '.join(nasdaq[:5])}")
         return nasdaq[:UNIVERSE_SIZE]
 
     if cboe:
         syms = _dedupe([_canonical(s) for s in FALLBACK_UNIVERSE] + cboe)
-        print(f"  universe: {len(syms)} optionable symbols from Cboe "
-              f"(NASDAQ unavailable); top: {', '.join(syms[:5])}")
+        _log(f"universe/final: {len(syms)} optionable symbols from Cboe "
+             f"(NASDAQ unavailable); top: {', '.join(syms[:5])}")
         return syms[:UNIVERSE_SIZE]
 
-    print("  ! all live universe sources failed; using tiny built-in fallback",
-          file=sys.stderr)
+    _log_err("universe/fallback: all live universe sources failed; using tiny built-in fallback")
     return _dedupe([_canonical(s) for s in FALLBACK_UNIVERSE])[:UNIVERSE_SIZE]
 
 
@@ -611,7 +633,7 @@ def _resolve_options(symbol):
         exps = list(t.options or [])
         if exps:
             if cand != variants[0]:
-                print(f"      · {symbol}: resolved via variant '{cand}'")
+                _log(f"RESOLVE {symbol}: using Yahoo variant '{cand}'")
             return t, exps, cand
     return None, [], None
 
@@ -632,7 +654,7 @@ def fetch_ticker(symbol):
         try:
             ch = t.option_chain(exp)
         except Exception as e:
-            print(f"      ! skip {symbol} {exp}: {e}", file=sys.stderr)
+            _log_err(f"SKIP_EXPIRATION {symbol} {exp}: {e}")
             continue
         quotes.extend(_rows_from_frame(ch.calls, exp, "call"))
         quotes.extend(_rows_from_frame(ch.puts, exp, "put"))
@@ -695,7 +717,7 @@ def save_skiplist(skip):
         with open(SKIP_PATH, "w") as f:
             json.dump({k: skip[k] for k in sorted(skip)}, f, indent=2)
     except Exception as e:
-        print(f"  ! could not write skiplist: {e}", file=sys.stderr)
+        _log_err(f"skiplist: could not write scripts/no_options.json: {e}")
 
 
 def _skip_is_active(last_checked):
@@ -779,20 +801,24 @@ def main():
     updated_files = []  # relative paths we wrote this run (reported at the end)
     no_option_syms = []  # symbols newly added to the skiplist this run
 
-    print(f"Smart fetch v7: budget={MAX_FETCHES} new, universe={len(universe)}, "
-          f"today={_today_iso()}")
-    print(f"  queue: {n_missing} missing (coverage) + {n_stale} stale (refresh, "
-          f"oldest-first); {n_fresh} fresh skipped; "
-          f"{len(skip)} on no-options skiplist.")
+    _log(f"Smart fetch v8: budget={MAX_FETCHES} successful writes, universe={len(universe)}, "
+         f"today={_today_iso()}, timezone={MARKET_TZ_NAME}")
+    _log(f"queue: {n_missing} missing (coverage) + {n_stale} stale (refresh, "
+         f"oldest-first); {n_fresh} fresh skipped; "
+         f"{len(skip)} on no-options skiplist; total queued={len(queue)}")
     if n_missing == 0 and n_stale:
-        print("  coverage complete — cycling oldest files for refresh.")
+        _log("coverage complete — cycling oldest files for refresh")
 
-    for sym in queue:
+    for position, sym in enumerate(queue, start=1):
         if fetched >= MAX_FETCHES:
-            print(f"  reached MAX_FETCHES={MAX_FETCHES}; stopping (resume next run).")
+            _log(f"STOP: reached MAX_FETCHES={MAX_FETCHES}; stopping (resume next run)")
             break
 
         path = os.path.join(DATA_DIR, f"{sym}.json")
+        phase = "coverage" if position <= n_missing else "refresh"
+        started = time.monotonic()
+        _log(f"START [{position}/{len(queue)}] {phase} {sym}: fetching option chain "
+             f"(writes={fetched}/{MAX_FETCHES}, file=data/{sym}.json)")
 
         # Fetch (missing OR stale -> overwrite). The queue already excludes fresh
         # files, so no per-item freshness check is needed here. fetch_ticker
@@ -804,18 +830,20 @@ def main():
         except Exception as e:
             payload = None
             errored = True
-            print(f"  ERROR {sym}: {e}", file=sys.stderr)
+            _log_err(f"ERROR [{position}/{len(queue)}] {phase} {sym}: {e}")
 
+        elapsed = time.monotonic() - started
         if payload is None:
             if errored:
                 # A source/network failure. A streak likely means we're being
                 # rate-limited/blocked — bail out and resume next run. Do NOT
                 # skiplist (the ticker might be fine; it was a transient error).
                 consecutive_fail += 1
-                print(f"  ! {sym}: fetch error (fail streak {consecutive_fail})")
+                _log(f"ERROR [{position}/{len(queue)}] {phase} {sym}: fetch failed "
+                     f"after {elapsed:.1f}s (fail streak {consecutive_fail}/{RATE_LIMIT_HITS})")
                 if consecutive_fail >= RATE_LIMIT_HITS:
-                    print(f"  {RATE_LIMIT_HITS} consecutive errors — assuming "
-                          f"rate-limited/blocked. Stopping; will resume next run.")
+                    _log(f"STOP: {RATE_LIMIT_HITS} consecutive errors — assuming "
+                         f"rate-limited/blocked; will resume next run")
                     break
             else:
                 # Genuinely no options: remember it so we don't refetch every run
@@ -824,8 +852,9 @@ def main():
                 consecutive_fail = 0
                 skip[sym] = _today_iso()
                 no_option_syms.append(sym)
-                print(f"  - {sym}: no options — added to skiplist "
-                      f"(re-check in {SKIP_RECHECK_DAYS}d)")
+                _log(f"NO_OPTIONS [{position}/{len(queue)}] {phase} {sym}: checked in "
+                     f"{elapsed:.1f}s; added to skiplist "
+                     f"(re-check in {SKIP_RECHECK_DAYS}d)")
             continue
 
         consecutive_fail = 0
@@ -835,28 +864,35 @@ def main():
             json.dump(payload, f, separators=(",", ":"))
         fetched += 1
         updated_files.append(os.path.relpath(path, os.path.dirname(DATA_DIR)))
-        print(f"  + {sym}: {len(payload['quotes'])} quotes "
-              f"({fetched}/{MAX_FETCHES})")
+        _log(f"DONE [{position}/{len(queue)}] {phase} {sym}: wrote data/{sym}.json; "
+             f"quotes={len(payload['quotes'])}, expirations={len(payload['expirations'])}, "
+             f"elapsed={elapsed:.1f}s, writes={fetched}/{MAX_FETCHES}")
+        _log(f"SLEEP {sym}: waiting REQUEST_SLEEP={REQUEST_SLEEP}s before next symbol")
         time.sleep(REQUEST_SLEEP)  # be polite to the data source
 
+    _log(f"skiplist: saving {len(skip)} entries to scripts/no_options.json")
     save_skiplist(skip)
+    _log("index: rebuilding data/index.json manifest if file map changed")
     index_changed = write_index()
     if index_changed:
         updated_files.append(os.path.relpath(
             os.path.join(DATA_DIR, "index.json"), os.path.dirname(DATA_DIR)))
+        _log("index: wrote data/index.json")
+    else:
+        _log("index: unchanged; data/index.json was not rewritten")
 
     total = len(_cached_symbols())
-    print(f"Done. new={fetched}, missing_left={max(0, n_missing - fetched)}, "
-          f"no_options_added={len(no_option_syms)}, total_cached={total}")
+    _log(f"DONE RUN: writes={fetched}, missing_left_estimate={max(0, n_missing - fetched)}, "
+         f"no_options_added={len(no_option_syms)}, total_cached={total}")
 
     # ---- Report EXACTLY which files changed (so you know what to copy/replace) --
-    print("\n=== UPDATED FILES (copy & replace these) ===")
+    print("\n=== UPDATED FILES (copy & replace these) ===", flush=True)
     if updated_files:
         for p in updated_files:
-            print(f"  * {p}")
-        print(f"  ({len(updated_files)} file(s) written this run)")
+            print(f"  * {p}", flush=True)
+        print(f"  ({len(updated_files)} file(s) written this run)", flush=True)
     else:
-        print("  (none — everything was already fresh / skiplisted)")
+        print("  (none — everything was already fresh / skiplisted)", flush=True)
 
 
 def write_index():
