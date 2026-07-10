@@ -1,7 +1,7 @@
 {
   "name": "options-desk",
   "version": "1.0.0",
-  "description": "CSV Viewer",
+  "description": "Options Desk",
   "source": "src/index.html",
   "scripts": {
     "clean": "rimraf -rf dist",
@@ -13,10 +13,9 @@
     "all": "npm-run-all --parallel all:*",
     "start": "pm2 start 'npm run all' --name app",
     "restart": "pm2 restart app",
-    "stop": "pm2 kill",
+    "ps": "pm2 ps",
     "logs": "pm2 logs",
-    "test": "jest src",
-    "dev": "npm run test -- --watchAll"
+    "stop": "pm2 kill"
   },
   "keywords": [
     "npm-run-all",
@@ -25,7 +24,6 @@
     "rimraf",
     "react",
     "html",
-    "jest",
     "pm2",
     "css",
     "bun"
@@ -48,7 +46,6 @@
     "@types/papaparse": "5.5.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "jest": "30.4.2",
     "npm-run-all": "4.1.5",
     "papaparse": "5.5.4",
     "parcel": "2.16.4",
