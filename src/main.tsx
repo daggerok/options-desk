@@ -23,6 +23,16 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry — NEVER delete history):
  * ---------------------------------------------------------------------------
+ * v0.9.24 - REMOVE the scroll-driven auto collapse/expand feature entirely (user
+ *          request). Collapse/expand is now PURELY MANUAL: per-section header
+ *          click and Expand all / Collapse all. Deleted: the `autoMode` state,
+ *          `recomputeAuto`, the anchoring useLayoutEffect, and all its refs
+ *          (collapsedRef, lastScrollTop, suppressAuto, expandUpIdx,
+ *          pendingAnchor); the scroll listener now only tracks the active section
+ *          for header highlighting. A fresh Load still resets to fully expanded,
+ *          and loading / manually expanding a section still centers its current
+ *          strike (centerStrike, unchanged). Removed the now-unused
+ *          useLayoutEffect import.
  * v0.9.23 - Fix two expand bugs (both rooted in centerStrike timing):
  *          - BUG: clicking a COLLAPSED header while scrolled down only flipped
  *            the chevron; the section didn't appear. ROOT CAUSE: centerStrike ran
@@ -456,7 +466,7 @@
  */
 
 // @ts-ignore -- resolved by the Vite/Bun build toolchain (see ENVIRONMENT above)
-import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
 
@@ -2389,20 +2399,13 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
     // removal for the rationale.)
     const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
-    // AUTO-MODE: when ON, scrolling DOWN auto-collapses each section you've fully
-    // scrolled past (only its header stays pinned in the pile) and scrolling UP
-    // auto-expands them again. It is ON right after a Load and turns OFF (until
-    // the next Load) as soon as the user takes ANY manual collapse action —
-    // clicking a single header, or Expand all / Collapse all. (Per the user's
-    // spec: manual actions "pin" the layout; only a fresh Load re-enables auto.)
-    const [autoMode, setAutoMode] = useState<boolean>(true);
-
     // A fresh chain (new symbol OR a different set of loaded expirations) resets
-    // everything: fully expanded + auto-mode back ON.
+    // everything back to fully expanded. Collapse/expand is now PURELY MANUAL
+    // (via the per-section headers and Expand all / Collapse all) — there is no
+    // scroll-driven auto collapse/expand.
     const expKeyReset = sections.map((s) => s.expiration).join(',');
     useEffect(() => {
         setCollapsed(new Set());
-        setAutoMode(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [symbol, expKeyReset]);
 
@@ -2433,16 +2436,15 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
      * exists (bug: clicking a collapsed header only flipped the chevron because
      * the one-shot rAF found no row and bailed, leaving the desk off-screen).
      */
-    const centerStrike = useCallback((exp: string, onSettled?: () => void) => {
+    const centerStrike = useCallback((exp: string) => {
         let tries = 0;
         const attempt = () => {
             const container = scrollRef.current;
             const row = atmRefs.current.get(exp);
-            if (!container) { onSettled?.(); return; }
+            if (!container) return;
             if (!row) {
                 // Row not mounted yet (section still expanding): retry a few frames.
                 if (tries++ < 30) requestAnimationFrame(attempt);
-                else onSettled?.();
                 return;
             }
             const cRect = container.getBoundingClientRect();
@@ -2460,7 +2462,6 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
             // If the row was far off-screen it may still be settling (staggered
             // fade-in changes heights); nudge once more next frame to land exact.
             if (Math.abs(delta) > 1 && tries++ < 30) requestAnimationFrame(attempt);
-            else onSettled?.();
         };
         requestAnimationFrame(attempt);
     }, [sections]);
@@ -2489,9 +2490,6 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
     }, [sections]);
 
     const toggleOne = useCallback((exp: string) => {
-        // Any manual single-header toggle is an explicit user action: disable the
-        // scroll-driven auto collapse/expand until the next Load.
-        setAutoMode(false);
         let willExpand = false;
         setCollapsed((prev) => {
             const next = new Set(prev);
@@ -2509,8 +2507,6 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
         }
     }, [centerStrike, scrollBarToPinned]);
     const toggleAll = useCallback(() => {
-        // Expand all / Collapse all is also a manual action -> lock auto-mode off.
-        setAutoMode(false);
         setCollapsed((prev) => (
             sections.every((s) => prev.has(s.expiration)) ? new Set() : new Set(sections.map((s) => s.expiration))
         ));
@@ -2540,143 +2536,14 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
         setActiveExp(current);
     }, [sections]);
 
-    // ---- AUTO scroll-driven collapse / expand ----
-    // When auto-mode is ON (default right after a Load), scrolling DOWN collapses
-    // each earlier section once you've fully scrolled past it (only its pinned
-    // header bar stays in the top pile), and scrolling UP expands it again. The
-    // collapsed set is always a PREFIX [0..k-1] of the sections (you collapse from
-    // the top as you go down). The LAST section never auto-collapses (nothing
-    // below it to reveal). Manual actions (single toggle / Expand all / Collapse
-    // all) switch autoMode off, so this logic is inert then.
-    //
-    // The tricky part is that collapsing/expanding sections ABOVE the fold changes
-    // total height and would make the native scrollbar JUMP. We fix that by
-    // ANCHORING: when we change the prefix, we shift scrollTop by the same amount
-    // the content above moved, so the visible content stays put. Because a
-    // collapsed prefix removes real scroll range, the UP-expand trigger fires when
-    // scrollTop reaches the top (0) with k>0 — expanding one section restores its
-    // height and lets the user keep scrolling up. This is symmetric/reversible.
-    const collapsedRef = useRef(collapsed);
-    useEffect(() => { collapsedRef.current = collapsed; }, [collapsed]);
-    const lastScrollTop = useRef(0);
-    // When TRUE, the scroll handler ignores auto recompute — set while we are
-    // PROGRAMMATICALLY scrolling to center a just-expanded section, so that our
-    // own scroll isn't mistaken for a user "scroll down" and doesn't re-collapse
-    // (or otherwise fight) the section we just opened on the way up.
-    const suppressAuto = useRef(false);
-    // Set to a section index by the UP-expand branch: after that section re-mounts
-    // its rows, a layout effect centers it on its strike (instead of anchoring the
-    // bar). -1 = nothing pending.
-    const expandUpIdx = useRef<number>(-1);
-    // Anchor to restore after a prefix change so the view doesn't jump.
-    const pendingAnchor = useRef<{ exp: string; viewportTop: number } | null>(null);
-
-    const recomputeAuto = useCallback(() => {
-        const container = scrollRef.current;
-        if (!container) return;
-        const barPx = parseFloat(getComputedStyle(container).getPropertyValue('--od-bar')) * 16 || 30;
-        const cTop = container.getBoundingClientRect().top;
-        const st = container.scrollTop;
-        const dir = Math.sign(st - lastScrollTop.current);
-        lastScrollTop.current = st;
-
-        // Current prefix length k (collapsed set is exactly sections[0..k-1]).
-        let k = 0;
-        while (k < sections.length && collapsedRef.current.has(sections[k].expiration)) k++;
-
-        // Viewport top of a bar by index, from its live rect.
-        const barVpTop = (i: number): number | null => {
-            const b = barRefs.current.get(sections[i]?.expiration);
-            return b ? b.getBoundingClientRect().top - cTop : null;
-        };
-
-        let newK = k;
-        let anchorIdx = -1;
-        let beforeTop = 0;
-
-        if (dir >= 0 && k < sections.length - 1) {
-            // DOWN: collapse section k once the NEXT bar (k+1) has reached its
-            // pinned slot at (k+1)*barPx — meaning section k's body is gone.
-            const nextTop = barVpTop(k + 1);
-            if (nextTop != null && nextTop <= (k + 1) * barPx + 1) {
-                anchorIdx = k + 1;
-                beforeTop = nextTop;
-                newK = k + 1;
-            }
-        } else if (dir < 0 && k > 0) {
-            // UP: when scrolled to the very top with a collapsed prefix, expand the
-            // last-collapsed section (k-1) so its rows come back into view. Instead
-            // of just anchoring the bar (which revealed the END of the section), we
-            // CENTER the re-expanded section on its current strike — same as a
-            // manual expand — so scrolling up feels symmetric with the initial
-            // load / manual-click behavior (fixes "opens at the beginning").
-            if (st <= 1) {
-                newK = k - 1;
-                expandUpIdx.current = newK; // ask the layout effect to center it
-            }
-        }
-
-        if (newK === k) return; // no change
-
-        // Build the new prefix collapsed set.
-        const desired = new Set<string>();
-        for (let i = 0; i < newK; i++) desired.add(sections[i].expiration);
-
-        // Remember the anchor bar + its current viewport position; a layout effect
-        // shifts scrollTop after the reflow so that bar stays visually put.
-        // (Skipped for the UP-expand case, which centers on the strike instead.)
-        pendingAnchor.current = anchorIdx >= 0 && sections[anchorIdx]
-            ? { exp: sections[anchorIdx].expiration, viewportTop: beforeTop }
-            : null;
-        setCollapsed(desired);
-    }, [sections]);
-
-    // After an AUTO prefix change: either CENTER the re-expanded section on its
-    // strike (UP-expand), or restore the anchor bar so the view doesn't jump
-    // (DOWN-collapse). Manual toggles do their own scrolling and set neither.
-    useLayoutEffect(() => {
-        // UP-expand: center the freshly re-expanded section on its current strike.
-        if (expandUpIdx.current >= 0) {
-            const idx = expandUpIdx.current;
-            expandUpIdx.current = -1;
-            pendingAnchor.current = null; // centering supersedes bar anchoring
-            const exp = sections[idx]?.expiration;
-            if (exp) {
-                // Suppress auto while we programmatically scroll so this doesn't
-                // read as a user "scroll down" and immediately re-collapse it.
-                suppressAuto.current = true;
-                centerStrike(exp, () => {
-                    const container = scrollRef.current;
-                    if (container) lastScrollTop.current = container.scrollTop;
-                    suppressAuto.current = false;
-                });
-            }
-            return;
-        }
-        // DOWN-collapse: keep the anchor bar visually put across the reflow.
-        const a = pendingAnchor.current;
-        if (!a) return;
-        pendingAnchor.current = null;
-        const container = scrollRef.current;
-        const bar = barRefs.current.get(a.exp);
-        if (!container || !bar) return;
-        const cTop = container.getBoundingClientRect().top;
-        const afterTop = bar.getBoundingClientRect().top - cTop;
-        container.scrollTop += afterTop - a.viewportTop;
-        lastScrollTop.current = container.scrollTop;
-    }, [collapsed, sections, centerStrike]);
-
     useEffect(() => {
         const c = scrollRef.current;
         if (!c) return;
-        const onScroll = () => {
-            recomputeActive();
-            if (autoMode && !suppressAuto.current) recomputeAuto();
-        };
+        const onScroll = () => recomputeActive();
         c.addEventListener('scroll', onScroll, { passive: true });
         window.addEventListener('resize', onScroll);
         return () => { c.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); };
-    }, [recomputeActive, recomputeAuto, autoMode]);
+    }, [recomputeActive]);
 
     useEffect(() => {
         setActiveExp((cur) => (cur && sections.some((s) => s.expiration === cur)) ? cur : (sections[0]?.expiration ?? ''));
