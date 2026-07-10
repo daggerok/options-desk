@@ -2,6 +2,9 @@ name: GitHub Pages
 on:
   push:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Update options data"]
+    types: [completed]
 permissions:
   contents: read
   pages: write
