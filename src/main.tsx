@@ -23,6 +23,45 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry — NEVER delete history):
  * ---------------------------------------------------------------------------
+ * v0.9.20 - Static cache: replace the vague "Bad static data" with ACTIONABLE
+ *          diagnostics. The old code did `await res.json().catch(() => null)`,
+ *          which swallowed the real cause. Root cause in the wild: a dev/preview
+ *          or SPA host serving index.html (200 HTML) for a missing data/*.json
+ *          instead of a 404 — so res.json() throws and the message was useless
+ *          (and the ticker <select> also went blank because index.json failed
+ *          the same way). New fetchStaticJson() reads the body as TEXT first and
+ *          distinguishes: network error / 404 (not cached) / HTML SPA fallback /
+ *          malformed-or-truncated JSON (NaN/Infinity), each with a fix hint.
+ *          listTickers() and fetchAll() both use it.
+ * v0.9.21 - Harden the estimateSpot() TS2802 fix: use Map.prototype.forEach
+ *          instead of iterating the Map. v0.9.19 switched to
+ *          `Array.from(byStrike.entries())`, but Array.from over a Map iterator
+ *          can STILL trip TS2802 under some low-`target` tsconfigs (it consumes
+ *          the iteration protocol). `forEach` is a plain method call with no
+ *          iteration protocol, so it type-checks under ANY target/downlevel
+ *          setting. Re-verified tsc rc=0 at ES5 (downlevelIteration:false) and
+ *          ES2020. (If your IDE still shows the error, re-copy main.tsx — the
+ *          fix must be present at the `byStrike.forEach(...)` line.)
+ * v0.9.19 - Fix TS2802 in estimateSpot(): iterating a Map with `for...of`
+ *          requires a tsconfig `target` of ES2015+ (or `downlevelIteration`).
+ *          Some consuming projects use a lower target, so the direct
+ *          `for (const [k, v] of map)` errored in their IDE. Switched to
+ *          `Array.from(byStrike.entries())`, which type-checks under ANY target.
+ *          (All other Map/Set usages already used Array.from(...) / .has(), so
+ *          this was the only offending spot. Verified tsc rc=0 at both ES5 with
+ *          downlevelIteration:false and ES2020.)
+ * v0.9.18 - Collapse now stays IN VIEW when scrolled down:
+ *          - BUG: collapsing a section that was NOT the last expanded one, while
+ *            scrolled partway down, flipped its chevron but the section seemed to
+ *            vanish. ROOT CAUSE: removing its rows shrank the content below the
+ *            fold, so the browser CLAMPED scrollTop and the view jumped, carrying
+ *            the just-collapsed bar off-screen. (Collapsing only the LAST expanded
+ *            section removes nothing below it, so it appeared to "work fine".)
+ *          - FIX: after the close animation settles (~200ms), scrollBarToPinned()
+ *            smooth-scrolls the collapsed bar to its pinned slot in the top pile,
+ *            so you always see it squashed with the next section right below.
+ *            Expanding still centers the current strike (unchanged). Uses
+ *            bar.offsetTop against the now `position: relative` scroll container.
  * v0.9.17 - Sticky expiration-bar PILE fix (the "hole" bug):
  *          - ROOT CAUSE: each sticky .od-bar lived inside its own .od-sec block
  *            wrapper, which became the bar's CONTAINING BLOCK and CLIPPED it to
@@ -629,14 +668,20 @@ function estimateSpot(quotes: OptionQuote[], expiration: string): number | null 
     }
     let bestDiff = Infinity;
     let bestSpot: number | null = null;
-    for (const [strike, { c, p }] of byStrike) {
-        if (c == null || p == null) continue;
+    // NOTE: use Map.prototype.forEach rather than `for...of byStrike` (or even
+    // `for...of byStrike.entries()` / `Array.from(byStrike.entries())`). Any form
+    // that ITERATES a Map goes through the iteration protocol, which TypeScript
+    // rejects with TS2802 unless the consuming tsconfig has `target` >= ES2015 or
+    // the `downlevelIteration` flag. `forEach` is a plain method call — no
+    // iteration protocol — so it type-checks under ANY target/tsconfig.
+    byStrike.forEach(({ c, p }, strike) => {
+        if (c == null || p == null) return;
         const diff = Math.abs(c - p);
         if (diff < bestDiff) {
             bestDiff = diff;
             bestSpot = strike + (c - p); // put-call parity approximation
         }
-    }
+    });
     dbg('estimateSpot', { expiration, bestSpot });
     return bestSpot;
 }
@@ -746,6 +791,59 @@ const marketdataProvider: DataProvider = {
 };
 
 /**
+ * Fetch a same-origin static JSON file with DIAGNOSTIC error handling.
+ *
+ * Why this exists: the naive `await res.json()` throws an opaque SyntaxError when
+ * the server returns something that ISN'T JSON — and the #1 real-world cause of
+ * "Bad static data" is a dev/preview or SPA host that serves the app's own
+ * index.html (a 200 HTML page) for a missing `data/*.json` path instead of a
+ * 404. Reading the body as TEXT first lets us detect that case (and truncated /
+ * malformed files) and raise an ACTIONABLE message telling the user exactly what
+ * to fix, rather than a vague failure.
+ *
+ * @param url    same-origin path to the JSON file
+ * @param signal AbortSignal for cancellation
+ * @param label  optional ticker/name for nicer error messages (else derived)
+ */
+async function fetchStaticJson(url: string, signal?: AbortSignal, label?: string): Promise<any> {
+    const name = label ?? url;
+    let res: Response;
+    try {
+        res = await fetch(url, { headers: { Accept: 'application/json' }, signal });
+    } catch (e: any) {
+        if (e?.name === 'AbortError') throw e;
+        throw new Error(`Could not load ${url} (network error). Is the site served over http(s), not file://?`);
+    }
+    if (res.status === 404) {
+        throw new Error(
+            `"${name}" is not in the static cache (data/${name}.json → 404). ` +
+            `Pick a cached ticker from the list, or run scripts/fetch_data.py to add it.`,
+        );
+    }
+    if (!res.ok) {
+        throw new Error(`Static file ${url} failed to load (HTTP ${res.status}).`);
+    }
+    const text = await res.text();
+    const trimmed = text.trimStart();
+    // A server that falls back to the SPA shell returns HTML, not JSON.
+    if (trimmed.startsWith('<')) {
+        throw new Error(
+            `Expected JSON at ${url} but got an HTML page. The server is likely ` +
+            `serving index.html for missing files (SPA fallback) — make sure the ` +
+            `data/ folder is deployed alongside the app and reachable at this path.`,
+        );
+    }
+    try {
+        return JSON.parse(text);
+    } catch {
+        throw new Error(
+            `Static file ${url} is not valid JSON (it may be truncated or contain ` +
+            `NaN/Infinity). Re-run scripts/fetch_data.py to rebuild it.`,
+        );
+    }
+}
+
+/**
  * Static cache provider (BULK, no setup — best for GitHub Pages).
  * Reads the site's OWN files (same-origin => zero CORS, zero keys):
  *   ./data/index.json     -> { files: { "<TICKER>": "<updated ISO>", ... } }
@@ -770,9 +868,9 @@ const staticProvider: DataProvider = {
     needsKeyFor() { return false; },
     async listTickers(ctx) {
         try {
-            const res = await fetch('data/index.json', { headers: { Accept: 'application/json' }, signal: ctx.signal });
-            if (!res.ok) return [];
-            const j: any = await res.json();
+            // Reuse the robust JSON fetch so a mis-served index.json (e.g. SPA
+            // HTML fallback) fails cleanly to an empty list instead of throwing.
+            const j: any = await fetchStaticJson('data/index.json', ctx.signal);
             // v0.9.16 shape: { files: { TICKER: updatedISO } }. The ticker list is
             // the sorted keys of `files`.
             const files = j?.files && typeof j.files === 'object' ? j.files : {};
@@ -781,12 +879,16 @@ const staticProvider: DataProvider = {
     },
     async fetchAll(symbol, ctx) {
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
-        const res = await fetch(`data/${encodeURIComponent(raw)}.json`, { headers: { Accept: 'application/json' }, signal: ctx.signal });
-        if (!res.ok) {
-            throw new Error(`"${raw}" is not in the static cache. Pick a cached ticker, or add it to the GitHub Action's TICKERS list.`);
+        // fetchStaticJson reads the body as TEXT first, so we can tell apart the
+        // real failure modes (404, HTML SPA fallback, malformed JSON) and report
+        // an ACTIONABLE message instead of a vague "Bad static data".
+        const j: any = await fetchStaticJson(`data/${encodeURIComponent(raw)}.json`, ctx.signal, raw);
+        if (!j || !Array.isArray(j.quotes)) {
+            throw new Error(
+                `Static file data/${raw}.json loaded but has no "quotes" array. ` +
+                `The file may be truncated or in an old format — re-run scripts/fetch_data.py to rebuild it.`,
+            );
         }
-        const j: any = await res.json().catch(() => null);
-        if (!j || !Array.isArray(j.quotes)) throw new Error(`Bad static data for "${raw}".`);
         const quotes: OptionQuote[] = j.quotes.map((q: any) => ({
             symbol: String(q.symbol ?? ''),
             expiration: String(q.expiration ?? ''),
@@ -2263,6 +2365,10 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
     // of the desk on load and whenever a section is (re)expanded.
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const atmRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    // barRefs holds each section's sticky expiration bar (a real, measurable box;
+    // the .od-sec wrapper is display:contents so it has none). Used both for
+    // active-section tracking and for scrolling a collapsed bar to its pinned slot.
+    const barRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
     /**
      * Scroll so the ATM row of `exp` sits in the vertical middle of the desk.
      * Accounts for the sticky expiration-bar pile above the section so the strike
@@ -2288,6 +2394,29 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
         });
     }, [sections]);
 
+    /**
+     * Scroll so section `exp`'s expiration bar sits at its PINNED slot in the top
+     * pile (top = index * --od-bar). Used after COLLAPSING a section so the user
+     * always SEES the result: the just-collapsed bar squashed into the pile with
+     * the following section right below it. Without this, collapsing a middle
+     * section (while scrolled down) removes a lot of height below the fold, the
+     * browser CLAMPS scrollTop, and the view jumps — so the collapsed section
+     * scrolls out of sight even though its chevron flipped. Collapsing only the
+     * LAST expanded section removes nothing below, hence it "worked fine" there.
+     */
+    const scrollBarToPinned = useCallback((exp: string) => {
+        const container = scrollRef.current;
+        const bar = barRefs.current.get(exp);
+        if (!container || !bar) return;
+        const barPx = parseFloat(getComputedStyle(container).getPropertyValue('--od-bar')) * 16 || 30;
+        const idx = Math.max(0, sections.findIndex((s) => s.expiration === exp));
+        // bar.offsetTop is the bar's natural position within the (position:relative)
+        // scroll container; subtract the pile height of the earlier bars so THIS
+        // bar lands exactly at its pinned slot.
+        const target = Math.max(0, bar.offsetTop - idx * barPx);
+        container.scrollTo({ top: target, behavior: 'smooth' });
+    }, [sections]);
+
     const toggleOne = useCallback((exp: string) => {
         let willExpand = false;
         setCollapsed((prev) => {
@@ -2296,9 +2425,15 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
             return next;
         });
         setActiveExp(exp); // highlight the header actually clicked
-        // When EXPANDING a section, bring its current strike to the center.
-        if (willExpand) centerStrike(exp);
-    }, [centerStrike]);
+        if (willExpand) {
+            // Expanding: bring this section's current strike to the center.
+            centerStrike(exp);
+        } else {
+            // Collapsing: after the close animation removes the rows (~180ms),
+            // scroll the now-squashed bar to its pinned slot so it stays in view.
+            window.setTimeout(() => scrollBarToPinned(exp), 200);
+        }
+    }, [centerStrike, scrollBarToPinned]);
     const toggleAll = useCallback(() => {
         setCollapsed((prev) => (
             sections.every((s) => prev.has(s.expiration)) ? new Set() : new Set(sections.map((s) => s.expiration))
@@ -2306,11 +2441,9 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
     }, [sections]);
 
     // ---- Active-section tracking ----
-    // barRefs holds each section's sticky expiration bar (a real, measurable box;
-    // the .od-sec wrapper is display:contents so it has none). The ACTIVE section
-    // is the LAST one whose bar has already reached its pinned slot in the top
-    // pile — i.e. the section whose content is currently on screen below the pile.
-    const barRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+    // The ACTIVE section is the LAST one whose bar has already reached its pinned
+    // slot in the top pile — i.e. the section whose content is currently on screen
+    // below the pile. (barRefs is declared above, near the other scroll refs.)
     const recomputeActive = useCallback(() => {
         const container = scrollRef.current;
         if (!container) return;

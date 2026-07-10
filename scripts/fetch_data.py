@@ -12,6 +12,16 @@
 # PROJECT: Options Desk — SMART build-time data fetcher
 #
 # CHANGELOG (append newest at top; keep every entry — NEVER delete history):
+#   v6 - Market timezone + robust symbol-variant resolution:
+#        * All "today" / working-day freshness logic now runs in a MARKET timezone
+#          (TIMEZONE env, default America/New_York) instead of UTC, so "fetched
+#          today" matches the actual NYSE/NASDAQ session (UTC rolls the day over
+#          mid-evening in NY). `updated` is now stored with the tz offset. Set
+#          TIMEZONE=UTC to restore the old behavior.
+#        * fetch_ticker() now TRIES multiple symbol spellings via _symbol_variants
+#          — dash / dot / slash AND the separator-stripped form (BRK-B, BRK.B,
+#          BRK/B, BRKB) — returning the first that actually lists options, so a
+#          wrong class-share separator can't cause a false "no options".
 #   v5 - Class-share symbols + no-options skiplist + updated-file report:
 #        * SYMBOL ALIASES / canonicalization (_canonical): the NASDAQ screener
 #          spells class shares "BRK.B" / "BRK/B" but Yahoo/yfinance wants the DASH
@@ -105,6 +115,8 @@
 #   SYMBOL_ALIASES   default ""   extra "SCREENER=YAHOO" aliases, comma-separated
 #                                 (e.g. "BRK.B=BRK-B,FOO=BAR"). Class shares are
 #                                 auto-canonicalized ("."/"/" -> "-") regardless.
+#   TIMEZONE  default America/New_York  market tz for "today"/working-day rules.
+#                                 Set TIMEZONE=UTC for the old UTC behavior.
 # =============================================================================
 
 import json
@@ -113,6 +125,37 @@ import sys
 import math
 import time
 from datetime import datetime, timezone, timedelta
+
+# ---- Timezone ---------------------------------------------------------------
+# All freshness / "today" logic runs in a MARKET timezone, defaulting to US
+# Eastern (America/New_York) — the timezone the NYSE/NASDAQ session runs in — so
+# "fetched today" and the working-day rules line up with actual trading days
+# rather than UTC (which rolls over mid-evening in New York). Override with the
+# TIMEZONE env var, exactly like MAX_FETCHES / MARKET_CAP etc. Set TIMEZONE=UTC
+# to restore the old behavior. Falls back to UTC if zoneinfo/the tz db is
+# unavailable (e.g. a minimal container without tzdata).
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # Python < 3.9; our CI uses 3.13 so this is just a guard.
+    ZoneInfo = None
+
+MARKET_TZ_NAME = os.environ.get("TIMEZONE", "America/New_York")
+
+
+def _market_tz():
+    """Return the configured market tzinfo (America/New_York by default).
+    Degrades to UTC if the name is unknown or zoneinfo is missing."""
+    if ZoneInfo is None:
+        return timezone.utc
+    try:
+        return ZoneInfo(MARKET_TZ_NAME)
+    except Exception:
+        print(f"  ! unknown TIMEZONE={MARKET_TZ_NAME!r}; falling back to UTC",
+              file=sys.stderr)
+        return timezone.utc
+
+
+MARKET_TZ = _market_tz()
 
 try:
     import yfinance as yf
@@ -148,7 +191,11 @@ SKIP_RECHECK_DAYS = int(os.environ.get("SKIP_RECHECK_DAYS", "30"))
 # Some data sources use a different symbol spelling than the NASDAQ screener.
 # yfinance/Yahoo uses a DASH for class shares (e.g. screener "BRK.B" -> Yahoo
 # "BRK-B"). Explicit aliases below win; otherwise _canonical() rewrites any "."
-# or "/" separator to "-". Extend via the SYMBOL_ALIASES env: "BRK.B=BRK-B,FOO=BAR".
+# or "/" separator to "-". As an EXTRA safety net, fetch_ticker() also TRIES
+# multiple spellings via _symbol_variants (dash, dot, slash, AND the separator-
+# stripped form "BRKB") until one actually lists options — so even if a given
+# separator doesn't work we still find the chain. Extend via the SYMBOL_ALIASES
+# env: "BRK.B=BRK-B,FOO=BAR".
 SYMBOL_ALIASES = {
     "BRK.B": "BRK-B",
     "BRK/B": "BRK-B",
@@ -191,6 +238,37 @@ def _canonical(sym):
     return sym.replace(".", "-").replace("/", "-")
 
 
+def _symbol_variants(sym):
+    """
+    Candidate spellings to TRY (in order) for a symbol whose class-share
+    separator we can't be 100% sure about. Yahoo usually wants the DASH form
+    (BRK-B), but to be robust we also try dot, slash, and the SEPARATOR-STRIPPED
+    form just in case (BRK-B -> BRKB). Order:
+      1. the canonical form (explicit alias or "."/"/" -> "-")
+      2. dash / dot / slash variants of the base
+      3. the fully-stripped form (no separator at all)
+      4. the raw input as given
+    De-duplicated, order-preserving. For a plain ticker (AAPL) this is just
+    ["AAPL"], so there's zero extra work for the common case.
+    """
+    raw = sym.upper().strip()
+    canon = _canonical(raw)
+    # Base without any separator so we can rebuild each variant consistently.
+    base = raw.replace(".", "").replace("/", "").replace("-", "")
+    variants = [canon]
+    if any(c in raw for c in "./-"):
+        # Only bother generating separator variants for class-share-looking syms.
+        # Split on the FIRST separator to preserve e.g. "BRK" + "B".
+        for sep in (".", "/", "-"):
+            if sep in raw:
+                left, right = raw.split(sep, 1)
+                variants += [f"{left}-{right}", f"{left}.{right}", f"{left}/{right}"]
+                break
+        variants.append(base)  # BRKB (stripped)
+    variants.append(raw)
+    return _dedupe(variants)
+
+
 def _dedupe(seq):
     """Order-preserving de-duplication (canonicalization can collapse dupes)."""
     seen = set()
@@ -220,12 +298,20 @@ def _mid(bid, ask):
     return None
 
 
+def _today():
+    """Today's date in the configured MARKET timezone (NY by default)."""
+    return datetime.now(MARKET_TZ).date()
+
+
 def _today_iso():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return _today().strftime("%Y-%m-%d")
 
 
 def _now_iso():
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    """Current instant as an ISO-8601 string WITH the market-tz offset (e.g.
+    '2026-07-10T14:32:05-04:00'). Keeping the offset makes the stored `updated`
+    unambiguous and JS `new Date(...)` parses it correctly for local display."""
+    return datetime.now(MARKET_TZ).isoformat()
 
 
 # ---- Working-day / freshness helpers ----------------------------------------
@@ -274,7 +360,7 @@ def _file_is_fresh(updated_iso):
     day = str(updated_iso)[:10]
     if not day:
         return False
-    today = datetime.now(timezone.utc).date()
+    today = _today()
     today_str = today.strftime("%Y-%m-%d")
 
     if day == today_str:
@@ -394,12 +480,33 @@ def _rows_from_frame(frame, expiration, side):
     return out
 
 
+def _resolve_options(symbol):
+    """
+    Find a spelling of `symbol` that Yahoo actually serves options for. Tries the
+    variants from _symbol_variants (dash/dot/slash/stripped) and returns the
+    first (yfinance Ticker, expirations, matched_symbol) whose option list is
+    non-empty. Returns (None, [], None) if NONE of the variants list options.
+    A network error is left to bubble up to the caller (so it counts as an error,
+    not "no options").
+    """
+    variants = _symbol_variants(symbol)
+    for i, cand in enumerate(variants):
+        t = yf.Ticker(cand)
+        exps = list(t.options or [])
+        if exps:
+            if cand != variants[0]:
+                print(f"      · {symbol}: resolved via variant '{cand}'")
+            return t, exps, cand
+    return None, [], None
+
+
 def fetch_ticker(symbol):
     """Fetch and normalize the full (capped) chain for one ticker.
-    Returns the payload dict, or None if the ticker has no options / failed."""
+    Returns the payload dict, or None if the ticker has no options / failed.
+    Tries alternate symbol spellings (BRK-B / BRK.B / BRK/B / BRKB) so odd
+    class-share separators don't cause a false 'no options'."""
     symbol = symbol.upper().strip()
-    t = yf.Ticker(symbol)
-    exps = list(t.options or [])
+    t, exps, matched = _resolve_options(symbol)
     if not exps:
         return None
     exps = exps[:MAX_EXPIRATIONS]
@@ -481,7 +588,7 @@ def _skip_is_active(last_checked):
         d = datetime.strptime(str(last_checked)[:10], "%Y-%m-%d").date()
     except Exception:
         return False
-    age = (datetime.now(timezone.utc).date() - d).days
+    age = (_today() - d).days
     return age < SKIP_RECHECK_DAYS
 
 
