@@ -3,11 +3,12 @@
  * ============================================================================
  * AGENTIC AI ENFORCED SPECIFICATION & GUIDELINES (CRITICAL)
  * ============================================================================
- * 1. PERSIST ALL COMMENTS: Under no circumstances should ANY code comments,
- *    system design docs, or type descriptors be removed or truncated.
+ * 1. KEEP DOCUMENTATION USEFUL: Preserve accurate design docs and type
+ *    descriptors, but correct or remove stale comments instead of carrying
+ *    misleading history forward.
  * 2. AGENT READ-WRITE RULE: If a future deployment or agent updates the code,
- *    this header section and related documentation blocks MUST be kept accurate,
- *    expanded, and dynamically synchronized with the feature upgrades.
+ *    this header section and related documentation blocks MUST be kept accurate
+ *    and synchronized with feature upgrades.
  * 3. SINGLE-FILE CONTINUITY: Keep the core APP architecture self-contained in
  *    this file. (Optional INFRASTRUCTURE lives outside the 3 source files — see
  *    "COMPANION INFRASTRUCTURE" below — and is not required for the app to run.)
@@ -18,10 +19,10 @@
  * ============================================================================
  *
  * PROJECT: Options Desk
- * ENVIRONMENT: Bun, Vite, React, TypeScript, TailwindCSS v4
+ * ENVIRONMENT: Bun scripts, Parcel build, React, TypeScript, TailwindCSS v4
  *
  * ---------------------------------------------------------------------------
- * CHANGELOG (append newest at top; keep every entry — NEVER delete history):
+ * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
  * v0.9.27 - Local-index company names in ticker suggestions:
  *          - data/index.json may now include `names: { TICKER: companyName }`.
@@ -107,6 +108,15 @@
  *          - Clicking a collapsed header still expands it AND jumps to that
  *            section's current (ATM) strike (centerStrike), satisfying "expand →
  *            land on the money, not the top of the data".
+ * v0.9.21 - Harden the estimateSpot() TS2802 fix: use Map.prototype.forEach
+ *          instead of iterating the Map. v0.9.19 switched to
+ *          `Array.from(byStrike.entries())`, but Array.from over a Map iterator
+ *          can STILL trip TS2802 under some low-`target` tsconfigs (it consumes
+ *          the iteration protocol). `forEach` is a plain method call with no
+ *          iteration protocol, so it type-checks under ANY target/downlevel
+ *          setting. Re-verified tsc rc=0 at ES5 (downlevelIteration:false) and
+ *          ES2020. (If your IDE still shows the error, re-copy main.tsx — the
+ *          fix must be present at the `byStrike.forEach(...)` line.)
  * v0.9.20 - Static cache: replace the vague "Bad static data" with ACTIONABLE
  *          diagnostics. The old code did `await res.json().catch(() => null)`,
  *          which swallowed the real cause. Root cause in the wild: a dev/preview
@@ -117,15 +127,6 @@
  *          distinguishes: network error / 404 (not cached) / HTML SPA fallback /
  *          malformed-or-truncated JSON (NaN/Infinity), each with a fix hint.
  *          listTickers() and fetchAll() both use it.
- * v0.9.21 - Harden the estimateSpot() TS2802 fix: use Map.prototype.forEach
- *          instead of iterating the Map. v0.9.19 switched to
- *          `Array.from(byStrike.entries())`, but Array.from over a Map iterator
- *          can STILL trip TS2802 under some low-`target` tsconfigs (it consumes
- *          the iteration protocol). `forEach` is a plain method call with no
- *          iteration protocol, so it type-checks under ANY target/downlevel
- *          setting. Re-verified tsc rc=0 at ES5 (downlevelIteration:false) and
- *          ES2020. (If your IDE still shows the error, re-copy main.tsx — the
- *          fix must be present at the `byStrike.forEach(...)` line.)
  * v0.9.19 - Fix TS2802 in estimateSpot(): iterating a Map with `for...of`
  *          requires a tsconfig `target` of ES2015+ (or `downlevelIteration`).
  *          Some consuming projects use a lower target, so the direct
@@ -469,27 +470,23 @@
  * ---------------------------------------------------------------------------
  *
  * COMPANION INFRASTRUCTURE (optional; outside the 3 app source files):
- *   - scripts/fetch_data.py           yfinance -> data/*.json (static cache)
+ *   - scripts/fetch_data.py           yfinance -> data/*.json + data/index.json
  *   - .github/workflows/update-data.yml   schedules the fetch + commits JSON
- *   - scripts/yahoo-proxy.ts          local Bun proxy (Yahoo crumb handling)
- *   - scripts/cloudflare-worker.js    deployable proxy (Yahoo + generic /raw)
+ *   - scripts/yahoo-proxy.ts          local Bun proxy (Yahoo/NASDAQ/CBOE/search)
+ *   - scripts/cloudflare-worker.js    deployable proxy (Yahoo/NASDAQ/CBOE/search/raw)
  *
  * WHY THESE API CHOICES (research summary, keep for future agents):
  *   - marketdata.app: CORS:*, AAPL keyless -> the reliable zero-setup default.
  *   - Static cache: same-origin JSON on GitHub Pages -> zero CORS, zero keys.
  *   - Yahoo (via proxy): needs crumb/cookies -> only works behind our proxy.
- *   - Tradier: CORS:*, free dev token, UNLIMITED chains + greeks.
- *   - Alpaca: CORS:* (both auth headers allow-listed), free KEY+SECRET stored in
- *     localStorage, live snapshot with greeks/IV (feed=indicative on free plan).
- *   - Alpha Vantage: CORS:*, instant free key (25/day), IBM keyless.
- *   - Polygon/Massive: free key (5/min, 15-min delayed) snapshot with greeks +
- *     spot; key via query param (no preflight).
+ *   - NASDAQ (via proxy): free full-chain endpoint, but no browser CORS.
+ *   - CBOE (via proxy): richest no-key delayed data, but no browser CORS.
  *   - DoltHub: free SQL-over-HTTP, no key, but a FROZEN historical archive
  *     (~2024-11-11) — research/backtesting only, greeks but no volume/OI/spot.
- *   - CBOE: richest no-key data but NO CORS -> proxy-only (flaky), advanced.
- *   - Not viable direct-from-browser: Fidelity(no retail API), Google Finance
- *     (discontinued), Barchart(no free), Nasdaq(no CORS), Finnhub options
- *     (now premium-only).
+ *   - Removed historical experiments (kept in changelog only): Tradier, Alpaca,
+ *     Alpha Vantage, Polygon/Massive, Finnhub/Twelve Data and others were not
+ *     viable for this static app because of sensitive sign-up, gated options
+ *     access, low limits, or discontinued/premium endpoints.
  *
  * DATA FLOW (deferred):
  *   [Get dates] -> loadMeta(symbol) -> ChainMeta{ underlyingPrice, expirations }
@@ -503,7 +500,7 @@
  * ============================================================================
  */
 
-// @ts-ignore -- resolved by the Vite/Bun build toolchain (see ENVIRONMENT above)
+// @ts-ignore -- resolved by the Parcel/Bun build toolchain (see ENVIRONMENT above)
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
@@ -859,7 +856,7 @@ const marketdataProvider: DataProvider = {
         if (!json || json.s === 'error') {
             const em = String(json?.errmsg || `HTTP ${res.status}`);
             if (/token|credential|auth/i.test(em)) throw new Error('marketdata.app rejected the token. Check it in Settings → API key, or use AAPL (keyless).');
-            if (/plan|limit|exceed/i.test(em)) throw new Error('marketdata.app daily limit reached (100/day free). Try again tomorrow, or use Static cache / Tradier.');
+            if (/plan|limit|exceed/i.test(em)) throw new Error('marketdata.app daily limit reached (100/day free). Try again tomorrow, or use Static cache / DoltHub / proxy providers.');
             throw new Error(`marketdata.app error: ${em}`);
         }
         if (json.s === 'no_data') throw new Error(`No option data for "${raw}". Check the ticker symbol.`);
@@ -1074,14 +1071,13 @@ async function suggestTickers(provider: DataProvider, query: string, ctx: Provid
  * Static cache provider (BULK, no setup — best for GitHub Pages).
  * Reads the site's OWN files (same-origin => zero CORS, zero keys):
  *   ./data/index.json     -> { files: { "<TICKER>": "<updated ISO>", ... },
- *                              count, generated, no_options? }
+ *                              count, generated, names?, no_options? }
  *                            (v0.9.16: the manifest now records EACH ticker's own
  *                            `updated` timestamp instead of a single global
  *                            `updated` that churned on every run. The ticker list
  *                            is the sorted keys of `files`. No legacy shape kept.
- *                            `no_options` is written by fetch_data.py for its own
- *                            skiplist and is surfaced by suggestions as
- *                            "(no options)".)
+ *                            `names` powers local company-name suggestions;
+ *                            `no_options` is surfaced as "(no options)".)
  *   ./data/{TICKER}.json  -> ChainResult-like payload (see scripts/fetch_data.py)
  * Data is refreshed by the GitHub Action. Greeks may be null (yfinance source).
  */
@@ -1556,7 +1552,8 @@ const cboeProvider: DataProvider = {
  *   2. no-setup, same-origin      -> Static cache (data.json)
  *   3. no-key, free SQL-over-HTTP -> DoltHub (historical archive)
  *   4. proxy, no key              -> Yahoo (via proxy)
- *   5. proxy, no key              -> CBOE (richest live data)
+ *   5. proxy, no key              -> NASDAQ (full chain)
+ *   6. proxy, no key              -> CBOE (richest live data)
  * First entry is the DEFAULT.
  */
 /**

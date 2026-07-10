@@ -5,23 +5,20 @@
  * INFRASTRUCTURE (not part of the 3-file app source).
  *
  * WHY: A free Cloudflare Worker gives your public GitHub Pages site a stable
- *      CORS-enabled endpoint that (a) handles Yahoo's crumb/cookie flow and/or
- *      (b) injects a hidden API key for key-based providers — WITHOUT exposing
- *      any secret in the browser.
+ *      CORS-enabled endpoint that handles Yahoo's crumb/cookie flow and relays
+ *      NASDAQ/CBOE/search endpoints that do not expose browser-usable CORS.
  *
  * DEPLOY (free):
  *   1. https://dash.cloudflare.com → Workers & Pages → Create → Worker.
  *   2. Paste this file, Deploy. You get https://<name>.<you>.workers.dev
- *   3. (Optional, for key injection) add secrets:
- *        wrangler secret put MARKETDATA_TOKEN
- *        wrangler secret put ALPHAVANTAGE_KEY
- *      or set them in the dashboard → Settings → Variables.
- *   4. (Recommended) lock ALLOW_ORIGIN below to your Pages origin.
+ *   3. (Recommended) lock ALLOW_ORIGIN below to your Pages origin.
  *
  * USE FROM THE APP (Option Desk → Settings → Proxy base URL = your Worker URL):
  *   - Provider "Yahoo (via proxy)" calls {base}/api/options?symbol=AAPL[&date=...]
+ *   - Provider "NASDAQ"           calls {base}/api/nasdaq?symbol=AAPL
  *   - Provider "CBOE"             calls {base}/api/cboe?symbol=AAPL (or _SPX)
- *   - (Advanced) CBOE can also use the generic {worker}/raw?url={url} CORS proxy.
+ *   - Provider suggestions         call {base}/api/search?provider=...&q=...
+ *   - (Advanced) generic proxying can use {worker}/raw?url={url}.
  *
  * ENDPOINTS THIS WORKER EXPOSES:
  *   GET /api/options?symbol=AAPL[&date=...]   -> Yahoo optionChain (crumb-handled)

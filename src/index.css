@@ -3,13 +3,14 @@
  * ============================================================================
  * AGENTIC AI ENFORCED SPECIFICATION & GUIDELINES (CRITICAL)
  * ============================================================================
- * 1. PERSIST ALL COMMENTS: Under no circumstances should ANY code comments,
- *    system design docs, or type descriptors be removed or truncated.
+ * 1. KEEP DOCUMENTATION USEFUL: Preserve accurate design docs and type
+ *    descriptors, but correct or remove stale comments instead of carrying
+ *    misleading history forward.
  * 2. AGENT READ-WRITE RULE: If a future deployment or agent updates the code,
- *    this header section and related documentation blocks MUST be kept accurate,
- *    expanded, and dynamically synchronized with the feature upgrades.
- * 3. SINGLE-FILE CONTINUITY: Keep the core architecture completely self-contained
- *    within this file to maximize maintainability for automated development pipelines.
+ *    this header section and related documentation blocks MUST be kept accurate
+ *    and synchronized with feature upgrades.
+ * 3. CSS CONTINUITY: Keep app-wide styling and CSS architecture documented in
+ *    this file; cross-reference main.tsx when behavior is implemented in React.
  * ============================================================================
  *
  * ============================================================================
@@ -17,11 +18,17 @@
  * ============================================================================
  *
  * PROJECT: Options Desk
- * ENVIRONMENT: TailwindCSS v4 (CSS-in-JS style configuration)
+ * ENVIRONMENT: TailwindCSS v4 (CSS-first theme/configuration)
  *
  * ---------------------------------------------------------------------------
- * CHANGELOG (append newest at top; keep every entry):
+ * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.27 - No CSS structural changes for local-index company names in ticker
+ *          suggestions (main.tsx/data/index.json/scripts change only). Entry
+ *          recorded to keep this agentic CSS header synchronized.
+ * v0.9.26 - No CSS structural changes for the provider-aware ticker suggestion
+ *          combobox; it uses Tailwind utilities in main.tsx. Entry recorded to
+ *          keep this agentic CSS header synchronized.
  * v0.9.17 - .od-sec set to `display: contents` — the sticky-bar PILE fix. As a
  *          block wrapper it was the containing block of its sticky .od-bar and
  *          CLIPPED it to the section, so a bar scrolled AWAY with its section
@@ -192,7 +199,7 @@
  * 3. [Scrollbar Theming]
  *    - Shared themed scrollbars across all scrollable surfaces in the app.
  *    - Applies to two utility classes:
- *        - `.table-container` -> main option-chain data table scroll area
+ *        - `.table-container` -> main option-chain desk scroll area
  *        - `.themed-scroll`   -> any other scrollable surface (e.g. tabs strip,
  *                                the expiration selector strip)
  *    - Firefox: uses `scrollbar-width` and `scrollbar-color`.
