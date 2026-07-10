@@ -12,6 +12,16 @@
 # PROJECT: Options Desk — SMART build-time data fetcher
 #
 # CHANGELOG (append newest at top; keep every entry — NEVER delete history):
+#   v9 - No-options skiplist lives in data/index.json:
+#        * scripts/no_options.json is REMOVED. The skiplist is now stored as the
+#          `no_options` field on data/index.json (alongside `files` / `count` /
+#          `generated`), so one manifest tracks both the cached tickers and the
+#          tickers known to have no listed options. The static-cache app only
+#          reads `files`, so the extra field is invisible to the UI.
+#        * load_skiplist / save_skiplist / write_index all share data/index.json.
+#          A one-shot migration still reads a leftover scripts/no_options.json if
+#          present, then deletes it after a successful write.
+#        * GitHub Actions only needs to `git add data/` (no separate skiplist path).
 #   v8 - Human-visible CI progress logging:
 #        * Adds timestamped, flush-on-every-line log helpers so GitHub Actions
 #          shows progress immediately instead of buffering output.
@@ -45,7 +55,8 @@
 #          name, index key, skiplist) so BRK.B & co. actually fetch. Explicit
 #          SYMBOL_ALIASES map (+ SYMBOL_ALIASES env) covers irregular cases; the
 #          class-share "^"-only filter no longer drops "." / "/" tickers.
-#        * NO-OPTIONS SKIPLIST (scripts/no_options.json): a ticker that genuinely
+#        * NO-OPTIONS SKIPLIST (data/index.json → no_options; was scripts/no_options.json
+#          before v9): a ticker that genuinely
 #          returns no chain is recorded with the date checked and SKIPPED on
 #          future runs (re-checked after SKIP_RECHECK_DAYS, default 30), so we
 #          stop wasting the budget re-fetching dead tickers. A real network/source
@@ -58,7 +69,7 @@
 #          so you know precisely what to copy & replace.
 #   v4 - Missing-first then oldest-first rotation, per-ticker index (see below).
 #
-# WHAT IT DOES (v8 — logged Cboe optionable universe, then v5/v4 queue + index):
+# WHAT IT DOES (v9 — skiplist in data/index.json; v8 logged Cboe universe; v5/v4 queue + index):
 #   1. Builds a UNIVERSE of optionable US underlyings. Preferred path: pull the
 #      NASDAQ screener (no key), sort DESC by market cap, and keep/merge symbols
 #      that appear in Cboe's optionable-underlying directory so the queue mostly
@@ -86,6 +97,7 @@
 #      visible without opening every file. It is regenerated from the files on
 #      disk (each file's real `updated`), so unchanged tickers keep their old
 #      timestamp — the manifest no longer churns a single global `updated`.
+#      The same file also stores the no-options skiplist under `no_options`.
 #
 # FRESHNESS RULES (see _file_is_fresh): a cached file is SKIPPED when...
 #   * it was updated TODAY (any day); OR
@@ -107,11 +119,15 @@
 #
 # OUTPUT SHAPE (matches the "Static cache" provider in main.tsx):
 #   data/index.json        -> { "files": { "<TICKER>": "<updated ISO>", ... },
-#                               "count": N, "generated": ISO }
+#                               "count": N, "generated": ISO,
+#                               "no_options": { "<TICKER>": "YYYY-MM-DD", ... } }
 #                             (v4: per-ticker `updated` map. The app derives the
 #                             ticker list from sorted keys of `files`. "generated"
 #                             is just when the manifest was rebuilt; the per-ticker
-#                             timestamps are what drive freshness decisions.)
+#                             timestamps are what drive freshness decisions.
+#                             v9: `no_options` is the skiplist of tickers that
+#                             returned no chain — used only by this script; the
+#                             app ignores it and only reads `files`.)
 #   data/{TICKER}.json     -> { symbol, updated (ISO), underlyingPrice,
 #                               expirations[], quotes[] }  (greeks null; yfinance
 #                               gives IV/OI/volume/bid/ask/last, no greeks)
@@ -193,6 +209,10 @@ except ImportError:
 
 # ---- Paths & configuration --------------------------------------------------
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+INDEX_PATH = os.path.join(DATA_DIR, "index.json")
+# Legacy location of the no-options skiplist (pre-v9). Still read once for
+# migration, then deleted after the skiplist is written into INDEX_PATH.
+LEGACY_SKIP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "no_options.json")
 MAX_FETCHES = int(os.environ.get("MAX_FETCHES", "40"))
 # How deep the market-cap-ranked universe goes. The NASDAQ screener returns
 # ~7k US tickers across NASDAQ/NYSE/AMEX/Arca; the whole optionable universe is a
@@ -697,27 +717,80 @@ def is_fresh(path):
 # Tickers that returned NO option chain are recorded here so we don't waste the
 # per-run budget re-fetching them every time. Each entry stores the date we last
 # checked; after SKIP_RECHECK_DAYS we re-try (a ticker may start listing options
-# later). Kept OUTSIDE data/ so it isn't served to the app.
-SKIP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "no_options.json")
+# later).
+#
+# v9: the skiplist lives on data/index.json under the `no_options` key (same
+# manifest as the per-ticker `files` map). The static-cache app only reads
+# `files`, so this field is invisible to the UI. A leftover scripts/no_options.json
+# (pre-v9) is still accepted once for migration and then removed.
 
 
-def load_skiplist():
-    """Return {SYMBOL: 'YYYY-MM-DD last-checked'} of known no-option tickers."""
+def _read_index_doc():
+    """Return the parsed data/index.json object, or {} if missing/unreadable."""
     try:
-        with open(SKIP_PATH) as f:
+        with open(INDEX_PATH) as f:
             d = json.load(f)
             return d if isinstance(d, dict) else {}
     except Exception:
         return {}
 
 
-def save_skiplist(skip):
-    """Persist the no-option skiplist (sorted for stable diffs)."""
+def _sorted_no_options(skip):
+    """Stable, sorted {SYMBOL: YYYY-MM-DD} map for the index.json skiplist."""
+    return {k: skip[k] for k in sorted(skip)}
+
+
+def load_skiplist():
+    """Return {SYMBOL: 'YYYY-MM-DD last-checked'} of known no-option tickers.
+
+    Prefers data/index.json → no_options. Falls back to the legacy
+    scripts/no_options.json path so older checkouts migrate cleanly on the next
+    successful save.
+    """
+    doc = _read_index_doc()
+    d = doc.get("no_options")
+    if isinstance(d, dict) and d:
+        return dict(d)
+    # One-shot migration from the pre-v9 path.
     try:
-        with open(SKIP_PATH, "w") as f:
-            json.dump({k: skip[k] for k in sorted(skip)}, f, indent=2)
+        with open(LEGACY_SKIP_PATH) as f:
+            legacy = json.load(f)
+            if isinstance(legacy, dict) and legacy:
+                _log(f"skiplist: migrating {len(legacy)} entries from "
+                     f"scripts/no_options.json → data/index.json")
+                return dict(legacy)
+    except Exception:
+        pass
+    return {}
+
+
+def save_skiplist(skip):
+    """Persist the no-option skiplist into data/index.json (sorted for stable diffs).
+
+    Preserves any existing `files` / `count` / `generated` fields so a skiplist-
+    only update does not wipe the per-ticker manifest. Removes the legacy
+    scripts/no_options.json once the new location has been written successfully.
+    """
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        doc = _read_index_doc()
+        if not isinstance(doc.get("files"), dict):
+            doc["files"] = {}
+        doc["count"] = int(doc.get("count") or len(doc["files"]))
+        if not doc.get("generated"):
+            doc["generated"] = _now_iso()
+        doc["no_options"] = _sorted_no_options(skip)
+        with open(INDEX_PATH, "w") as f:
+            json.dump(doc, f, indent=2)
+            f.write("\n")
+        if os.path.exists(LEGACY_SKIP_PATH):
+            try:
+                os.remove(LEGACY_SKIP_PATH)
+                _log("skiplist: removed legacy scripts/no_options.json")
+            except Exception as e:
+                _log_err(f"skiplist: could not remove legacy scripts/no_options.json: {e}")
     except Exception as e:
-        _log_err(f"skiplist: could not write scripts/no_options.json: {e}")
+        _log_err(f"skiplist: could not write data/index.json no_options: {e}")
 
 
 def _skip_is_active(last_checked):
@@ -870,10 +943,19 @@ def main():
         _log(f"SLEEP {sym}: waiting REQUEST_SLEEP={REQUEST_SLEEP}s before next symbol")
         time.sleep(REQUEST_SLEEP)  # be polite to the data source
 
-    _log(f"skiplist: saving {len(skip)} entries to scripts/no_options.json")
-    save_skiplist(skip)
-    _log("index: rebuilding data/index.json manifest if file map changed")
-    index_changed = write_index()
+    _log(f"skiplist: saving {len(skip)} entries to data/index.json (no_options)")
+    # write_index owns the single data/index.json write (files + no_options).
+    # save_skiplist is kept as a thin helper for migration / standalone use, but
+    # the normal end-of-run path goes through write_index so we never double-write
+    # or race the two sections of the manifest against each other.
+    _log("index: rebuilding data/index.json manifest if files/skiplist changed")
+    index_changed = write_index(skip)
+    if index_changed and os.path.exists(LEGACY_SKIP_PATH):
+        try:
+            os.remove(LEGACY_SKIP_PATH)
+            _log("skiplist: removed legacy scripts/no_options.json")
+        except Exception as e:
+            _log_err(f"skiplist: could not remove legacy scripts/no_options.json: {e}")
     if index_changed:
         updated_files.append(os.path.relpath(
             os.path.join(DATA_DIR, "index.json"), os.path.dirname(DATA_DIR)))
@@ -895,40 +977,51 @@ def main():
         print("  (none — everything was already fresh / skiplisted)", flush=True)
 
 
-def write_index():
+def write_index(skip=None):
     """
     Rebuild data/index.json as a PER-TICKER manifest from the files on disk.
-    Shape (v4): { "files": { TICKER: <updated ISO>, ... }, "count": N,
-                  "generated": <ISO> }.
+    Shape (v9): { "files": { TICKER: <updated ISO>, ... }, "count": N,
+                  "generated": <ISO>,
+                  "no_options": { TICKER: "YYYY-MM-DD", ... } }.
     Each ticker keeps ITS OWN `updated` (read from its file), so the manifest
     reflects real per-ticker freshness and unchanged tickers keep their old
-    timestamp.
+    timestamp. The no-options skiplist is stored on the same document (v9);
+    pass `skip` to write the in-memory skiplist, otherwise the existing
+    `no_options` field on disk is preserved.
 
     To avoid churn, the file is only REWRITTEN when the per-ticker `files` map
-    actually changed vs. what's on disk (so a run that fetched nothing leaves
-    index.json byte-for-byte untouched, and `generated` is NOT bumped). Returns
-    True if index.json was (re)written this call, else False.
+    or the skiplist actually changed vs. what's on disk (so a run that fetched
+    nothing and didn't change the skiplist leaves index.json byte-for-byte
+    untouched, and `generated` is NOT bumped). Returns True if index.json was
+    (re)written this call, else False.
     """
     files = {}
     for sym in sorted(_cached_symbols()):
         files[sym] = _file_updated(os.path.join(DATA_DIR, f"{sym}.json"))
 
-    index_path = os.path.join(DATA_DIR, "index.json")
-    try:
-        with open(index_path) as f:
-            prev = json.load(f)
-    except Exception:
-        prev = None
+    prev = _read_index_doc()
+    if skip is None:
+        raw = prev.get("no_options") if isinstance(prev, dict) else {}
+        no_options = _sorted_no_options(raw) if isinstance(raw, dict) else {}
+    else:
+        no_options = _sorted_no_options(skip)
 
-    # Compare only the meaningful part (the per-ticker map); ignore `generated`.
-    if isinstance(prev, dict) and prev.get("files") == files:
+    # Compare the meaningful parts (files + skiplist); ignore `generated`.
+    if (isinstance(prev, dict)
+            and prev.get("files") == files
+            and _sorted_no_options(prev.get("no_options") or {}) == no_options):
         return False
 
-    with open(index_path, "w") as f:
-        json.dump(
-            {"files": files, "count": len(files), "generated": _now_iso()},
-            f, indent=2,
-        )
+    payload = {
+        "files": files,
+        "count": len(files),
+        "generated": _now_iso(),
+        "no_options": no_options,
+    }
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(INDEX_PATH, "w") as f:
+        json.dump(payload, f, indent=2)
+        f.write("\n")
     return True
 
 
