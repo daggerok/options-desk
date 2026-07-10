@@ -184,10 +184,10 @@ index.html                      # app shell (loads index.css + main.tsx)
 index.css                       # Tailwind v4 + theme tokens + scrollbars
 main.tsx                        # the entire app (providers, UI, state)
 data/                           # static cache (built by the Action)
-  index.json                    #   { files: { TICKER: updatedISO }, count, generated }
+  index.json                    #   { files, count, generated, no_options }
   AAPL.json, SPY.json, …        #   one chain per cached ticker
 scripts/
-  fetch_data.py                 # yfinance → data/*.json
+  fetch_data.py                 # yfinance → data/*.json (+ no_options skiplist)
   yahoo-proxy.ts                # local Bun Yahoo proxy
   cloudflare-worker.js          # deployable proxy (Yahoo + /raw)
 .github/workflows/update-data.yml   # scheduled data refresh
@@ -301,10 +301,10 @@ index.html                      # оболочка (подключает index.c
 index.css                       # Tailwind v4 + токены темы + скроллбары
 main.tsx                        # всё приложение (провайдеры, UI, состояние)
 data/                           # статический кэш (создаёт Action)
-  index.json                    #   { files: { TICKER: updatedISO }, count, generated }
+  index.json                    #   { files, count, generated, no_options }
   AAPL.json, SPY.json, …        #   по одной цепочке на тикер
 scripts/
-  fetch_data.py                 # yfinance → data/*.json
+  fetch_data.py                 # yfinance → data/*.json (+ no_options skiplist)
   yahoo-proxy.ts                # локальный Bun-прокси Yahoo
   cloudflare-worker.js          # прокси для деплоя (Yahoo + /raw)
 .github/workflows/update-data.yml   # обновление данных по расписанию

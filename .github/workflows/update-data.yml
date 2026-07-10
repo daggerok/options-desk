@@ -74,10 +74,9 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Stage the refreshed chains AND the no-options skiplist (so a ticker
-          # that has no options isn't re-fetched every run across CI runners).
+          # Stage the refreshed chains + data/index.json (which also holds the
+          # no-options skiplist under the `no_options` key since fetch_data.py v9).
           git add data/ || true
-          [ -f scripts/no_options.json ] && git add scripts/no_options.json || true
           # Check if there are changes to commit
           if git diff --staged --quiet; then
             echo "No data changes — nothing to commit."

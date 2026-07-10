@@ -907,11 +907,14 @@ async function fetchStaticJson(url: string, signal?: AbortSignal, label?: string
 /**
  * Static cache provider (BULK, no setup — best for GitHub Pages).
  * Reads the site's OWN files (same-origin => zero CORS, zero keys):
- *   ./data/index.json     -> { files: { "<TICKER>": "<updated ISO>", ... } }
+ *   ./data/index.json     -> { files: { "<TICKER>": "<updated ISO>", ... },
+ *                              count, generated, no_options? }
  *                            (v0.9.16: the manifest now records EACH ticker's own
  *                            `updated` timestamp instead of a single global
  *                            `updated` that churned on every run. The ticker list
- *                            is the sorted keys of `files`. No legacy shape kept.)
+ *                            is the sorted keys of `files`. No legacy shape kept.
+ *                            `no_options` is written by fetch_data.py for its own
+ *                            skiplist and is ignored by this provider.)
  *   ./data/{TICKER}.json  -> ChainResult-like payload (see scripts/fetch_data.py)
  * Data is refreshed by the GitHub Action. Greeks may be null (yfinance source).
  */
