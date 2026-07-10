@@ -1,16 +1,18 @@
 #!/usr/bin/env bun
 /**
  * =============================================================================
- * Options Desk — LOCAL DEV data proxy (Bun): Yahoo + CBOE
+ * Options Desk — LOCAL DEV data proxy (Bun): Yahoo + NASDAQ + CBOE + search
  * -----------------------------------------------------------------------------
  * INFRASTRUCTURE (not part of the 3-file app source).
  *
  * WHY:
  *   - Yahoo's options endpoint requires a rotating "crumb" token tied to cookies
  *     and sends no CORS header.
- *   - CBOE's delayed-quotes CDN sends no CORS header at all.
- *   Neither can be called directly from a browser. This tiny Bun server relays
- *   both with permissive CORS, for LOCAL development.
+ *   - NASDAQ/CBOE endpoints used here send no browser-usable CORS headers.
+ *   - Provider-native suggestion endpoints are also relayed so the app can
+ *     search symbols without exposing users to upstream CORS differences.
+ *   This tiny Bun server relays those requests with permissive CORS for LOCAL
+ *   development.
  *
  * RUN:  bun run scripts/yahoo-proxy.ts        (defaults to port 8787)
  *       PORT=9000 bun run scripts/yahoo-proxy.ts

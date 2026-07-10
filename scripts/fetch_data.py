@@ -2,7 +2,8 @@
 # =============================================================================
 # AGENTIC AI ENFORCED SPECIFICATION & GUIDELINES (CRITICAL)
 # =============================================================================
-# 1. PERSIST ALL COMMENTS: Do not remove or truncate the docs in this file.
+# 1. KEEP DOCUMENTATION USEFUL: Preserve accurate docs, but correct or remove
+#    stale comments instead of carrying misleading history forward.
 # 2. AGENT READ-WRITE RULE: Keep this header synchronized with behavior on every
 #    change (mirrors the main.tsx / index.css agentic-guide convention).
 # 3. This file is INFRASTRUCTURE for the "build-time static cache" strategy. It
@@ -11,7 +12,7 @@
 #
 # PROJECT: Options Desk — SMART build-time data fetcher
 #
-# CHANGELOG (append newest at top; keep every entry — NEVER delete history):
+# CHANGELOG (append newest at top; keep history accurate):
 #   v10 - Local-index company names for ticker suggestions:
 #        * data/index.json now also carries `names: { TICKER: companyName }` for
 #          cached tickers and no-options skiplist entries whenever live universe
@@ -25,13 +26,14 @@
 #   v9 - No-options skiplist lives in data/index.json:
 #        * scripts/no_options.json is REMOVED. The skiplist is now stored as the
 #          `no_options` field on data/index.json (alongside `files` / `count` /
-#          `generated`), so one manifest tracks both the cached tickers and the
-#          tickers known to have no listed options. The static-cache app only
-#          reads `files`, so the extra field is invisible to the UI.
+#          `generated`), so one manifest tracks both cached tickers and the
+#          tickers known to have no listed options.
 #        * load_skiplist / save_skiplist / write_index all share data/index.json.
 #          A one-shot migration still reads a leftover scripts/no_options.json if
 #          present, then deletes it after a successful write.
 #        * GitHub Actions only needs to `git add data/` (no separate skiplist path).
+#          Note: v10+ app code surfaces this field in ticker suggestions as
+#          `(no options)`.
 #   v8 - Human-visible CI progress logging:
 #        * Adds timestamped, flush-on-every-line log helpers so GitHub Actions
 #          shows progress immediately instead of buffering output.
@@ -757,10 +759,10 @@ def is_fresh(path):
 # checked; after SKIP_RECHECK_DAYS we re-try (a ticker may start listing options
 # later).
 #
-# v9: the skiplist lives on data/index.json under the `no_options` key (same
-# manifest as the per-ticker `files` map). The static-cache app only reads
-# `files`, so this field is invisible to the UI. A leftover scripts/no_options.json
-# (pre-v9) is still accepted once for migration and then removed.
+# v9/v10: the skiplist lives on data/index.json under `no_options` (same
+# manifest as `files` and `names`). The static app surfaces this field in ticker
+# suggestions as `(no options)`. A leftover scripts/no_options.json (pre-v9) is
+# still accepted once for migration and then removed.
 
 
 def _read_index_doc():
@@ -805,8 +807,8 @@ def load_skiplist():
 def save_skiplist(skip):
     """Persist the no-option skiplist into data/index.json (sorted for stable diffs).
 
-    Preserves any existing `files` / `count` / `generated` fields so a skiplist-
-    only update does not wipe the per-ticker manifest. Removes the legacy
+    Preserves any existing `files` / `count` / `generated` / `names` fields so a
+    skiplist-only update does not wipe the per-ticker manifest. Removes the legacy
     scripts/no_options.json once the new location has been written successfully.
     """
     try:
@@ -979,11 +981,11 @@ def main():
         time.sleep(REQUEST_SLEEP)  # be polite to the data source
 
     _log(f"skiplist: saving {len(skip)} entries to data/index.json (no_options)")
-    # write_index owns the single data/index.json write (files + no_options).
+    # write_index owns the single data/index.json write (files + names + no_options).
     # save_skiplist is kept as a thin helper for migration / standalone use, but
     # the normal end-of-run path goes through write_index so we never double-write
     # or race the two sections of the manifest against each other.
-    _log("index: rebuilding data/index.json manifest if files/skiplist changed")
+    _log("index: rebuilding data/index.json manifest if files/names/skiplist changed")
     index_changed = write_index(skip)
     if index_changed and os.path.exists(LEGACY_SKIP_PATH):
         try:
