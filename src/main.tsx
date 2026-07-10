@@ -23,6 +23,21 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry — NEVER delete history):
  * ---------------------------------------------------------------------------
+ * v0.9.26 - Provider-aware ticker suggestions + local no-options fallback:
+ *          - Replaced the Static-cache-only ticker <select> with a searchable
+ *            combobox input for ALL providers. Suggestions are fetched while the
+ *            user types and can be picked without auto-loading; Enter still runs
+ *            Get dates unless a highlighted suggestion is selected.
+ *          - Providers with a native searchable universe now use it: Yahoo,
+ *            NASDAQ and CBOE call the companion proxy's new unified
+ *            /api/search?provider=<id>&q=... endpoint; DoltHub uses SQL against
+ *            option_chain at DOLT_LATEST_DATE. Providers without such an endpoint
+ *            fall back to data/index.json.
+ *          - data/index.json fallback now reads BOTH `files` (cached tickers with
+ *            options) and `no_options` (valid tickers where the latest scan found
+ *            no listed options). no_options rows are visibly labeled
+ *            "(no options)" in the suggestion menu and Static fetches now produce
+ *            an explicit no-options message instead of a misleading 404.
  * v0.9.25 - FOCUS-ON-CLICK for multi-expiration desks (BDD requested):
  *          - GIVEN 4 expirations loaded and scrolled to the latest (4th),
  *            WHEN user clicks any date bar above (2nd or 3rd) in the sticky pile,
@@ -635,6 +650,28 @@ interface DataProvider {
 
     /** Optional: list of tickers this provider can serve (Static cache uses it). */
     listTickers?: (ctx: ProviderContext) => Promise<string[]>;
+
+    /**
+     * Optional provider-native ticker suggestions / symbol search.
+     * Providers that expose their own search endpoint (Yahoo/NASDAQ/CBOE proxy,
+     * DoltHub SQL) implement this. Providers without one fall back to the local
+     * data/index.json manifest, including tickers known to have no options.
+     */
+    suggestTickers?: (query: string, ctx: ProviderContext) => Promise<TickerSuggestion[]>;
+}
+
+/** A normalized ticker search suggestion shown under the ticker input. */
+interface TickerSuggestion {
+    /** Display/submission symbol. For CBOE indices the user-facing symbol is SPX; the provider maps it to _SPX internally. */
+    symbol: string;
+    /** Optional company / index / instrument name for full-text search context. */
+    name?: string;
+    /** Optional exchange label (NASDAQ, NYSE, CBOE, etc.). */
+    exchange?: string;
+    /** Human label for the source of this suggestion (Provider / Local index). */
+    source: string;
+    /** False only when data/index.json explicitly says the ticker exists but has no listed options. */
+    hasOptions: boolean;
 }
 
 // ============================================================================
@@ -904,6 +941,112 @@ async function fetchStaticJson(url: string, signal?: AbortSignal, label?: string
     }
 }
 
+/** Local manifest shape normalized from data/index.json for ticker suggestions. */
+interface StaticTickerManifest {
+    options: string[];
+    noOptions: string[];
+    generated?: string;
+}
+
+/** In-memory copy of data/index.json so typing in the ticker box stays instant. */
+let staticTickerManifestCache: StaticTickerManifest | null = null;
+
+/** Normalize any provider/search symbol into the uppercase value the app submits. */
+function normalizeTickerSymbol(s: unknown): string {
+    return String(s ?? '').trim().toUpperCase();
+}
+
+/** True when `sym` looks like a ticker-ish identifier rather than arbitrary text. */
+function looksLikeTicker(sym: string): boolean {
+    return /^[.^_\-A-Z0-9]{1,16}$/.test(sym);
+}
+
+/**
+ * Read data/index.json and normalize BOTH known-with-options (`files`) and
+ * known-without-options (`no_options`). The latter is deliberately preserved for
+ * suggestions so a user can see "XYZ (no options)" while typing and understand
+ * that the ticker is valid but the latest cache scan found no listed contracts.
+ */
+async function loadStaticTickerManifest(ctx: ProviderContext): Promise<StaticTickerManifest> {
+    if (staticTickerManifestCache) return staticTickerManifestCache;
+    const j: any = await fetchStaticJson('data/index.json', ctx.signal);
+    const files = j?.files && typeof j.files === 'object' ? j.files : {};
+    const noRaw = j?.no_options;
+    const noOptions = Array.isArray(noRaw)
+        ? noRaw.map(normalizeTickerSymbol)
+        : (noRaw && typeof noRaw === 'object' ? Object.keys(noRaw).map(normalizeTickerSymbol) : []);
+    staticTickerManifestCache = {
+        options: Object.keys(files).map(normalizeTickerSymbol).filter(Boolean).sort(),
+        noOptions: noOptions.filter(Boolean).sort(),
+        generated: typeof j?.generated === 'string' ? j.generated : undefined,
+    };
+    return staticTickerManifestCache;
+}
+
+/** Rank a local-index match: exact > prefix > substring; no match => null. */
+function localTickerRank(query: string, symbol: string): number | null {
+    const q = normalizeTickerSymbol(query);
+    if (!q) return 50;
+    if (symbol === q) return 0;
+    if (symbol.startsWith(q)) return 10 + Math.min(symbol.length, 20);
+    const at = symbol.indexOf(q);
+    return at >= 0 ? 100 + at + Math.min(symbol.length, 20) : null;
+}
+
+/** Build suggestions from the local static manifest, including "(no options)" rows. */
+function staticTickerSuggestionsFromManifest(query: string, manifest: StaticTickerManifest, limit = 24): TickerSuggestion[] {
+    const out: Array<TickerSuggestion & { _rank: number }> = [];
+    const add = (symbol: string, hasOptions: boolean) => {
+        if (!looksLikeTicker(symbol)) return;
+        const rank = localTickerRank(query, symbol);
+        if (rank == null) return;
+        out.push({ symbol, source: 'Local index', hasOptions, _rank: rank + (hasOptions ? 0 : 25) });
+    };
+    manifest.options.forEach((s) => add(s, true));
+    manifest.noOptions.forEach((s) => add(s, false));
+    return out
+        .sort((a, b) => a._rank - b._rank || a.symbol.localeCompare(b.symbol))
+        .slice(0, limit)
+        .map(({ _rank, ...s }) => s);
+}
+
+/** Convenience wrapper for fallback suggestions from data/index.json. */
+async function staticTickerSuggestions(query: string, ctx: ProviderContext, limit = 24): Promise<TickerSuggestion[]> {
+    const manifest = await loadStaticTickerManifest(ctx);
+    return staticTickerSuggestionsFromManifest(query, manifest, limit);
+}
+
+/** Deduplicate and cap provider-native suggestions before rendering. */
+function dedupeTickerSuggestions(items: TickerSuggestion[], limit = 24): TickerSuggestion[] {
+    const seen = new Set<string>();
+    const out: TickerSuggestion[] = [];
+    items.forEach((item) => {
+        const symbol = normalizeTickerSymbol(item.symbol);
+        if (!symbol || seen.has(symbol)) return;
+        seen.add(symbol);
+        out.push({ ...item, symbol, hasOptions: item.hasOptions !== false });
+    });
+    return out.slice(0, limit);
+}
+
+/**
+ * Provider-native suggestion request with local-index fallback. If a provider has
+ * no dedicated search/list endpoint, or its proxy is unavailable, the UI still
+ * suggests tickers from data/index.json and labels `no_options` entries.
+ */
+async function suggestTickers(provider: DataProvider, query: string, ctx: ProviderContext, limit = 24): Promise<TickerSuggestion[]> {
+    if (provider.suggestTickers) {
+        try {
+            const suggestions = await provider.suggestTickers(query, ctx);
+            if (suggestions.length > 0) return dedupeTickerSuggestions(suggestions, limit);
+        } catch (e: unknown) {
+            if (isAbortError(e)) throw e;
+            dbg('provider suggestions failed; falling back to local index', { provider: provider.id, error: String(e) });
+        }
+    }
+    return staticTickerSuggestions(query, ctx, limit);
+}
+
 /**
  * Static cache provider (BULK, no setup — best for GitHub Pages).
  * Reads the site's OWN files (same-origin => zero CORS, zero keys):
@@ -914,7 +1057,8 @@ async function fetchStaticJson(url: string, signal?: AbortSignal, label?: string
  *                            `updated` that churned on every run. The ticker list
  *                            is the sorted keys of `files`. No legacy shape kept.
  *                            `no_options` is written by fetch_data.py for its own
- *                            skiplist and is ignored by this provider.)
+ *                            skiplist and is surfaced by suggestions as
+ *                            "(no options)".)
  *   ./data/{TICKER}.json  -> ChainResult-like payload (see scripts/fetch_data.py)
  * Data is refreshed by the GitHub Action. Greeks may be null (yfinance source).
  */
@@ -923,7 +1067,7 @@ const staticProvider: DataProvider = {
     label: 'Static cache (data.json) — no setup',
     description:
         'Static cache — reads the site’s own ./data/{TICKER}.json (built by the GitHub Action + yfinance). ' +
-        '100% CORS-free on GitHub Pages, no keys. Only cached tickers are available (see the picker).',
+        '100% CORS-free on GitHub Pages, no keys. Only cached tickers are available (see the searchable picker).',
     mode: 'bulk',
     setup: 'none',
     supportsToken: false,
@@ -934,15 +1078,23 @@ const staticProvider: DataProvider = {
         try {
             // Reuse the robust JSON fetch so a mis-served index.json (e.g. SPA
             // HTML fallback) fails cleanly to an empty list instead of throwing.
-            const j: any = await fetchStaticJson('data/index.json', ctx.signal);
             // v0.9.16 shape: { files: { TICKER: updatedISO } }. The ticker list is
             // the sorted keys of `files`.
-            const files = j?.files && typeof j.files === 'object' ? j.files : {};
-            return Object.keys(files).map((s) => String(s).toUpperCase()).sort();
+            const manifest = await loadStaticTickerManifest(ctx);
+            return manifest.options;
         } catch { return []; }
+    },
+    async suggestTickers(query, ctx) {
+        // Static cache uses the local manifest directly and includes the
+        // `no_options` skiplist as visible "(no options)" suggestions.
+        return staticTickerSuggestions(query, ctx);
     },
     async fetchAll(symbol, ctx) {
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
+        const manifest = await loadStaticTickerManifest(ctx).catch(() => null);
+        if (manifest?.noOptions.includes(raw)) {
+            throw new Error(`"${raw}" is a valid ticker, but data/index.json marks it as (no options) in the latest static-cache scan.`);
+        }
         // fetchStaticJson reads the body as TEXT first, so we can tell apart the
         // real failure modes (404, HTML SPA fallback, malformed JSON) and report
         // an ACTIONABLE message instead of a vague "Bad static data".
@@ -978,6 +1130,31 @@ const staticProvider: DataProvider = {
 };
 
 /**
+ * Query the companion proxy's unified suggestion endpoint. The local Bun proxy
+ * and Cloudflare Worker both expose /api/search?provider=<id>&q=<text>, returning
+ * normalized `{ suggestions: TickerSuggestion[] }`. If the proxy is unavailable,
+ * callers fall back to data/index.json via suggestTickers().
+ */
+async function proxyTickerSuggestions(providerId: 'yahoo' | 'nasdaq' | 'cboe', query: string, ctx: ProviderContext): Promise<TickerSuggestion[]> {
+    const q = query.trim();
+    if (!q) return [];
+    const base = (ctx.proxyBase || '').replace(/\/$/, '');
+    if (!base) throw new Error('Proxy base URL is not configured for provider-native ticker search.');
+    const url = `${base}/api/search?provider=${encodeURIComponent(providerId)}&q=${encodeURIComponent(q)}`;
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
+    if (!res.ok) throw new Error(`Ticker search proxy failed (HTTP ${res.status}).`);
+    const json: any = await res.json().catch(() => null);
+    const rows = Array.isArray(json?.suggestions) ? json.suggestions : [];
+    return rows.map((r: any) => ({
+        symbol: normalizeTickerSymbol(r.symbol),
+        name: r.name ? String(r.name) : undefined,
+        exchange: r.exchange ? String(r.exchange) : undefined,
+        source: r.source ? String(r.source) : providerId.toUpperCase(),
+        hasOptions: r.hasOptions !== false,
+    })).filter((s: TickerSuggestion) => s.symbol && looksLikeTicker(s.symbol));
+}
+
+/**
  * Yahoo (via proxy) provider (LAZY, needs a proxy base URL).
  * The proxy (scripts/yahoo-proxy.ts locally, or scripts/cloudflare-worker.js
  * deployed) handles Yahoo's crumb/cookie flow and re-exposes CORS:*.
@@ -998,6 +1175,11 @@ const yahooProvider: DataProvider = {
     needsProxyBase: true,
     demoSymbol: undefined,
     needsKeyFor() { return false; },
+    async suggestTickers(query, ctx) {
+        // Provider-native full-text symbol search via the same companion proxy
+        // that already handles Yahoo's CORS/crumb flow for option chains.
+        return proxyTickerSuggestions('yahoo', query, ctx);
+    },
     async fetchMeta(symbol, ctx) {
         const raw = symbol.toUpperCase().replace(/^[.]/, '');
         const base = (ctx.proxyBase || '').replace(/\/$/, '');
@@ -1105,6 +1287,25 @@ const dolthubProvider: DataProvider = {
     needsProxy: false,
     demoSymbol: 'AAPL',
     needsKeyFor() { return false; },
+    async suggestTickers(query, ctx) {
+        // DoltHub is SQL-addressable, so we can ask the option archive itself for
+        // supported symbols at the frozen latest date. Keep this prefix-based (not
+        // `%foo%`) so the indexed primary-key path stays fast while typing.
+        const raw = normalizeTickerSymbol(query).replace(/^[_.]/, '');
+        if (!raw) return [];
+        const rows = await doltQuery(
+            `SELECT DISTINCT act_symbol FROM option_chain ` +
+            `WHERE date='${DOLT_LATEST_DATE}' AND act_symbol LIKE '${sqlLit(raw)}%' ` +
+            `ORDER BY act_symbol LIMIT 24`,
+            ctx,
+        );
+        return rows.map((r) => ({
+            symbol: normalizeTickerSymbol(r.act_symbol),
+            name: `DoltHub options archive (${DOLT_LATEST_DATE})`,
+            source: 'DoltHub',
+            hasOptions: true,
+        })).filter((s) => s.symbol);
+    },
     async fetchMeta(symbol, ctx) {
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
         // Fixed date -> uses the PRIMARY KEY index, returns fast (no MAX subquery).
@@ -1187,6 +1388,11 @@ const nasdaqProvider: DataProvider = {
     needsProxyBase: true,   // recommended path: {base}/api/nasdaq
     demoSymbol: 'AAPL',
     needsKeyFor() { return false; },
+    async suggestTickers(query, ctx) {
+        // NASDAQ's own autocomplete is proxied server-side and searched by both
+        // ticker and company name; if unavailable, the app falls back to index.json.
+        return proxyTickerSuggestions('nasdaq', query, ctx);
+    },
     async fetchAll(symbol, ctx) {
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
         const base = (ctx.proxyBase || '').replace(/\/$/, '');
@@ -1267,6 +1473,11 @@ const cboeProvider: DataProvider = {
     needsProxy: true,       // shows the CORS-proxy dropdown (fallback path)
     needsProxyBase: true,   // shows the Proxy base URL field (recommended path)
     needsKeyFor() { return false; },
+    async suggestTickers(query, ctx) {
+        // CBOE's symbol book is a large no-CORS JSON file, so the proxy searches
+        // it server-side and returns a small normalized suggestion list.
+        return proxyTickerSuggestions('cboe', query, ctx);
+    },
     async fetchAll(symbol, ctx) {
         const INDEX_SET = new Set(['SPX', 'VIX', 'NDX', 'RUT', 'DJX', 'XSP', 'OEX', 'VXN']);
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
@@ -2705,8 +2916,11 @@ const App: React.FC = () => {
     const [error, setError] = useState<string>('');
     const [notice, setNotice] = useState<string>('');              // calm info (e.g. cancelled)
     const [errorNonce, setErrorNonce] = useState<number>(0);
-    // Available tickers for providers that expose a list (Static cache).
-    const [tickerList, setTickerList] = useState<string[]>([]);
+    // Ticker suggestions: provider-native search when available; otherwise data/index.json fallback.
+    const [tickerSuggestions, setTickerSuggestions] = useState<TickerSuggestion[]>([]);
+    const [tickerSuggestionsLoading, setTickerSuggestionsLoading] = useState<boolean>(false);
+    const [tickerSuggestionsOpen, setTickerSuggestionsOpen] = useState<boolean>(false);
+    const [activeTickerSuggestion, setActiveTickerSuggestion] = useState<number>(-1);
     // AbortControllers so the Cancel button can stop in-flight requests.
     const metaAbort = useRef<AbortController | null>(null);
     const expAbort = useRef<AbortController | null>(null);
@@ -2735,20 +2949,32 @@ const App: React.FC = () => {
         setNotice('');
     }, []);
 
-    // Load the ticker list for providers that publish one (Static cache).
+    // Load ticker suggestions as the user types. Provider-native search is used
+    // when supported (Yahoo/NASDAQ/CBOE proxy, DoltHub SQL); otherwise, or when
+    // the proxy/search request fails, suggestions fall back to data/index.json.
     useEffect(() => {
         let cancelled = false;
-        setTickerList([]);
-        if (provider.listTickers) {
-            const ac = new AbortController();
-            provider.listTickers(ctxFor(settings, provider, ac.signal))
-                .then((list) => { if (!cancelled) setTickerList(list); })
-                .catch(() => { /* ignore */ });
-            return () => { cancelled = true; ac.abort(); };
-        }
-        return () => { cancelled = true; };
+        const ac = new AbortController();
+        const query = tickerInput.trim();
+        const delay = query ? 180 : 0; // instant first cached list, debounce typed search
+        setActiveTickerSuggestion(-1);
+        const timer = window.setTimeout(() => {
+            setTickerSuggestionsLoading(true);
+            suggestTickers(provider, query, ctxFor(settings, provider, ac.signal))
+                .then((items) => {
+                    if (cancelled) return;
+                    setTickerSuggestions(items);
+                })
+                .catch((e) => {
+                    if (!cancelled && !isAbortError(e)) setTickerSuggestions([]);
+                })
+                .finally(() => {
+                    if (!cancelled) setTickerSuggestionsLoading(false);
+                });
+        }, delay);
+        return () => { cancelled = true; ac.abort(); window.clearTimeout(timer); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [provider.id, settings.proxyBase]);
+    }, [provider.id, tickerInput, settings.proxyBase, settings.proxyTemplate, settings.workerUrl]);
 
     // Reset the view whenever the provider changes (deferred: no auto-fetch).
     useEffect(() => {
@@ -2845,6 +3071,38 @@ const App: React.FC = () => {
         requestAnimationFrame(() => loadBtnRef.current?.focus());
     }, []);
 
+    /** Select a suggestion into the ticker input without auto-fetching. */
+    const chooseTickerSuggestion = useCallback((s: TickerSuggestion) => {
+        setTickerInput(s.symbol);
+        setTickerSuggestionsOpen(false);
+        setActiveTickerSuggestion(-1);
+        if (!s.hasOptions) {
+            setNotice(`"${s.symbol}" is a valid ticker, but the latest local index marks it as (no options).`);
+        } else {
+            setNotice('');
+        }
+    }, []);
+
+    /** Keyboard navigation for the custom ticker suggestion popover. */
+    const onTickerKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Escape') {
+            setTickerSuggestionsOpen(false);
+            setActiveTickerSuggestion(-1);
+            return;
+        }
+        if (!tickerSuggestionsOpen || tickerSuggestions.length === 0) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActiveTickerSuggestion((i) => Math.min(i + 1, tickerSuggestions.length - 1));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActiveTickerSuggestion((i) => Math.max(i - 1, -1));
+        } else if (e.key === 'Enter' && activeTickerSuggestion >= 0) {
+            e.preventDefault();
+            chooseTickerSuggestion(tickerSuggestions[activeTickerSuggestion]);
+        }
+    }, [tickerSuggestionsOpen, tickerSuggestions, activeTickerSuggestion, chooseTickerSuggestion]);
+
     // Whether the current provider+settings require a key for the typed ticker.
     const showOnboarding = useMemo(() => {
         const sym = tickerInput.trim().toUpperCase() || 'AAPL';
@@ -2890,7 +3148,7 @@ const App: React.FC = () => {
         ? `or get ${provider.demoSymbol}’s dates now (no key needed)`
         : 'or switch to marketdata.app’s free AAPL';
 
-    const hasTickerList = tickerList.length > 0;
+    const showTickerSuggestions = tickerSuggestionsOpen && (tickerSuggestionsLoading || tickerSuggestions.length > 0);
 
     // ---- Render ------------------------------------------------------------
     return (
@@ -2913,7 +3171,7 @@ const App: React.FC = () => {
             <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
                 {/* ---- Controls: STEP 1 (ticker → Get dates), STEP 2 (exp → Load) ---- */}
                 <div className="mb-4 flex flex-wrap items-center gap-2">
-                    {/* Ticker input — dropdown when the provider lists tickers (Static). */}
+                    {/* Ticker input — searchable suggestions use provider-native search when possible, then data/index.json fallback. */}
                     <form
                         onSubmit={(e) => { e.preventDefault(); getDates(tickerInput); }}
                         className={
@@ -2923,26 +3181,59 @@ const App: React.FC = () => {
                         key={errorNonce}
                     >
                         <Icon.Search className="h-4 w-4 text-slate-400" />
-                        {hasTickerList ? (
-                            <select
-                                value={tickerInput}
-                                onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
-                                /* Same fixed width as the text input for a consistent, easy-to-click target. */
-                                className="w-44 bg-transparent text-sm text-slate-800 dark:text-slate-100 outline-none"
-                            >
-                                {!tickerList.includes(tickerInput.toUpperCase()) && <option value={tickerInput}>{tickerInput || '—'}</option>}
-                                {tickerList.map((t) => (<option key={t} value={t}>{t}</option>))}
-                            </select>
-                        ) : (
+                        <div className="relative">
                             <input
                                 value={tickerInput}
-                                onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
-                                placeholder="Ticker (e.g. AAPL, TSLA, SPX)"
+                                onChange={(e) => {
+                                    setTickerInput(e.target.value.toUpperCase());
+                                    setTickerSuggestionsOpen(true);
+                                }}
+                                onFocus={() => setTickerSuggestionsOpen(true)}
+                                onBlur={() => window.setTimeout(() => setTickerSuggestionsOpen(false), 120)}
+                                onKeyDown={onTickerKeyDown}
+                                placeholder="Ticker or company (e.g. AAPL, Tesla, SPX)"
                                 spellCheck={false}
                                 autoCapitalize="characters"
-                                className="w-44 bg-transparent text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400 outline-none"
+                                role="combobox"
+                                aria-expanded={showTickerSuggestions}
+                                aria-autocomplete="list"
+                                className="w-60 bg-transparent text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400 outline-none"
                             />
-                        )}
+                            {showTickerSuggestions && (
+                                <div className="absolute left-0 top-full z-50 mt-2 max-h-72 w-80 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-xl ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10">
+                                    {tickerSuggestionsLoading && tickerSuggestions.length === 0 ? (
+                                        <div className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">Searching tickers…</div>
+                                    ) : tickerSuggestions.map((s, i) => (
+                                        <button
+                                            key={`${s.source}:${s.symbol}:${i}`}
+                                            type="button"
+                                            onMouseDown={(e) => { e.preventDefault(); chooseTickerSuggestion(s); }}
+                                            onMouseEnter={() => setActiveTickerSuggestion(i)}
+                                            className={
+                                                'flex w-full items-start gap-3 px-3 py-2 text-left hover:bg-indigo-50 dark:hover:bg-indigo-950/40 ' +
+                                                (i === activeTickerSuggestion ? 'bg-indigo-50 dark:bg-indigo-950/40' : '')
+                                            }
+                                        >
+                                            <span className="mt-0.5 min-w-16 font-semibold text-slate-900 dark:text-slate-50">
+                                                {s.symbol}
+                                                {!s.hasOptions && <span className="ml-1 font-medium text-amber-600 dark:text-amber-400">(no options)</span>}
+                                            </span>
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block truncate text-slate-600 dark:text-slate-300">
+                                                    {s.name || (s.hasOptions ? 'Ticker from local index' : 'Valid ticker from local index')}
+                                                </span>
+                                                <span className="block truncate text-[11px] text-slate-400 dark:text-slate-500">
+                                                    {s.exchange ? `${s.exchange} · ${s.source}` : s.source}
+                                                </span>
+                                            </span>
+                                        </button>
+                                    ))}
+                                    {tickerSuggestionsLoading && tickerSuggestions.length > 0 && (
+                                        <div className="border-t border-slate-100 px-3 py-1 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">Refreshing…</div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                         <button
                             type="submit"
                             disabled={metaLoading}
