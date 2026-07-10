@@ -23,6 +23,41 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry — NEVER delete history):
  * ---------------------------------------------------------------------------
+ * v0.9.16 - Always-expanded-on-load + center-strike + per-ticker static index:
+ *          - Collapse/expand state is NO LONGER persisted to localStorage
+ *            (removed COLLAPSE_KEY / loadCollapsed / saveCollapsed). A freshly
+ *            loaded chain ALWAYS starts fully EXPANDED — there is no longer any
+ *            case where a stale saved state makes a just-loaded chain appear
+ *            collapsed. Collapse is now purely session-ephemeral; switching
+ *            symbol resets it to expanded.
+ *          - CENTER-STRIKE view: the current (ATM) strike is scrolled to the
+ *            vertical middle of the desk (a) right after data loads / the loaded
+ *            expiration set changes, and (b) whenever a section is EXPANDED. New
+ *            `atmRef` on ExpirationSection registers the ATM row; ChainTable's
+ *            centerStrike() accounts for the sticky expiration-bar pile so the
+ *            strike lands in the visible center, not under the pinned headers.
+ *          - Static-cache provider reads the NEW data/index.json shape:
+ *            `{ files: { TICKER: updatedISO }, count, generated }` (per-ticker
+ *            timestamps). listTickers() now derives the list from sorted keys of
+ *            `files`. No backward-compat with the old `{ tickers, updated }`.
+ *            (INFRA fetch_data.py v4: coverage-first (all MISSING tickers, resume
+ *            down the cap-ranked list) then rotating REFRESH of the OLDEST files,
+ *            so every ticker gets cached before we re-loop — and we never re-loop
+ *            only the top-cap names. index.json rebuilt from each file's own
+ *            `updated`, so it no longer churns a single global timestamp.)
+ * v0.9.15 - DROP the <table>; render the desk as DIV/CSS-GRID rows. Native table
+ *          sticky <th> backgrounds go transparent while scrolling in WebKit/Blink
+ *          (the persistent "headers see-through on scroll" bug) — no CSS override
+ *          reliably fixes it. Switched to block/grid elements (same approach as
+ *          the sibling daggerok/csv project) where sticky works flawlessly:
+ *          .od-desk > .od-sec > (.od-bar sticky-accumulating + .od-sub sticky-
+ *          when-active + .od-drow grid rows). Columns share one grid template
+ *          (--od-grid). All prior features preserved: stacking pile, active
+ *          highlight (click + scroll), collapse/expand animation, strike-count,
+ *          center Strike guide, full-width + adaptive height.
+ *          (INFRA, fetch_data.py v3: working-day freshness — skip today's data
+ *          and last-trading-day data on weekends/holidays, re-fetch older files
+ *          on trading days; universe deepened to the full US Micro+ cap tiers.)
  * v0.9.14 - Sticky sub-headers STILL see-through on scroll -> forced fix: the
  *          CSS `.table-container table { border-collapse: separate }` was being
  *          overridden by Tailwind Preflight's `table { border-collapse: collapse }`.
@@ -698,7 +733,11 @@ const marketdataProvider: DataProvider = {
 /**
  * Static cache provider (BULK, no setup — best for GitHub Pages).
  * Reads the site's OWN files (same-origin => zero CORS, zero keys):
- *   ./data/index.json     -> { tickers: [...] }
+ *   ./data/index.json     -> { files: { "<TICKER>": "<updated ISO>", ... } }
+ *                            (v0.9.16: the manifest now records EACH ticker's own
+ *                            `updated` timestamp instead of a single global
+ *                            `updated` that churned on every run. The ticker list
+ *                            is the sorted keys of `files`. No legacy shape kept.)
  *   ./data/{TICKER}.json  -> ChainResult-like payload (see scripts/fetch_data.py)
  * Data is refreshed by the GitHub Action. Greeks may be null (yfinance source).
  */
@@ -719,7 +758,10 @@ const staticProvider: DataProvider = {
             const res = await fetch('data/index.json', { headers: { Accept: 'application/json' }, signal: ctx.signal });
             if (!res.ok) return [];
             const j: any = await res.json();
-            return asArray<string>(j?.tickers).map((s) => String(s).toUpperCase());
+            // v0.9.16 shape: { files: { TICKER: updatedISO } }. The ticker list is
+            // the sorted keys of `files`.
+            const files = j?.files && typeof j.files === 'object' ? j.files : {};
+            return Object.keys(files).map((s) => String(s).toUpperCase()).sort();
         } catch { return []; }
     },
     async fetchAll(symbol, ctx) {
@@ -1994,55 +2036,59 @@ interface ChainSection {
     strikes: number[];
 }
 
+/** Shared 13-column grid template: 6 call cols, 1 strike col, 6 put cols. */
+const GRID_COLS = 'repeat(6, minmax(3.25rem, 1fr)) minmax(3.5rem, 0.7fr) repeat(6, minmax(3.25rem, 1fr))';
+
+/** One data cell in the grid desk. */
+const Cell: React.FC<{ children?: React.ReactNode; className?: string }> = ({ children, className }) => (
+    <div className={'px-2 py-1 text-right tabular-nums ' + (className || '')}>{children}</div>
+);
 /** Six call-side cells (OI, Vol, IV, Bid, Mid, Ask). */
 const CallCells: React.FC<{ q?: OptionQuote }> = ({ q }) => (
     <>
-        <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.openInterest)}</td>
-        <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.volume)}</td>
-        <td className="px-2 py-1 text-right tabular-nums text-slate-500">{fmtPct(q?.iv)}</td>
-        <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.bid)}</td>
-        <td className="px-2 py-1 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{fmt(q?.mid)}</td>
-        <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.ask)}</td>
+        <Cell>{fmtInt(q?.openInterest)}</Cell>
+        <Cell>{fmtInt(q?.volume)}</Cell>
+        <Cell className="text-slate-500">{fmtPct(q?.iv)}</Cell>
+        <Cell>{fmt(q?.bid)}</Cell>
+        <Cell className="font-medium text-emerald-600 dark:text-emerald-400">{fmt(q?.mid)}</Cell>
+        <Cell>{fmt(q?.ask)}</Cell>
     </>
 );
 /** Six put-side cells (Bid, Mid, Ask, IV, Vol, OI). */
 const PutCells: React.FC<{ q?: OptionQuote }> = ({ q }) => (
     <>
-        <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.bid)}</td>
-        <td className="px-2 py-1 text-right tabular-nums font-medium text-rose-600 dark:text-rose-400">{fmt(q?.mid)}</td>
-        <td className="px-2 py-1 text-right tabular-nums">{fmt(q?.ask)}</td>
-        <td className="px-2 py-1 text-right tabular-nums text-slate-500">{fmtPct(q?.iv)}</td>
-        <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.volume)}</td>
-        <td className="px-2 py-1 text-right tabular-nums">{fmtInt(q?.openInterest)}</td>
+        <Cell>{fmt(q?.bid)}</Cell>
+        <Cell className="font-medium text-rose-600 dark:text-rose-400">{fmt(q?.mid)}</Cell>
+        <Cell>{fmt(q?.ask)}</Cell>
+        <Cell className="text-slate-500">{fmtPct(q?.iv)}</Cell>
+        <Cell>{fmtInt(q?.volume)}</Cell>
+        <Cell>{fmtInt(q?.openInterest)}</Cell>
     </>
 );
 
-/** localStorage key holding the collapsed-expirations set, per symbol. */
-const COLLAPSE_KEY = 'options-desk.collapsed.v1';
-/** Load the persisted collapsed set for a symbol (survives reloads). */
-function loadCollapsed(symbol: string): Set<string> {
-    try {
-        const all = JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}');
-        return new Set<string>(Array.isArray(all[symbol]) ? all[symbol] : []);
-    } catch { return new Set(); }
-}
-/** Persist the collapsed set for a symbol. */
-function saveCollapsed(symbol: string, set: Set<string>): void {
-    try {
-        const all = JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}');
-        all[symbol] = Array.from(set);
-        localStorage.setItem(COLLAPSE_KEY, JSON.stringify(all));
-    } catch { /* ignore */ }
-}
+/**
+ * NOTE (v0.9.16): collapse/expand state is intentionally SESSION-ONLY and is NO
+ * LONGER persisted to localStorage. Requirement: after the user selects
+ * expiration(s) and clicks "Load", the chain must ALWAYS render fully EXPANDED —
+ * there must be no case where a previously-collapsed state from a past session
+ * makes a freshly-loaded chain appear collapsed. The user can still collapse
+ * sections during the current session (purely ephemeral); loading a different
+ * symbol resets everything back to expanded. (The old COLLAPSE_KEY /
+ * loadCollapsed / saveCollapsed persistence helpers were removed for this.)
+ */
 
 /**
- * One expiration = one <tbody class="od-sec"> inside the SHARED table. It holds:
- *   - a header row .od-exp-row (the always-sticky, accumulating Expiration bar,
- *     centered, clickable to collapse),
- *   - when expanded: .od-group (Calls|Strike|Puts) + .od-labels (column names)
- *     which are sticky ONLY while this section is `.od-active` (in view),
- *   - the strike rows.
- * The per-section index is passed as a CSS var `--i` (see index.css geometry).
+ * One expiration section, built from DIVs (NOT a <table>) so `position: sticky`
+ * works reliably. (Native <table> sticky <th> backgrounds go transparent while
+ * scrolling in WebKit/Blink — the bug that plagued earlier versions. The proven
+ * fix, also used in the sibling daggerok/csv project, is a CSS-grid div layout.)
+ *
+ * Structure (all inside a shared scroll container):
+ *   - .od-bar   : the always-sticky Expiration bar; accumulates into the top pile
+ *                 (top = index * --od-bar), whole bar is one collapse toggle.
+ *   - .od-sub   : Calls|Strike|Puts group + column labels; sticky ONLY when this
+ *                 section is active (in view), just below the pile.
+ *   - rows      : one grid row per strike.
  */
 const ExpirationSection: React.FC<{
     section: ChainSection;
@@ -2051,23 +2097,23 @@ const ExpirationSection: React.FC<{
     collapsed: boolean;
     active: boolean;
     onToggle: () => void;
-    innerRef: (el: HTMLTableSectionElement | null) => void;
-}> = ({ section, index, spot, collapsed, active, onToggle, innerRef }) => {
+    innerRef: (el: HTMLDivElement | null) => void;
+    /** Registers this section's ATM (at-the-money) row element so the desk can
+     *  scroll it to the vertical center on load / expand (center-strike view). */
+    atmRef: (el: HTMLDivElement | null) => void;
+}> = ({ section, index, spot, collapsed, active, onToggle, innerRef, atmRef }) => {
     const { expiration, calls, puts, strikes } = section;
     const atmStrike = useMemo(() => {
         if (spot == null || strikes.length === 0) return null;
         return strikes.reduce((best, s) => (Math.abs(s - spot) < Math.abs(best - spot) ? s : best), strikes[0]);
     }, [spot, strikes]);
 
-    // Symmetric open/close animation: keep the rows mounted during the close so
-    // they can FADE OUT (mirroring the expand fade-in), then unmount.
-    const [rendered, setRendered] = useState(!collapsed); // are the rows in the DOM?
-    const [closing, setClosing] = useState(false);        // playing the close anim?
+    // Symmetric open/close animation: keep rows mounted during close to fade out.
+    const [rendered, setRendered] = useState(!collapsed);
+    const [closing, setClosing] = useState(false);
     useEffect(() => {
-        if (!collapsed) {
-            setClosing(false);
-            setRendered(true);
-        } else if (rendered) {
+        if (!collapsed) { setClosing(false); setRendered(true); }
+        else if (rendered) {
             setClosing(true);
             const t = setTimeout(() => { setRendered(false); setClosing(false); }, 180);
             return () => clearTimeout(t);
@@ -2075,142 +2121,169 @@ const ExpirationSection: React.FC<{
         return undefined;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [collapsed]);
-
-    /** Rows animate in (staggered) when opening, or out (uniform) when closing. */
     const bodyAnim = closing ? 'od-row-out' : 'od-row-in';
 
+    // Sticky offsets: the bar piles at index*--od-bar; the sub-headers (only when
+    // active) sit just below this section's own bar.
+    const barTop = { top: `calc(${index} * var(--od-bar))`, zIndex: 40 + index } as React.CSSProperties;
+    const groupTop = { top: `calc((${index} + 1) * var(--od-bar))`, zIndex: 30 } as React.CSSProperties;
+    const labelsTop = { top: `calc((${index} + 1) * var(--od-bar) + var(--od-hrow))`, zIndex: 30 } as React.CSSProperties;
+
     return (
-        <tbody
-            ref={innerRef}
-            data-exp={expiration}
-            className={'od-sec ' + (active && !collapsed ? 'od-active ' : '')}
-            style={{ ['--i' as string]: String(index) }}
-        >
-            {/* Expiration bar — always-sticky, accumulates into the top pile.
-                The WHOLE bar is ONE toggle: clicking anywhere (chevron, date, or
-                strike count) collapses/expands this expiration. A single centered
-                colSpan=13 cell keeps it identical whether open or collapsed; only
-                the chevron rotates (v when open, > when collapsed). */}
-            <tr className={'od-exp-row text-[11px] normal-case tracking-normal ' + (active ? 'od-current' : '')}>
-                <th colSpan={13} className="p-0 font-semibold">
-                    <button
-                        type="button"
-                        onClick={onToggle}
-                        aria-expanded={!collapsed}
-                        title={collapsed ? 'Expand this expiration' : 'Collapse this expiration'}
-                        className="flex h-full w-full items-center justify-center gap-2 px-2 hover:opacity-70"
-                    >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
-                             strokeLinecap="round" strokeLinejoin="round"
-                             className={'h-3 w-3 transition-transform ' + (collapsed ? '-rotate-90' : '')}>
-                            <path d="m6 9 6 6 6-6" />
-                        </svg>
-                        <span className="tabular-nums">{expiration}&nbsp; {strikes.length} strikes</span>
-                    </button>
-                </th>
-            </tr>
+        <div ref={innerRef} data-exp={expiration} className="od-sec">
+            {/* Expiration bar — always sticky, accumulates into the top pile.
+                Whole bar is one toggle; only the chevron rotates (v / >). */}
+            <button
+                type="button"
+                onClick={onToggle}
+                aria-expanded={!collapsed}
+                title={collapsed ? 'Expand this expiration' : 'Collapse this expiration'}
+                style={barTop}
+                className={
+                    'od-bar sticky flex w-full items-center justify-center gap-2 px-2 text-[11px] font-semibold ' +
+                    (active ? 'od-current' : '')
+                }
+            >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+                     strokeLinecap="round" strokeLinejoin="round"
+                     className={'h-3 w-3 transition-transform ' + (collapsed ? '-rotate-90' : '')}>
+                    <path d="m6 9 6 6 6-6" />
+                </svg>
+                <span className="tabular-nums">{expiration}&nbsp; {strikes.length} strikes</span>
+            </button>
 
             {rendered && (
                 <>
-                    {/* Calls | Strike | Puts group row (sticky only when active). */}
-                    <tr className={'od-group ' + bodyAnim + ' text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400'}>
-                        <th colSpan={6} className="od-calls px-2 text-center font-semibold text-emerald-700 dark:text-emerald-400">Calls</th>
-                        <th className="px-2 text-center font-semibold">Strike</th>
-                        <th colSpan={6} className="od-puts px-2 text-center font-semibold text-rose-700 dark:text-rose-400">Puts</th>
-                    </tr>
-                    {/* Column labels (sticky only when active). */}
-                    <tr className={'od-labels ' + bodyAnim + ' text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400'}>
-                        <th className="px-2 text-right font-medium">OI</th>
-                        <th className="px-2 text-right font-medium">Vol</th>
-                        <th className="px-2 text-right font-medium">IV</th>
-                        <th className="px-2 text-right font-medium">Bid</th>
-                        <th className="px-2 text-right font-medium">Mid</th>
-                        <th className="px-2 text-right font-medium">Ask</th>
-                        <th className="px-2 text-center font-medium">$</th>
-                        <th className="px-2 text-right font-medium">Bid</th>
-                        <th className="px-2 text-right font-medium">Mid</th>
-                        <th className="px-2 text-right font-medium">Ask</th>
-                        <th className="px-2 text-right font-medium">IV</th>
-                        <th className="px-2 text-right font-medium">Vol</th>
-                        <th className="px-2 text-right font-medium">OI</th>
-                    </tr>
-                    {/* Strike rows: staggered fade-in when opening; uniform fade-out
-                        when closing (no per-row delay so the collapse feels quick). */}
+                    {/* Group row: Calls | Strike | Puts (sticky only when active). */}
+                    <div
+                        style={active ? groupTop : undefined}
+                        className={
+                            'od-sub grid text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 ' +
+                            bodyAnim + ' ' + (active ? 'sticky' : '')
+                        }
+                    >
+                        <div className="od-calls col-span-6 px-2 py-1 text-center font-semibold text-emerald-700 dark:text-emerald-400">Calls</div>
+                        <div className="px-2 py-1 text-center font-semibold">Strike</div>
+                        <div className="od-puts col-span-6 px-2 py-1 text-center font-semibold text-rose-700 dark:text-rose-400">Puts</div>
+                    </div>
+                    {/* Column-label row (sticky only when active). */}
+                    <div
+                        style={active ? labelsTop : undefined}
+                        className={
+                            'od-sub od-labels grid text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 ' +
+                            bodyAnim + ' ' + (active ? 'sticky' : '')
+                        }
+                    >
+                        {['OI', 'Vol', 'IV', 'Bid', 'Mid', 'Ask'].map((h, k) => (
+                            <div key={`c${k}`} className="px-2 py-1 text-right font-medium">{h}</div>
+                        ))}
+                        <div className="px-2 py-1 text-center font-medium">$</div>
+                        {['Bid', 'Mid', 'Ask', 'IV', 'Vol', 'OI'].map((h, k) => (
+                            <div key={`p${k}`} className="px-2 py-1 text-right font-medium">{h}</div>
+                        ))}
+                    </div>
+                    {/* Strike rows: staggered fade-in on open; uniform fade-out on close. */}
                     {strikes.map((strike, i) => {
                         const isAtm = strike === atmStrike;
                         const stagger = !closing && i < STAGGER_ROWS;
                         return (
-                            <tr
+                            <div
                                 key={strike}
+                                // Register the ATM row so the desk can scroll it to
+                                // the vertical center (center-strike view) on load/expand.
+                                ref={isAtm ? atmRef : undefined}
                                 className={
-                                    'text-slate-700 dark:text-slate-200 ' + bodyAnim + ' ' +
-                                    (isAtm
-                                        ? 'bg-indigo-50 dark:bg-indigo-950/40'
-                                        : 'odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-900/40')
+                                    'od-drow grid text-slate-700 dark:text-slate-200 ' + bodyAnim + ' ' +
+                                    (isAtm ? 'od-atm' : '')
                                 }
                                 style={stagger ? { animationDelay: `${i * 18}ms` } : undefined}
                             >
                                 <CallCells q={calls.get(strike)} />
-                                <td className={
+                                <div className={
                                     'px-2 py-1 text-center font-semibold tabular-nums ' +
                                     (isAtm ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-900 dark:text-slate-100')
                                 }>
                                     {fmt(strike)}
-                                </td>
+                                </div>
                                 <PutCells q={puts.get(strike)} />
-                            </tr>
+                            </div>
                         );
                     })}
                 </>
             )}
-        </tbody>
+        </div>
     );
 };
 
 /**
- * The scrolling desk: renders ALL selected expirations as sibling <tbody>s in a
- * SINGLE <table>, ordered EARLIEST -> LATEST. Because they share one scroll
- * container, each expiration bar can stay sticky and PILE UP as you scroll down
- * (and un-pile scrolling up). A scroll listener marks the section currently in
- * view as `.od-active` so only its Calls|Strike|Puts + column labels stay pinned
- * below the pile. Sections can be collapsed individually or via Collapse-all.
+ * The scrolling desk: renders ALL selected expirations as sibling DIV sections
+ * in one scroll container (EARLIEST -> LATEST). Each expiration bar is sticky and
+ * PILES UP as you scroll down (un-piles scrolling up). A scroll listener marks
+ * the in-view section active so its sub-headers stay pinned below the pile.
  */
 const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: number | null }> = ({ symbol, sections, spot }) => {
-    // Collapsed set — restored/persisted per symbol.
-    const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed(symbol));
-    useEffect(() => { setCollapsed(loadCollapsed(symbol)); }, [symbol]);
-    useEffect(() => { saveCollapsed(symbol, collapsed); }, [symbol, collapsed]);
+    // Collapsed set — SESSION-ONLY (never persisted). A freshly loaded chain must
+    // ALWAYS start fully EXPANDED (empty set). Switching symbol resets it so the
+    // new chain is expanded too. (See the v0.9.16 note above loadCollapsed's
+    // removal for the rationale.)
+    const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+    useEffect(() => { setCollapsed(new Set()); }, [symbol]);
 
     const allCollapsed = sections.length > 0 && sections.every((s) => collapsed.has(s.expiration));
 
-    // Which section's header is highlighted / whose sub-headers stay pinned.
-    // Declared here so toggleOne can set it on click (see below).
+    // Which section is highlighted / whose sub-headers stay pinned.
     const [activeExp, setActiveExp] = useState<string>('');
 
+    // ---- Center-strike view ----
+    // The scroll container and a registry of each section's ATM (at-the-money)
+    // row element, so we can scroll the current strike to the VERTICAL CENTER
+    // of the desk on load and whenever a section is (re)expanded.
+    const scrollRef = useRef<HTMLDivElement | null>(null);
+    const atmRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    /**
+     * Scroll so the ATM row of `exp` sits in the vertical middle of the desk.
+     * Accounts for the sticky expiration-bar pile above the section so the strike
+     * lands in the visible center, not underneath the pinned headers. Runs on the
+     * next animation frame so it fires AFTER expand layout/animation settles.
+     */
+    const centerStrike = useCallback((exp: string) => {
+        requestAnimationFrame(() => {
+            const container = scrollRef.current;
+            const row = atmRefs.current.get(exp);
+            if (!container || !row) return;
+            const cRect = container.getBoundingClientRect();
+            const rRect = row.getBoundingClientRect();
+            // Sticky pile height above this section (bars stack at index*--od-bar).
+            const barPx = parseFloat(getComputedStyle(container).getPropertyValue('--od-bar')) * 16 || 30;
+            const idx = sections.findIndex((s) => s.expiration === exp);
+            const pile = Math.max(0, (idx + 1)) * barPx;
+            // Visible viewport (below the pile) whose center we aim the row at.
+            const usableTop = cRect.top + pile;
+            const usableCenter = usableTop + (cRect.bottom - usableTop) / 2;
+            const rowCenter = rRect.top + rRect.height / 2;
+            container.scrollTop += rowCenter - usableCenter;
+        });
+    }, [sections]);
+
     const toggleOne = useCallback((exp: string) => {
+        let willExpand = false;
         setCollapsed((prev) => {
             const next = new Set(prev);
-            if (next.has(exp)) next.delete(exp); else next.add(exp);
+            if (next.has(exp)) { next.delete(exp); willExpand = true; } else { next.add(exp); }
             return next;
         });
-        // Highlight the header the user actually clicked (otherwise the purely
-        // scroll-based `activeExp` would keep the highlight on the top section,
-        // e.g. when collapsing a lower one without scrolling). A later scroll
-        // recomputes it normally.
-        setActiveExp(exp);
-    }, []);
+        setActiveExp(exp); // highlight the header actually clicked
+        // When EXPANDING a section, bring its current strike to the center.
+        if (willExpand) centerStrike(exp);
+    }, [centerStrike]);
     const toggleAll = useCallback(() => {
         setCollapsed((prev) => (
             sections.every((s) => prev.has(s.expiration)) ? new Set() : new Set(sections.map((s) => s.expiration))
         ));
     }, [sections]);
 
-    // ---- Active-section tracking (which section's sub-headers stay pinned) ----
-    const scrollRef = useRef<HTMLDivElement | null>(null);
-    const bodyRefs = useRef<Map<string, HTMLTableSectionElement>>(new Map());
-
-    // Pixels of accumulated expiration bars above the fold = index * barPx.
-    // We pick the section whose body still extends below that pinned pile.
+    // ---- Active-section tracking ----
+    const bodyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const recomputeActive = useCallback(() => {
         const container = scrollRef.current;
         if (!container) return;
@@ -2220,11 +2293,9 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
         sections.forEach((s, i) => {
             const el = bodyRefs.current.get(s.expiration);
             if (!el) return;
-            const rel = el.getBoundingClientRect().bottom - top; // section bottom vs viewport top
-            // Active while the section bottom is still below its own pinned bar.
+            const rel = el.getBoundingClientRect().bottom - top;
             if (rel > (i + 1) * barPx) { if (!current) current = s.expiration; }
         });
-        // Fallback: last section when scrolled to the very bottom.
         if (!current && sections.length) current = sections[sections.length - 1].expiration;
         setActiveExp(current);
     }, [sections]);
@@ -2232,29 +2303,30 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
     useEffect(() => {
         const c = scrollRef.current;
         if (!c) return;
-        // Recompute the active (highlighted) section ONLY on real user scrolling
-        // (and window resize). We deliberately do NOT recompute on `collapsed`
-        // changes: a collapse/expand click sets activeExp to the clicked header
-        // directly (see toggleOne), and re-running recomputeActive here would
-        // immediately snap the highlight back to the top section.
         const onScroll = () => recomputeActive();
         c.addEventListener('scroll', onScroll, { passive: true });
         window.addEventListener('resize', onScroll);
         return () => { c.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); };
     }, [recomputeActive]);
 
-    // Seed the initial highlight once sections first load (no click/scroll yet).
     useEffect(() => {
-        setActiveExp((cur) => (cur && sections.some((s) => s.expiration === cur))
-            ? cur
-            : (sections[0]?.expiration ?? ''));
+        setActiveExp((cur) => (cur && sections.some((s) => s.expiration === cur)) ? cur : (sections[0]?.expiration ?? ''));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sections.length]);
 
+    // After data loads (or the symbol / selected expirations change), bring the
+    // FIRST expiration's current strike to the vertical center so the user lands
+    // on the money instead of at the top of a long chain. Keyed on symbol +
+    // the joined expiration list so it re-centers whenever the loaded set changes.
+    const expKey = sections.map((s) => s.expiration).join(',');
+    useEffect(() => {
+        if (sections.length) centerStrike(sections[0].expiration);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [symbol, expKey]);
+
     return (
-        <div>
-            {/* Controls ABOVE the desk, full width so they align with the table:
-                "N expirations" on the LEFT, Collapse-all/Expand-all on the RIGHT. */}
+        <div style={{ ['--od-grid' as string]: GRID_COLS }}>
+            {/* Controls ABOVE the desk (full width): count LEFT, toggle RIGHT. */}
             <div className="mb-2 flex w-full items-center justify-between">
                 <span className="text-xs text-slate-400">
                     {sections.length} expiration{sections.length === 1 ? '' : 's'}
@@ -2273,25 +2345,12 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
                 </button>
             </div>
 
-            {/* Desk: FULL WIDTH, and adaptive height (dvh) so tall screens show
-                more strikes without scrolling. dvh handles mobile browser chrome. */}
+            {/* Desk: full width, adaptive height. A DIV/grid layout (not a table)
+                so sticky headers stay opaque during scroll. Inner wrapper carries
+                the min-width so columns stay comfortable / scroll horizontally on
+                small screens. */}
             <div ref={scrollRef} className="table-container w-full max-h-[calc(100dvh-210px)] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
-                {/* border-collapse MUST be `separate` for sticky <th> backgrounds
-                    to stay opaque while scrolling (WebKit paints collapsed-border
-                    cell backgrounds at the table level -> sticky headers go
-                    see-through). Tailwind Preflight forces `collapse` on <table>,
-                    so we override it with an INLINE style (guaranteed to win). */}
-                <table className="w-full text-xs" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
-                    {/* 13 columns get EQUAL width (fixed layout): 6 call cells,
-                        the Strike column (a bit narrower), then 6 put cells. This
-                        makes columns stretch evenly on wide screens while the
-                        table min-width (index.css) keeps them comfortable/narrow-
-                        scrollable on small screens. */}
-                    <colgroup>
-                        {Array.from({ length: 6 }).map((_, c) => <col key={`c${c}`} style={{ width: '7.9%' }} />)}
-                        <col style={{ width: '5.4%' }} />
-                        {Array.from({ length: 6 }).map((_, p) => <col key={`p${p}`} style={{ width: '7.9%' }} />)}
-                    </colgroup>
+                <div className="od-desk min-w-[46rem]">
                     {sections.map((s, i) => (
                         <ExpirationSection
                             key={s.expiration}
@@ -2302,9 +2361,10 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
                             active={activeExp === s.expiration}
                             onToggle={() => toggleOne(s.expiration)}
                             innerRef={(el) => { if (el) bodyRefs.current.set(s.expiration, el); else bodyRefs.current.delete(s.expiration); }}
+                            atmRef={(el) => { if (el) atmRefs.current.set(s.expiration, el); else atmRefs.current.delete(s.expiration); }}
                         />
                     ))}
-                </table>
+                </div>
             </div>
         </div>
     );

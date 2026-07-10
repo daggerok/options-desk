@@ -4,9 +4,13 @@
 # INFRASTRUCTURE (not part of the 3-file app source). Implements the
 # "GitHub Actions build-time caching" strategy:
 #   1. Runs scripts/fetch_data.py (yfinance) on a schedule.
-#   2. The script SELF-DISCOVERS a market-cap-ranked US universe, SKIPS files
-#      already refreshed today, and fetches top-down until its budget or the
-#      source rate-limits it. Each run APPENDS; the next run resumes.
+#   2. The script SELF-DISCOVERS a market-cap-ranked US universe, then (v4) works
+#      COVERAGE-FIRST: it fetches every MISSING ticker down the cap-ranked list
+#      (resuming where the last run stopped), and only once nothing is missing
+#      does it ROTATE-REFRESH the OLDEST cached files first. It skips files still
+#      fresh today and stops at its budget or when the source rate-limits it.
+#      Each run does NEW work; the next run resumes — so we cache ALL tickers
+#      before re-looping, and never re-loop only the top-cap names.
 #   3. Commits the fresh data/*.json back to the repo.
 # The site (GitHub Pages) then reads its OWN data/*.json via the app's
 # "Static cache" provider — zero CORS issues, zero exposed keys.
@@ -24,11 +28,7 @@ name: Update options data
 
 on:
   schedule:
-    # A few times each weekday (UTC): pre-open, midday, and after US close.
     # The script is resumable, so more runs simply grow the cache faster.
-    #- cron: "45 13 * * 1-5" # at 13:45 every day between Monday and Friday
-    #- cron: "45 17 * * 1-5" # at 17:45 every day between Monday and Friday
-    #- cron: "15 21 * * 1-5" # at 21:15 every day between Monday and Friday
     - cron: "2 0,8,16 * * 0-3"    # Mon-Thu: 00:02, 08:02, 16:02
     - cron: "3 1,9,17 * * 1-4"    # Tue-Fri: 01:03, 09:03, 17:03
     - cron: "5 2,10,18 * * 2-5"   # Wed-Sat: 02:05, 10:05, 18:05
@@ -51,10 +51,11 @@ jobs:
       # screener), skips files already refreshed today, and fetches top-down
       # until the per-run budget is hit or the source rate-limits us. Each run
       # APPENDS to the cache and the next run resumes where this one stopped.
-      MAX_FETCHES: "60"     # NEW (non-skipped) fetches per run
-      UNIVERSE_SIZE: "400"  # how deep the market-cap ranking goes
-      MAX_EXPIRATIONS: "12" # expirations stored per ticker (keeps JSON small)
-      REQUEST_SLEEP: "1"    # politeness delay between fetches (seconds)
+      MAX_FETCHES: "120"          # NEW (non-skipped) fetches per run (chunk size)
+      UNIVERSE_SIZE: "6000"       # consider the FULL market-cap-ranked US universe
+      MIN_MARKET_CAP: "10000000"  # Microcap floor ($10M); drops nano-caps
+      MAX_EXPIRATIONS: "14"       # expirations stored per ticker (keeps JSON small)
+      REQUEST_SLEEP: "1"          # politeness delay between fetches (seconds)
     steps:
       - name: Checkout
         uses: actions/checkout@v7

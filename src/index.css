@@ -22,6 +22,12 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry):
  * ---------------------------------------------------------------------------
+ * v0.9.15 - Desk moved from <table> to DIV/CSS-GRID (fixes see-through sticky
+ *          headers on scroll for good). New rules: .od-desk / .od-sec / .od-bar
+ *          (sticky, accumulates via inline top=index*--od-bar) / .od-sub (sticky
+ *          when .od-active) / .od-drow (13-col grid via --od-grid). Opaque header
+ *          surfaces, Calls/Puts tints, zebra + ATM row bg, center Strike guide.
+ *          Removed all `.table-container table/th/tr.od-*` table rules.
  * v0.9.13 - Real fix for see-through sticky sub-headers on scroll:
  *          - ROOT CAUSE: the table used `border-collapse: collapse`. In
  *            WebKit/Blink, collapsed-border tables paint cell backgrounds at the
@@ -359,124 +365,92 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
- * Sticky option-chain header — STACKING expiration bars + active column labels.
+ * Option-chain desk — DIV/GRID layout with STACKING sticky expiration bars.
  *
- * The desk is ONE <table> with one <tbody> PER expiration section. As you scroll
- * DOWN, each passed expiration's bar stays pinned and PILES UP at the top (like
- * a collapsed row), so you can see every expiration you've scrolled past;
- * scrolling back UP un-piles them. Only the section currently in view (marked
- * `.od-active` by a small scroll tracker in main.tsx) also pins its
- * Calls|Strike|Puts group row and its column-label row, right below the pile.
+ * We DELIBERATELY do NOT use a <table>. Native tables have a well-known bug:
+ * `position: sticky` <th> backgrounds render TRANSPARENT while scrolling in
+ * WebKit/Blink (they look fine only when static), so body rows clash through the
+ * pinned header. Plain block/grid elements have no such issue. (The sibling
+ * daggerok/csv project uses the same div-grid sticky approach for this reason.)
  *
- * Geometry (all offsets multiples of fixed row heights so nothing overlaps):
- *   - each section carries its 0-based index in the CSS var `--i`.
- *   - expiration bar  -> sticky, top: calc(var(--i) * var(--od-bar))  [ACCUMULATES]
- *   - active group    -> sticky, top: calc((var(--i) + 1) * var(--od-bar))
- *   - active labels   -> sticky, top: calc((var(--i) + 1) * var(--od-bar) + var(--od-hrow))
- * Later sections get a higher z-index so an arriving bar cleanly covers the
- * previous section's (now non-sticky) sub-headers. Every header cell is OPAQUE.
+ * Layout: the desk (.od-desk) is a column of sections (.od-sec). Each section
+ * has an always-sticky Expiration bar (.od-bar) that PILES UP at the top as you
+ * scroll (top offset is set inline per index), plus — only when the section is
+ * active/in-view — a sticky group row + column-label row (.od-sub) just below
+ * the pile. Every strike row (.od-drow) is a 13-column CSS grid; the sub-header
+ * rows share the exact same grid template (--od-grid) so columns line up.
+ * All header surfaces are fully OPAQUE so nothing shows through while scrolling.
  * ------------------------------------------------------------------------- */
 .table-container {
-    --od-bar: 1.9rem;   /* height of an expiration bar (accumulating)          */
-    --od-hrow: 1.75rem; /* height of the group / column-label rows            */
-}
-/* Base opaque backgrounds for every header cell (so body rows never show). */
-.table-container th {
-    background-color: #f1f5f9; /* slate-100 (light) */
-}
-.dark .table-container th {
-    background-color: #1e293b; /* slate-800 (dark) */
+    --od-bar: 1.9rem;   /* height of an expiration bar (accumulating)         */
+    --od-hrow: 1.75rem; /* height of the group / column-label rows           */
 }
 
-/* Expiration bar — ALWAYS sticky, accumulates into a pile at the top. Its
- * per-section index (--i) sets both the stack offset and the z-order (later
- * sections on top so their bar covers the previous section's sub-headers). */
-.table-container tr.od-exp-row th {
-    position: sticky;
-    top: calc(var(--i) * var(--od-bar));
-    z-index: calc(40 + var(--i));
-    height: var(--od-bar);
+/* Every grid row (data + sub-headers) shares the 13-column template. */
+.od-drow,
+.od-sub {
+    display: grid;
+    grid-template-columns: var(--od-grid);
+    align-items: center;
+}
+
+/* Expiration bar — ALWAYS sticky, accumulates into a pile at the top. `top` and
+ * z-index are set inline per section (top = index * --od-bar; later sections get
+ * higher z so an arriving bar cleanly covers the previous section's sub-headers).
+ * OPAQUE indigo background. */
+.od-bar {
+    min-height: var(--od-bar);
     background-color: #e0e7ff; /* indigo-100 (opaque) */
     color: #4338ca;            /* indigo-700 */
+    cursor: pointer;
 }
-.dark .table-container tr.od-exp-row th {
+.dark .od-bar {
     background-color: #1e1b4b; /* indigo-950 (opaque) */
     color: #a5b4fc;
 }
-/* ACTIVE section highlight — the expiration whose table is currently in view
- * gets a stronger tint + a left accent bar so it's obvious where you are in the
- * accumulated pile of headers. */
-.table-container tr.od-exp-row.od-current th {
-    background-color: #c7d2fe; /* indigo-200 (opaque, brighter) */
+.od-bar:hover { filter: brightness(0.98); }
+/* ACTIVE section highlight — brighter tint + left accent so it's obvious where
+ * you are in the accumulated pile. */
+.od-bar.od-current {
+    background-color: #c7d2fe; /* indigo-200 */
     color: #3730a3;            /* indigo-800 */
-    box-shadow: inset 3px 0 0 0 #6366f1; /* indigo-500 accent on the left edge */
+    box-shadow: inset 3px 0 0 0 #6366f1; /* indigo-500 accent */
 }
-.dark .table-container tr.od-exp-row.od-current th {
-    background-color: #312e81; /* indigo-900 (opaque, brighter) */
+.dark .od-bar.od-current {
+    background-color: #312e81; /* indigo-900 */
     color: #c7d2fe;
     box-shadow: inset 3px 0 0 0 #818cf8; /* indigo-400 accent */
 }
 
-/* Group (Calls|Strike|Puts) + column-label rows: sticky ONLY for the ACTIVE
- * section (the one currently in view). Non-active sections scroll these away,
- * leaving just their accumulated expiration bar — the "like collapsed" look. */
-.table-container tbody.od-sec.od-active tr.od-group th {
-    position: sticky;
-    top: calc((var(--i) + 1) * var(--od-bar));
-    z-index: 30;
-    height: var(--od-hrow);
+/* Sub-header rows (group + labels): OPAQUE base so scrolled rows never show. */
+.od-sub {
+    min-height: var(--od-hrow);
+    background-color: #f1f5f9; /* slate-100 */
 }
-.table-container tbody.od-sec.od-active tr.od-labels th {
-    position: sticky;
-    top: calc((var(--i) + 1) * var(--od-bar) + var(--od-hrow));
-    z-index: 30;
-    height: var(--od-hrow);
+.dark .od-sub {
+    background-color: #1e293b; /* slate-800 */
 }
-/* Opaque Calls/Puts group tints (no alpha, so rows never bleed through). */
-.table-container tr.od-group th.od-calls { background-color: #ecfdf5; } /* emerald-50 */
-.table-container tr.od-group th.od-puts  { background-color: #fff1f2; } /* rose-50 */
-.dark .table-container tr.od-group th.od-calls { background-color: #052e26; }
-.dark .table-container tr.od-group th.od-puts  { background-color: #4c0519; }
+/* Opaque Calls/Puts group tints (span 6 cols each). */
+.od-sub .od-calls { background-color: #ecfdf5; } /* emerald-50 */
+.od-sub .od-puts  { background-color: #fff1f2; } /* rose-50 */
+.dark .od-sub .od-calls { background-color: #052e26; }
+.dark .od-sub .od-puts  { background-color: #4c0519; }
 
-/* Center "Strike" column guide — a subtle vertical tint down the middle axis so
- * the eye tracks the strikes column quickly in a long chain.
- * IMPORTANT: use `background-image` (a flat gradient), NOT `background-color`,
- * so the tint LAYERS on top of the opaque base header/cell color instead of
- * REPLACING it — otherwise the sticky Strike header cell would become
- * see-through and body text would clash through it. */
-.table-container tbody tr:not(.od-exp-row):not(.od-group):not(.od-labels) td:nth-child(7) {
+/* Zebra striping + ATM highlight for data rows. */
+.od-drow:nth-child(odd)  { background-color: #ffffff; }
+.od-drow:nth-child(even) { background-color: rgba(248, 250, 252, 0.6); } /* slate-50/60 */
+.dark .od-drow:nth-child(odd)  { background-color: #0f172a; }            /* slate-900 */
+.dark .od-drow:nth-child(even) { background-color: rgba(15, 23, 42, 0.4); }
+.od-drow.od-atm  { background-color: #eef2ff; } /* indigo-50 */
+.dark .od-drow.od-atm { background-color: rgba(30, 27, 75, 0.4); }
+
+/* Center "Strike" column guide — a subtle vertical tint on the 7th cell of each
+ * data row (layered via background-image so it doesn't replace zebra/atm bg). */
+.od-drow > :nth-child(7) {
     background-image: linear-gradient(rgba(99, 102, 241, 0.06), rgba(99, 102, 241, 0.06));
 }
-.dark .table-container tbody tr:not(.od-exp-row):not(.od-group):not(.od-labels) td:nth-child(7) {
+.dark .od-drow > :nth-child(7) {
     background-image: linear-gradient(rgba(129, 140, 248, 0.10), rgba(129, 140, 248, 0.10));
-}
-/* Strike cell of the sticky column-label row: keep its OPAQUE base bg (from the
- * `.table-container th` rule) and layer the guide tint over it via a gradient. */
-.table-container tr.od-labels th:nth-child(7) {
-    background-image: linear-gradient(rgba(99, 102, 241, 0.12), rgba(99, 102, 241, 0.12));
-}
-.dark .table-container tr.od-labels th:nth-child(7) {
-    background-image: linear-gradient(rgba(129, 140, 248, 0.16), rgba(129, 140, 248, 0.16));
-}
-
-/* ---------------------------------------------------------------------------
- * Column sizing — even, comfortable columns.
- * We use `table-layout: fixed` + an explicit <colgroup> (13 <col>s, see
- * ExpirationSection in main.tsx) so every data column gets an EQUAL share of the
- * width and stretches evenly to fill wide screens. A table `min-width` keeps a
- * comfortable minimum on narrow screens (the desk scrolls horizontally rather
- * than squashing the numbers illegibly).
- * ------------------------------------------------------------------------- */
-.table-container table {
-    table-layout: fixed;
-    min-width: 46rem; /* comfortable floor; below this the desk scrolls sideways */
-    /* CRITICAL for sticky headers: with `border-collapse: collapse`, WebKit/Blink
-     * paint cell backgrounds at the TABLE level, which makes position:sticky <th>
-     * backgrounds render TRANSPARENT while scrolling (they look fine only when
-     * static) — so body rows show through the pinned sub-headers. Using
-     * `separate` keeps each sticky header cell's own opaque background painted. */
-    border-collapse: separate;
-    border-spacing: 0;
 }
 
 /* TODO: future surfaces (charts, greeks heatmap) should reuse these tokens. */
