@@ -75,11 +75,12 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           # Stage the refreshed chains AND the no-options skiplist (so a ticker
           # that has no options isn't re-fetched every run across CI runners).
-          git add data/
-          [ -f scripts/no_options.json ] && git add scripts/no_options.json
+          git add data/ || true
+          [ -f scripts/no_options.json ] && git add scripts/no_options.json || true
+          # Check if there are changes to commit
           if git diff --staged --quiet; then
-            echo "No data changes."
+            echo "No data changes — nothing to commit."
           else
             git commit -m "chore(data): refresh option chains [skip ci]"
-            git push
+            git push || echo "Push failed (may be up-to-date or race condition)"
           fi
