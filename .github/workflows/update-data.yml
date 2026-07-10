@@ -56,6 +56,7 @@ jobs:
       MIN_MARKET_CAP: "10000000"  # Microcap floor ($10M); drops nano-caps
       MAX_EXPIRATIONS: "14"       # expirations stored per ticker (keeps JSON small)
       REQUEST_SLEEP: "1"          # politeness delay between fetches (seconds)
+      PYTHONUNBUFFERED: "1"      # stream Python progress logs to Actions immediately
     steps:
       - name: Checkout
         uses: actions/checkout@v7
