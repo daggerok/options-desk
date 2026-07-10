@@ -928,7 +928,7 @@ def main():
         path = os.path.join(DATA_DIR, f"{sym}.json")
         phase = "coverage" if position <= n_missing else "refresh"
         started = time.monotonic()
-        _log(f"START [{position}/{len(queue)}] {phase} {sym}: fetching option chain "
+        _log(f"FETCH [{position}/{len(queue)}] {phase} {sym}: fetching option chain "
              f"(writes={fetched}/{MAX_FETCHES}, file=data/{sym}.json)")
 
         # Fetch (missing OR stale -> overwrite). The queue already excludes fresh
@@ -975,10 +975,7 @@ def main():
             json.dump(payload, f, separators=(",", ":"))
         fetched += 1
         updated_files.append(os.path.relpath(path, os.path.dirname(DATA_DIR)))
-        _log(f"DONE [{position}/{len(queue)}] {phase} {sym}: wrote data/{sym}.json; "
-             f"quotes={len(payload['quotes'])}, expirations={len(payload['expirations'])}, "
-             f"elapsed={elapsed:.1f}s, writes={fetched}/{MAX_FETCHES}")
-        _log(f"SLEEP {sym}: waiting REQUEST_SLEEP={REQUEST_SLEEP}s before next symbol")
+        # _log(f"SLEEP {sym}: waiting REQUEST_SLEEP={REQUEST_SLEEP}s before next symbol")
         time.sleep(REQUEST_SLEEP)  # be polite to the data source
 
     _log(f"skiplist: saving {len(skip)} entries to data/index.json (no_options)")

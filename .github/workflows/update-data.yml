@@ -51,10 +51,10 @@ jobs:
       # screener), skips files already refreshed today, and fetches top-down
       # until the per-run budget is hit or the source rate-limits us. Each run
       # APPENDS to the cache and the next run resumes where this one stopped.
-      MAX_FETCHES: "120"          # NEW (non-skipped) fetches per run (chunk size)
+      MAX_FETCHES: "400"          # NEW (non-skipped) fetches per run (chunk size)
       UNIVERSE_SIZE: "6000"       # consider the FULL market-cap-ranked US universe
       MIN_MARKET_CAP: "10000000"  # Microcap floor ($10M); drops nano-caps
-      MAX_EXPIRATIONS: "14"       # expirations stored per ticker (keeps JSON small)
+      MAX_EXPIRATIONS: "20"       # expirations stored per ticker (keeps JSON small)
       REQUEST_SLEEP: "1"          # politeness delay between fetches (seconds)
       PYTHONUNBUFFERED: "1"       # stream Python progress logs to Actions immediately
     steps:
