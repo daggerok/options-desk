@@ -23,6 +23,14 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep every entry — NEVER delete history):
  * ---------------------------------------------------------------------------
+ * v0.9.27 - Local-index company names in ticker suggestions:
+ *          - data/index.json may now include `names: { TICKER: companyName }`.
+ *            The local fallback suggestion source reads that map, displays the
+ *            company/fund/index name instead of the generic "Ticker from local
+ *            index", and also searches names so typing "apple" can suggest AAPL.
+ *          - Existing no-options labeling is preserved: a named no-options row
+ *            still shows the symbol with "(no options)" while using the stored
+ *            company name as the description.
  * v0.9.26 - Provider-aware ticker suggestions + local no-options fallback:
  *          - Replaced the Static-cache-only ticker <select> with a searchable
  *            combobox input for ALL providers. Suggestions are fetched while the
@@ -945,6 +953,8 @@ async function fetchStaticJson(url: string, signal?: AbortSignal, label?: string
 interface StaticTickerManifest {
     options: string[];
     noOptions: string[];
+    /** Optional TICKER -> company / fund / index name, stored in data/index.json. */
+    names: Record<string, string>;
     generated?: string;
 }
 
@@ -975,22 +985,34 @@ async function loadStaticTickerManifest(ctx: ProviderContext): Promise<StaticTic
     const noOptions = Array.isArray(noRaw)
         ? noRaw.map(normalizeTickerSymbol)
         : (noRaw && typeof noRaw === 'object' ? Object.keys(noRaw).map(normalizeTickerSymbol) : []);
+    const rawNames = j?.names && typeof j.names === 'object' ? j.names : {};
+    const names: Record<string, string> = {};
+    Object.keys(rawNames).forEach((sym) => {
+        const key = normalizeTickerSymbol(sym);
+        const value = String(rawNames[sym] ?? '').trim();
+        if (key && value) names[key] = value;
+    });
     staticTickerManifestCache = {
         options: Object.keys(files).map(normalizeTickerSymbol).filter(Boolean).sort(),
         noOptions: noOptions.filter(Boolean).sort(),
+        names,
         generated: typeof j?.generated === 'string' ? j.generated : undefined,
     };
     return staticTickerManifestCache;
 }
 
-/** Rank a local-index match: exact > prefix > substring; no match => null. */
-function localTickerRank(query: string, symbol: string): number | null {
+/** Rank a local-index match: exact ticker > ticker prefix > company prefix > substring; no match => null. */
+function localTickerRank(query: string, symbol: string, name = ''): number | null {
     const q = normalizeTickerSymbol(query);
+    const n = name.toUpperCase();
     if (!q) return 50;
     if (symbol === q) return 0;
     if (symbol.startsWith(q)) return 10 + Math.min(symbol.length, 20);
-    const at = symbol.indexOf(q);
-    return at >= 0 ? 100 + at + Math.min(symbol.length, 20) : null;
+    if (n.startsWith(q)) return 35 + Math.min(symbol.length, 20);
+    const symbolAt = symbol.indexOf(q);
+    if (symbolAt >= 0) return 70 + symbolAt + Math.min(symbol.length, 20);
+    const nameAt = n.indexOf(q);
+    return nameAt >= 0 ? 100 + nameAt + Math.min(symbol.length, 20) : null;
 }
 
 /** Build suggestions from the local static manifest, including "(no options)" rows. */
@@ -998,9 +1020,10 @@ function staticTickerSuggestionsFromManifest(query: string, manifest: StaticTick
     const out: Array<TickerSuggestion & { _rank: number }> = [];
     const add = (symbol: string, hasOptions: boolean) => {
         if (!looksLikeTicker(symbol)) return;
-        const rank = localTickerRank(query, symbol);
+        const name = manifest.names[symbol] || '';
+        const rank = localTickerRank(query, symbol, name);
         if (rank == null) return;
-        out.push({ symbol, source: 'Local index', hasOptions, _rank: rank + (hasOptions ? 0 : 25) });
+        out.push({ symbol, name: name || undefined, source: 'Local index', hasOptions, _rank: rank + (hasOptions ? 0 : 25) });
     };
     manifest.options.forEach((s) => add(s, true));
     manifest.noOptions.forEach((s) => add(s, false));

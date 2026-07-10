@@ -12,6 +12,16 @@
 # PROJECT: Options Desk — SMART build-time data fetcher
 #
 # CHANGELOG (append newest at top; keep every entry — NEVER delete history):
+#   v10 - Local-index company names for ticker suggestions:
+#        * data/index.json now also carries `names: { TICKER: companyName }` for
+#          cached tickers and no-options skiplist entries whenever live universe
+#          discovery can resolve a human-readable name. The app uses this to show
+#          local suggestions like provider-native suggestions (company/fund/index
+#          name instead of a generic "Ticker from local index") and to support
+#          name-based local search.
+#        * Name metadata is collected from the NASDAQ screener (preferred display
+#          names such as "Apple Inc. Common Stock") and Cboe optionable-underlying
+#          CSV (fallback), then preserved across no-op runs to avoid churn.
 #   v9 - No-options skiplist lives in data/index.json:
 #        * scripts/no_options.json is REMOVED. The skiplist is now stored as the
 #          `no_options` field on data/index.json (alongside `files` / `count` /
@@ -69,7 +79,7 @@
 #          so you know precisely what to copy & replace.
 #   v4 - Missing-first then oldest-first rotation, per-ticker index (see below).
 #
-# WHAT IT DOES (v9 — skiplist in data/index.json; v8 logged Cboe universe; v5/v4 queue + index):
+# WHAT IT DOES (v10 — names in data/index.json; v9 skiplist in data/index.json; v8 logged Cboe universe; v5/v4 queue + index):
 #   1. Builds a UNIVERSE of optionable US underlyings. Preferred path: pull the
 #      NASDAQ screener (no key), sort DESC by market cap, and keep/merge symbols
 #      that appear in Cboe's optionable-underlying directory so the queue mostly
@@ -120,14 +130,15 @@
 # OUTPUT SHAPE (matches the "Static cache" provider in main.tsx):
 #   data/index.json        -> { "files": { "<TICKER>": "<updated ISO>", ... },
 #                               "count": N, "generated": ISO,
+#                               "names": { "<TICKER>": "Company Name", ... },
 #                               "no_options": { "<TICKER>": "YYYY-MM-DD", ... } }
 #                             (v4: per-ticker `updated` map. The app derives the
 #                             ticker list from sorted keys of `files`. "generated"
 #                             is just when the manifest was rebuilt; the per-ticker
 #                             timestamps are what drive freshness decisions.
 #                             v9: `no_options` is the skiplist of tickers that
-#                             returned no chain — used only by this script; the
-#                             app ignores it and only reads `files`.)
+#                             returned no chain. v10: `names` powers local ticker
+#                             suggestions and name-based local search.)
 #   data/{TICKER}.json     -> { symbol, updated (ISO), underlyingPrice,
 #                               expirations[], quotes[] }  (greeks null; yfinance
 #                               gives IV/OI/volume/bid/ask/last, no greeks)
@@ -275,6 +286,10 @@ FALLBACK_UNIVERSE = [
     "QQQ", "SPY", "IWM", "DIA",  # popular ETFs traders watch
 ]
 
+# v10: live universe discovery fills this TICKER -> human name map. write_index()
+# persists the subset relevant to cached/no-options symbols into data/index.json.
+SYMBOL_NAMES = {}
+
 
 def _canonical(sym):
     """
@@ -290,6 +305,20 @@ def _canonical(sym):
     if sym in SYMBOL_ALIASES:
         return SYMBOL_ALIASES[sym]
     return sym.replace(".", "-").replace("/", "-")
+
+
+def _clean_company_name(name):
+    """Normalize a provider company/fund/index name for stable index.json output."""
+    text = " ".join(str(name or "").strip().split())
+    return "" if text.lower() in ("", "none", "null", "nan", "--", "n/a") else text
+
+
+def _remember_symbol_name(sym, name):
+    """Remember a display name for a canonical symbol (NASDAQ overwrites Cboe)."""
+    symbol = _canonical(sym)
+    company = _clean_company_name(name)
+    if symbol and company:
+        SYMBOL_NAMES[symbol] = company
 
 
 def _symbol_variants(sym):
@@ -474,6 +503,10 @@ def _live_cboe_universe():
             if "^" in sym:
                 continue
             syms.append(_canonical(sym))
+            # v10: keep the human-readable company/fund name for local ticker
+            # suggestions. NASDAQ names (loaded afterward) may overwrite these
+            # Cboe names with nicer "Common Stock" style labels.
+            _remember_symbol_name(sym, row.get("Company"))
         syms = _dedupe(syms)
         _log(f"universe/cboe: loaded {len(syms)} optionable symbols")
         return syms
@@ -524,6 +557,11 @@ def _live_nasdaq_marketcap_universe():
                  and cap(x) >= MIN_MARKET_CAP]
         clean.sort(key=cap, reverse=True)
         syms = _dedupe([_canonical(x["symbol"]) for x in clean])
+        # v10: NASDAQ provides the nicer display names users expect in the
+        # suggestion menu (e.g. "Apple Inc. Common Stock"). Because NASDAQ loads
+        # after Cboe, these overwrite the rougher Cboe CSV company labels.
+        for row in clean:
+            _remember_symbol_name(row.get("symbol"), row.get("name"))
 
         if syms:
             # Tier breakdown (Mega 176B+, Large 36B+, Mid 6B+, Small 2B+, Micro 10M+).
@@ -874,7 +912,7 @@ def main():
     updated_files = []  # relative paths we wrote this run (reported at the end)
     no_option_syms = []  # symbols newly added to the skiplist this run
 
-    _log(f"Smart fetch v8: budget={MAX_FETCHES} successful writes, universe={len(universe)}, "
+    _log(f"Smart fetch v10: budget={MAX_FETCHES} successful writes, universe={len(universe)}, "
          f"today={_today_iso()}, timezone={MARKET_TZ_NAME}")
     _log(f"queue: {n_missing} missing (coverage) + {n_stale} stale (refresh, "
          f"oldest-first); {n_fresh} fresh skipped; "
@@ -980,18 +1018,21 @@ def main():
 def write_index(skip=None):
     """
     Rebuild data/index.json as a PER-TICKER manifest from the files on disk.
-    Shape (v9): { "files": { TICKER: <updated ISO>, ... }, "count": N,
-                  "generated": <ISO>,
-                  "no_options": { TICKER: "YYYY-MM-DD", ... } }.
+    Shape (v10): { "files": { TICKER: <updated ISO>, ... }, "count": N,
+                   "generated": <ISO>,
+                   "names": { TICKER: "Company Name", ... },
+                   "no_options": { TICKER: "YYYY-MM-DD", ... } }.
     Each ticker keeps ITS OWN `updated` (read from its file), so the manifest
     reflects real per-ticker freshness and unchanged tickers keep their old
     timestamp. The no-options skiplist is stored on the same document (v9);
     pass `skip` to write the in-memory skiplist, otherwise the existing
-    `no_options` field on disk is preserved.
+    `no_options` field on disk is preserved. v10 also stores optional display
+    names for cached and no-options symbols so the static app can render local
+    ticker suggestions with provider-like company names.
 
-    To avoid churn, the file is only REWRITTEN when the per-ticker `files` map
-    or the skiplist actually changed vs. what's on disk (so a run that fetched
-    nothing and didn't change the skiplist leaves index.json byte-for-byte
+    To avoid churn, the file is only REWRITTEN when the per-ticker `files` map,
+    name map, or skiplist actually changed vs. what's on disk (so a run that
+    fetched nothing and didn't change metadata leaves index.json byte-for-byte
     untouched, and `generated` is NOT bumped). Returns True if index.json was
     (re)written this call, else False.
     """
@@ -1006,9 +1047,21 @@ def write_index(skip=None):
     else:
         no_options = _sorted_no_options(skip)
 
-    # Compare the meaningful parts (files + skiplist); ignore `generated`.
+    prev_names_raw = prev.get("names") if isinstance(prev, dict) else {}
+    prev_names = prev_names_raw if isinstance(prev_names_raw, dict) else {}
+    wanted_name_symbols = set(files.keys()) | set(no_options.keys())
+    names = {}
+    for sym in sorted(wanted_name_symbols):
+        # Prefer names discovered in THIS run; fall back to the previous manifest
+        # so a no-op/offline run does not drop useful metadata.
+        name = _clean_company_name(SYMBOL_NAMES.get(sym) or prev_names.get(sym))
+        if name:
+            names[sym] = name
+
+    # Compare the meaningful parts (files + names + skiplist); ignore `generated`.
     if (isinstance(prev, dict)
             and prev.get("files") == files
+            and prev.get("names", {}) == names
             and _sorted_no_options(prev.get("no_options") or {}) == no_options):
         return False
 
@@ -1016,6 +1069,7 @@ def write_index(skip=None):
         "files": files,
         "count": len(files),
         "generated": _now_iso(),
+        "names": names,
         "no_options": no_options,
     }
     os.makedirs(DATA_DIR, exist_ok=True)
