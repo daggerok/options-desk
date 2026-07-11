@@ -847,7 +847,7 @@ function friendlyError(e: unknown, provider: DataProvider): string {
     }
     if (msg.includes('Failed to fetch') || msg.toLowerCase().includes('networkerror')) {
         if (provider.needsProxyBase) {
-            return 'Could not reach the proxy. Is it running? Start scripts/yahoo-proxy.ts (Bun) or set your Worker URL in Settings → Proxy base URL.';
+            return 'Could not reach the proxy. To fix this:\n\n1. Clone the repo: git clone https://github.com/daggerok/options-desk.git\n2. Install dependencies: bun install -E\n3. Run the proxy: bun ./scripts/yahoo-proxy.ts\n4. Set Proxy base URL in Settings to http://localhost:8787\n\nOr deploy scripts/cloudflare-worker.js and set the Worker URL instead.\n\nSee README.en.md for detailed instructions.';
         }
         return provider.needsProxy
             ? 'Network/CORS error reaching the proxy. Try a different CORS proxy in Settings, or use marketdata.app / Static cache.'
@@ -2320,36 +2320,38 @@ const SettingsPanel: React.FC<{
                 {/* ---- Desk columns: per-side, per-column toggles -------- */}
                 <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-3">
                     <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Desk columns</h3>
-                    {(['calls', 'puts'] as const).map((side) => (
-                        <div key={side} className="mb-3">
-                            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
-                                {side === 'calls' ? 'Calls' : 'Puts'}
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                        {(['calls', 'puts'] as const).map((side) => (
+                            <div key={side}>
+                                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                                    {side === 'calls' ? 'Calls' : 'Puts'}
+                                </div>
+                                <div className="space-y-1">
+                                    {([
+                                        { id: 'openInterest', label: 'Open interest' },
+                                        { id: 'volume', label: 'Volume' },
+                                        { id: 'iv', label: 'IV' },
+                                        { id: 'delta', label: 'Delta Δ' },
+                                        { id: 'gamma', label: 'Gamma Γ' },
+                                        { id: 'theta', label: 'Theta Θ' },
+                                        { id: 'vega', label: 'Vega' },
+                                        { id: 'rho', label: 'Rho ρ' },
+                                    ] as const).map((c) => (
+                                        <label key={c.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 hover:border-indigo-300 dark:border-slate-700 dark:text-slate-300 dark:hover:border-indigo-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={(settings.deskColumns as any)[side][c.id]}
+                                                onChange={(e) => onChange({ deskColumns: { ...settings.deskColumns, [side]: { ...(settings.deskColumns as any)[side], [c.id]: e.target.checked } } })}
+                                                className="h-3.5 w-3.5 accent-indigo-600"
+                                            />
+                                            <span>{c.label}</span>
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-1.5 text-xs">
-                                {([
-                                    { id: 'openInterest', label: 'Open interest' },
-                                    { id: 'volume', label: 'Volume' },
-                                    { id: 'iv', label: 'IV' },
-                                    { id: 'delta', label: 'Delta Δ' },
-                                    { id: 'gamma', label: 'Gamma Γ' },
-                                    { id: 'theta', label: 'Theta Θ' },
-                                    { id: 'vega', label: 'Vega' },
-                                    { id: 'rho', label: 'Rho ρ' },
-                                ] as const).map((c) => (
-                                    <label key={c.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 hover:border-indigo-300 dark:border-slate-700 dark:text-slate-300 dark:hover:border-indigo-700">
-                                        <input
-                                            type="checkbox"
-                                            checked={(settings.deskColumns as any)[side][c.id]}
-                                            onChange={(e) => onChange({ deskColumns: { ...settings.deskColumns, [side]: { ...(settings.deskColumns as any)[side], [c.id]: e.target.checked } } })}
-                                            className="h-3.5 w-3.5 accent-indigo-600"
-                                        />
-                                        <span>{c.label}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                    <p className="mt-1 text-[11px] text-slate-400">Bid / Mid / Ask and Strike stay visible. Rho is disabled by default.</p>
+                        ))}
+                    </div>
+                    <p className="mt-2 text-[11px] text-slate-400">Bid / Mid / Ask and Strike stay visible. Rho is disabled by default.</p>
                 </div>
 
                 {/* ---- Cache: stats + clear actions --------------------------- */}
