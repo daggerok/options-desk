@@ -2414,7 +2414,7 @@ const TopBar: React.FC<{
         (!provider.supportsSecret || !!(settings.secrets[provider.id]));
 
     return (
-        <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 px-4 py-2.5 backdrop-blur">
+        <header className="sticky top-0 z-50 flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 px-4 py-2.5 backdrop-blur">
             <div className="flex items-center gap-2">
                 <span className="grid h-7 w-7 place-items-center rounded-md bg-indigo-600 text-sm font-black text-white">O</span>
                 <span className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Option Desk</span>
