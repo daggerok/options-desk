@@ -1,0 +1,1 @@
+{"symbol":"CFA","updated":"2026-07-11T02:32:26.978132-04:00","underlyingPrice":99.39900207519531,"expirations":["2026-12-18"],"quotes":[{"symbol":"CFA261218C00100000","expiration":"2026-12-18","side":"call","strike":100.0,"bid":1.5,"ask":7.0,"mid":4.25,"last":4.5,"volume":5.0,"openInterest":5.0,"iv":0.2838206384277343,"delta":null,"gamma":null,"theta":null,"vega":null}]}
