@@ -1,0 +1,1 @@
+{"symbol":"MAGA","updated":"2026-07-11T00:16:56.283634-04:00","underlyingPrice":56.35200119018555,"expirations":["2026-10-16"],"quotes":[{"symbol":"MAGA261016P00050000","expiration":"2026-10-16","side":"put","strike":50.0,"bid":0.2,"ask":0.8,"mid":0.5,"last":0.45,"volume":3.0,"openInterest":3.0,"iv":0.2622144091796875,"delta":null,"gamma":null,"theta":null,"vega":null}]}
