@@ -23,6 +23,9 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.29 - Dynamic desk columns: strike-column guide now uses `.od-strike-cell`
+ *          instead of a fixed nth-child selector because the Strike column moves
+ *          when users hide/show OI/Vol/IV/Greeks.
  * v0.9.28 - No CSS structural changes for static-cache greeks metadata
  *          (main.tsx/scripts/data schema change only). Entry recorded to keep
  *          this agentic CSS header synchronized.
@@ -395,7 +398,7 @@ body {
  * has an always-sticky Expiration bar (.od-bar) that PILES UP at the top as you
  * scroll (top offset is set inline per index), plus — only when the section is
  * active/in-view — a sticky group row + column-label row (.od-sub) just below
- * the pile. Every strike row (.od-drow) is a 13-column CSS grid; the sub-header
+ * the pile. Every strike row (.od-drow) uses a dynamic CSS grid; the sub-header
  * rows share the exact same grid template (--od-grid) so columns line up.
  * All header surfaces are fully OPAQUE so nothing shows through while scrolling.
  * ------------------------------------------------------------------------- */
@@ -404,7 +407,7 @@ body {
     --od-hrow: 1.75rem; /* height of the group / column-label rows           */
 }
 
-/* Every grid row (data + sub-headers) shares the 13-column template. */
+/* Every grid row (data + sub-headers) shares the dynamic template. */
 .od-drow,
 .od-sub {
     display: grid;
@@ -460,7 +463,7 @@ body {
 .dark .od-sub {
     background-color: #1e293b; /* slate-800 */
 }
-/* Opaque Calls/Puts group tints (span 6 cols each). */
+/* Opaque Calls/Puts group tints (their span is set inline from visible columns). */
 .od-sub .od-calls { background-color: #ecfdf5; } /* emerald-50 */
 .od-sub .od-puts  { background-color: #fff1f2; } /* rose-50 */
 .dark .od-sub .od-calls { background-color: #052e26; }
@@ -474,12 +477,12 @@ body {
 .od-drow.od-atm  { background-color: #eef2ff; } /* indigo-50 */
 .dark .od-drow.od-atm { background-color: rgba(30, 27, 75, 0.4); }
 
-/* Center "Strike" column guide — a subtle vertical tint on the 7th cell of each
- * data row (layered via background-image so it doesn't replace zebra/atm bg). */
-.od-drow > :nth-child(7) {
+/* Center "Strike" column guide — a subtle vertical tint on the explicitly
+ * marked strike cell (column index changes when users hide/show desk columns). */
+.od-strike-cell {
     background-image: linear-gradient(rgba(99, 102, 241, 0.06), rgba(99, 102, 241, 0.06));
 }
-.dark .od-drow > :nth-child(7) {
+.dark .od-strike-cell {
     background-image: linear-gradient(rgba(129, 140, 248, 0.10), rgba(129, 140, 248, 0.10));
 }
 
