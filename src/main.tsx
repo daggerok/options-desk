@@ -598,7 +598,9 @@ interface OptionQuote {
     gamma: number | null;
     theta: number | null;
     vega: number | null;
-    /** Where delta/gamma/theta/vega came from, if known. */
+    /** Rho: sensitivity to interest rates (per 1pp rate change). */
+    rho: number | null;
+    /** Where delta/gamma/theta/vega/rho came from, if known. */
     greeksSource?: GreeksSource;
     /** Why greeks are still missing after enrichment, if known. */
     greeksMissingReason?: string | null;
@@ -1184,6 +1186,7 @@ const staticProvider: DataProvider = {
             gamma: num(q.gamma),
             theta: num(q.theta),
             vega: num(q.vega),
+            rho: num(q.rho),
             greeksSource: q.greeksSource === 'cboe' || q.greeksSource === 'black-scholes' || q.greeksSource === 'marketdata' || q.greeksSource === 'dolthub'
                 ? q.greeksSource
                 : null,
@@ -1414,6 +1417,7 @@ const dolthubProvider: DataProvider = {
                 gamma: num(r.gamma),
                 theta: num(r.theta),
                 vega: num(r.vega),
+                rho: num(r.rho),
             } as OptionQuote;
         });
     },
@@ -1585,7 +1589,7 @@ const cboeProvider: DataProvider = {
                 last: num(o.last_trade_price),
                 volume: num(o.volume),
                 openInterest: num(o.open_interest),
-                iv: num(o.iv), delta: num(o.delta), gamma: num(o.gamma), theta: num(o.theta), vega: num(o.vega),
+                iv: num(o.iv), delta: num(o.delta), gamma: num(o.gamma), theta: num(o.theta), vega: num(o.vega), rho: num(o.rho),
             });
         }
         const expirations = Array.from(new Set(quotes.map((q) => q.expiration))).sort();
@@ -1915,11 +1919,20 @@ async function loadExpiration(provider: DataProvider, symbol: string, expiration
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
-interface DeskColumnSettings {
+interface SideColumnSettings {
     openInterest: boolean;
     volume: boolean;
     iv: boolean;
-    greeks: boolean;
+    delta: boolean;
+    gamma: boolean;
+    theta: boolean;
+    vega: boolean;
+    rho: boolean;
+}
+
+interface DeskColumnSettings {
+    calls: SideColumnSettings;
+    puts: SideColumnSettings;
 }
 
 interface Settings {
@@ -1949,7 +1962,10 @@ const DEFAULT_SETTINGS: Settings = {
     workerUrl: '',
     tokens: {},
     secrets: {},
-    deskColumns: { openInterest: true, volume: true, iv: true, greeks: true },
+    deskColumns: {
+        calls: { openInterest: true, volume: true, iv: true, delta: true, gamma: true, theta: true, vega: true, rho: false },
+        puts: { openInterest: true, volume: true, iv: true, delta: true, gamma: true, theta: true, vega: true, rho: false },
+    },
     lastTicker: 'AAPL',
 };
 
@@ -1964,7 +1980,10 @@ function loadSettings(): Settings {
             ...parsed,
             tokens: { ...DEFAULT_SETTINGS.tokens, ...(parsed.tokens || {}) },
             secrets: { ...DEFAULT_SETTINGS.secrets, ...(parsed.secrets || {}) },
-            deskColumns: { ...DEFAULT_SETTINGS.deskColumns, ...(parsed.deskColumns || {}) },
+            deskColumns: {
+                calls: { ...DEFAULT_SETTINGS.deskColumns.calls, ...((parsed.deskColumns as any)?.calls || {}) },
+                puts: { ...DEFAULT_SETTINGS.deskColumns.puts, ...((parsed.deskColumns as any)?.puts || {}) },
+            },
         };
     } catch {
         return { ...DEFAULT_SETTINGS };
@@ -2298,28 +2317,39 @@ const SettingsPanel: React.FC<{
                     </>
                 )}
 
-                {/* ---- Desk columns: user-selectable visible data groups -------- */}
+                {/* ---- Desk columns: per-side, per-column toggles -------- */}
                 <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-3">
                     <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Desk columns</h3>
-                    <div className="grid grid-cols-2 gap-1.5 text-xs">
-                        {([
-                            { id: 'openInterest', label: 'Open interest' },
-                            { id: 'volume', label: 'Volume' },
-                            { id: 'iv', label: 'IV' },
-                            { id: 'greeks', label: 'Greeks Δ Γ Θ Vega' },
-                        ] as const).map((c) => (
-                            <label key={c.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 hover:border-indigo-300 dark:border-slate-700 dark:text-slate-300 dark:hover:border-indigo-700">
-                                <input
-                                    type="checkbox"
-                                    checked={settings.deskColumns[c.id]}
-                                    onChange={(e) => onChange({ deskColumns: { ...settings.deskColumns, [c.id]: e.target.checked } })}
-                                    className="h-3.5 w-3.5 accent-indigo-600"
-                                />
-                                <span>{c.label}</span>
-                            </label>
-                        ))}
-                    </div>
-                    <p className="mt-1 text-[11px] text-slate-400">Bid / Mid / Ask and Strike stay visible so the desk remains readable.</p>
+                    {(['calls', 'puts'] as const).map((side) => (
+                        <div key={side} className="mb-3">
+                            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                                {side === 'calls' ? 'Calls' : 'Puts'}
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5 text-xs">
+                                {([
+                                    { id: 'openInterest', label: 'Open interest' },
+                                    { id: 'volume', label: 'Volume' },
+                                    { id: 'iv', label: 'IV' },
+                                    { id: 'delta', label: 'Delta Δ' },
+                                    { id: 'gamma', label: 'Gamma Γ' },
+                                    { id: 'theta', label: 'Theta Θ' },
+                                    { id: 'vega', label: 'Vega' },
+                                    { id: 'rho', label: 'Rho ρ' },
+                                ] as const).map((c) => (
+                                    <label key={c.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 hover:border-indigo-300 dark:border-slate-700 dark:text-slate-300 dark:hover:border-indigo-700">
+                                        <input
+                                            type="checkbox"
+                                            checked={(settings.deskColumns as any)[side][c.id]}
+                                            onChange={(e) => onChange({ deskColumns: { ...settings.deskColumns, [side]: { ...(settings.deskColumns as any)[side], [c.id]: e.target.checked } } })}
+                                            className="h-3.5 w-3.5 accent-indigo-600"
+                                        />
+                                        <span>{c.label}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                    <p className="mt-1 text-[11px] text-slate-400">Bid / Mid / Ask and Strike stay visible. Rho is disabled by default.</p>
                 </div>
 
                 {/* ---- Cache: stats + clear actions --------------------------- */}
@@ -2568,7 +2598,7 @@ interface ChainSection {
     strikes: number[];
 }
 
-type DeskColumnKey = 'openInterest' | 'volume' | 'iv' | 'delta' | 'gamma' | 'theta' | 'vega' | 'bid' | 'mid' | 'ask';
+type DeskColumnKey = 'openInterest' | 'volume' | 'iv' | 'delta' | 'gamma' | 'theta' | 'vega' | 'rho' | 'bid' | 'mid' | 'ask';
 interface DeskColumnDef {
     key: DeskColumnKey;
     label: string;
@@ -2581,12 +2611,11 @@ function deskColumns(settings: DeskColumnSettings): { calls: DeskColumnDef[]; pu
     const oi: DeskColumnDef = { key: 'openInterest', label: 'OI', render: (q) => fmtInt(q?.openInterest) };
     const vol: DeskColumnDef = { key: 'volume', label: 'Vol', render: (q) => fmtInt(q?.volume) };
     const iv: DeskColumnDef = { key: 'iv', label: 'IV', className: 'text-slate-500', render: (q) => fmtPct(q?.iv) };
-    const greeks: DeskColumnDef[] = [
-        { key: 'delta', label: 'Δ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.delta) },
-        { key: 'gamma', label: 'Γ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.gamma) },
-        { key: 'theta', label: 'Θ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.theta) },
-        { key: 'vega', label: 'Vega', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.vega) },
-    ];
+    const delta: DeskColumnDef = { key: 'delta', label: 'Δ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.delta) };
+    const gamma: DeskColumnDef = { key: 'gamma', label: 'Γ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.gamma) };
+    const theta: DeskColumnDef = { key: 'theta', label: 'Θ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.theta) };
+    const vega: DeskColumnDef = { key: 'vega', label: 'Vega', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.vega) };
+    const rho: DeskColumnDef = { key: 'rho', label: 'ρ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.rho) };
     const callPrice: DeskColumnDef[] = [
         { key: 'bid', label: 'Bid', render: (q) => fmt(q?.bid) },
         { key: 'mid', label: 'Mid', className: 'font-medium text-emerald-600 dark:text-emerald-400', render: (q) => fmt(q?.mid) },
@@ -2598,19 +2627,20 @@ function deskColumns(settings: DeskColumnSettings): { calls: DeskColumnDef[]; pu
         { key: 'ask', label: 'Ask', render: (q) => fmt(q?.ask) },
     ];
 
-    const callPrefix: DeskColumnDef[] = [];
-    if (settings.openInterest) callPrefix.push(oi);
-    if (settings.volume) callPrefix.push(vol);
-    if (settings.iv) callPrefix.push(iv);
-    if (settings.greeks) callPrefix.push(...greeks);
+    const buildSide = (s: SideColumnSettings, isCall: boolean): DeskColumnDef[] => {
+        const cols: DeskColumnDef[] = [];
+        if (s.openInterest) cols.push(oi);
+        if (s.volume) cols.push(vol);
+        if (s.iv) cols.push(iv);
+        if (s.delta) cols.push(delta);
+        if (s.gamma) cols.push(gamma);
+        if (s.theta) cols.push(theta);
+        if (s.vega) cols.push(vega);
+        if (s.rho) cols.push(rho);
+        return isCall ? [...cols, ...callPrice] : [...putPrice, ...cols.reverse()];
+    };
 
-    const putSuffix: DeskColumnDef[] = [];
-    if (settings.iv) putSuffix.push(iv);
-    if (settings.greeks) putSuffix.push(...greeks);
-    if (settings.volume) putSuffix.push(vol);
-    if (settings.openInterest) putSuffix.push(oi);
-
-    return { calls: [...callPrefix, ...callPrice], puts: [...putPrice, ...putSuffix] };
+    return { calls: buildSide(settings.calls, true), puts: buildSide(settings.puts, false) };
 }
 
 function gridCols(callCount: number, putCount: number): string {
