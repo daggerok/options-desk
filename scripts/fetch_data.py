@@ -13,6 +13,16 @@
 # PROJECT: Options Desk — SMART build-time data fetcher
 #
 # CHANGELOG (append newest at top; keep history accurate):
+#   v11 - Static-cache greeks enrichment:
+#        * fetch_ticker() now enriches yfinance chains with free Cboe delayed
+#          greeks (delta/gamma/theta/vega) by OCC contract symbol when available.
+#        * If Cboe greeks are missing and BLACK_SCHOLES_GREEKS is enabled, the
+#          fetcher computes model-estimated greeks from spot/strike/expiration/IV.
+#          This is especially useful for delta/gamma coverage, but each quote is
+#          tagged with `greeksSource` so UI/future analytics can distinguish
+#          provider-supplied greeks from model estimates.
+#        * Each cache payload now includes a top-level `greeks` summary with
+#          counts, sources, risk-free/dividend assumptions, and missing counts.
 #   v10 - Local-index company names for ticker suggestions:
 #        * data/index.json now also carries `names: { TICKER: companyName }` for
 #          cached tickers and no-options skiplist entries whenever live universe
@@ -81,7 +91,7 @@
 #          so you know precisely what to copy & replace.
 #   v4 - Missing-first then oldest-first rotation, per-ticker index (see below).
 #
-# WHAT IT DOES (v10 — names in data/index.json; v9 skiplist in data/index.json; v8 logged Cboe universe; v5/v4 queue + index):
+# WHAT IT DOES (v11 — Cboe/Black-Scholes greeks; v10 names in data/index.json; v9 skiplist in data/index.json; v8 logged Cboe universe; v5/v4 queue + index):
 #   1. Builds a UNIVERSE of optionable US underlyings. Preferred path: pull the
 #      NASDAQ screener (no key), sort DESC by market cap, and keep/merge symbols
 #      that appear in Cboe's optionable-underlying directory so the queue mostly
@@ -100,7 +110,8 @@
 #          are STALE (per the working-day rules), OLDEST-UPDATED FIRST, so the
 #          cache rotates evenly and the least-fresh data is always updated next.
 #      Files that are still FRESH today are skipped in both phases.
-#   3. Fetches the full option chain via yfinance and WRITES/OVERWRITES
+#   3. Fetches the full option chain via yfinance, enriches greeks from Cboe
+#      delayed quotes and Black-Scholes fallback, then WRITES/OVERWRITES
 #      data/{SYMBOL}.json. Stops when EITHER we hit the per-run budget
 #      (MAX_FETCHES) OR the source appears to rate-limit us (a streak of
 #      empty/error responses). Each run does NEW work; the next run resumes.
@@ -142,8 +153,12 @@
 #                             returned no chain. v10: `names` powers local ticker
 #                             suggestions and name-based local search.)
 #   data/{TICKER}.json     -> { symbol, updated (ISO), underlyingPrice,
-#                               expirations[], quotes[] }  (greeks null; yfinance
-#                               gives IV/OI/volume/bid/ask/last, no greeks)
+#                               greeks{...}, expirations[], quotes[] }
+#                             quotes keep bid/ask/last/volume/OI/IV from yfinance,
+#                             then fill delta/gamma/theta/vega from Cboe delayed
+#                             data or Black-Scholes estimates. Per-quote
+#                             `greeksSource` records `cboe`, `black-scholes`, or
+#                             null; `greeksMissingReason` explains remaining gaps.
 #
 # USAGE:
 #   pip install yfinance requests
@@ -162,6 +177,10 @@
 #   RATE_LIMIT_HITS  default 3    consecutive ERRORS that mean "we're blocked".
 #   REQUEST_SLEEP    default 0.6  seconds between fetches (be polite to Yahoo).
 #   SKIP_RECHECK_DAYS default 30  days before a no-options ticker is re-checked.
+#   CBOE_GREEKS default 1        enrich static cache with Cboe delayed greeks.
+#   BLACK_SCHOLES_GREEKS default 1  estimate missing greeks from spot/IV.
+#   GREEKS_RISK_FREE_RATE default 0.045  annual risk-free assumption for model.
+#   GREEKS_DIVIDEND_YIELD default 0.0    annual dividend yield assumption.
 #   SYMBOL_ALIASES   default ""   extra "SCREENER=YAHOO" aliases, comma-separated
 #                                 (e.g. "BRK.B=BRK-B,FOO=BAR"). Class shares are
 #                                 auto-canonicalized ("."/"/" -> "-") regardless.
@@ -177,6 +196,7 @@ import sys
 import math
 import time
 from datetime import datetime, timezone, timedelta
+from urllib.parse import quote
 
 # ---- Timezone ---------------------------------------------------------------
 # All freshness / "today" logic runs in a MARKET timezone, defaulting to US
@@ -243,6 +263,14 @@ NASDAQ_TIMEOUT = float(os.environ.get("NASDAQ_TIMEOUT", "20"))
 # yields no chain is remembered so we DON'T keep re-fetching it every run, but we
 # re-try after this many days in case it later lists options (self-healing).
 SKIP_RECHECK_DAYS = int(os.environ.get("SKIP_RECHECK_DAYS", "30"))
+# Greeks enrichment. Cboe delayed quotes are the preferred free source; Black-
+# Scholes is an explicit model fallback for contracts where provider greeks are
+# missing but spot/IV/expiration are available.
+CBOE_GREEKS = os.environ.get("CBOE_GREEKS", "1").lower() not in ("0", "false", "no", "off")
+BLACK_SCHOLES_GREEKS = os.environ.get("BLACK_SCHOLES_GREEKS", "1").lower() not in ("0", "false", "no", "off")
+GREEKS_RISK_FREE_RATE = float(os.environ.get("GREEKS_RISK_FREE_RATE", "0.045"))
+GREEKS_DIVIDEND_YIELD = float(os.environ.get("GREEKS_DIVIDEND_YIELD", "0.0"))
+CBOE_GREEKS_TIMEOUT = float(os.environ.get("CBOE_GREEKS_TIMEOUT", "10"))
 
 # ---- Ticker symbol aliases --------------------------------------------------
 # Some data sources use a different symbol spelling than the NASDAQ screener.
@@ -674,8 +702,181 @@ def _rows_from_frame(frame, expiration, side):
             "openInterest": _num(r.get("openInterest")),
             "iv": _num(r.get("impliedVolatility")),  # decimal (0.25 = 25%)
             "delta": None, "gamma": None, "theta": None, "vega": None,
+            "greeksSource": None,
+            "greeksMissingReason": "not_enriched",
         })
     return out
+
+
+# ---- Greeks enrichment ------------------------------------------------------
+# The static cache starts with yfinance rows (quotes/prices/OI/IV) and enriches
+# greeks from Cboe delayed quotes when possible. Cboe is provider-supplied but
+# delayed. Black-Scholes is explicitly tagged as a model fallback; it gives broad
+# delta/gamma coverage when Cboe lacks a contract/greek, provided spot and IV are
+# usable. We keep the source metadata so future greeks features can distinguish
+# market/provider greeks from estimates.
+CBOE_OPTIONS_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{symbol}.json"
+CBOE_INDEX_SET = {"SPX", "VIX", "NDX", "RUT", "DJX", "XSP", "OEX", "VXN"}
+
+
+def _norm_pdf(x):
+    return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
+
+
+def _norm_cdf(x):
+    return 0.5 * math.erfc(-x / math.sqrt(2.0))
+
+
+def _years_to_expiration(expiration):
+    try:
+        exp_date = datetime.strptime(str(expiration), "%Y-%m-%d").date()
+    except Exception:
+        return None
+    # Add one calendar day so same-day expirations still have a small positive T.
+    days = (exp_date - _today()).days + 1
+    if days <= 0:
+        return None
+    return max(days / 365.0, 1.0 / 365.0)
+
+
+def _black_scholes_greeks(q, spot, risk_free=GREEKS_RISK_FREE_RATE, dividend_yield=GREEKS_DIVIDEND_YIELD):
+    """Return model-estimated greeks + None reason for one quote, or (None, reason).
+
+    Theta is returned per calendar day and vega is returned per 1 vol-point
+    (divide raw dV/dsigma by 100), matching the common convention used by Cboe's
+    delayed endpoint. Delta/gamma are standard Black-Scholes values.
+    """
+    s = _num(spot)
+    k = _num(q.get("strike"))
+    sigma = _num(q.get("iv"))
+    if s is None or s <= 0:
+        return None, "missing_spot"
+    if k is None or k <= 0:
+        return None, "missing_strike"
+    if sigma is None or sigma <= 0:
+        return None, "missing_iv"
+    t = _years_to_expiration(q.get("expiration"))
+    if t is None or t <= 0:
+        return None, "expired"
+    try:
+        sqrt_t = math.sqrt(t)
+        d1 = (math.log(s / k) + (risk_free - dividend_yield + 0.5 * sigma * sigma) * t) / (sigma * sqrt_t)
+        d2 = d1 - sigma * sqrt_t
+        disc_q = math.exp(-dividend_yield * t)
+        disc_r = math.exp(-risk_free * t)
+        pdf = _norm_pdf(d1)
+        gamma = disc_q * pdf / (s * sigma * sqrt_t)
+        vega = s * disc_q * pdf * sqrt_t / 100.0
+        if q.get("side") == "put":
+            delta = disc_q * (_norm_cdf(d1) - 1.0)
+            theta_year = (-(s * disc_q * pdf * sigma) / (2.0 * sqrt_t)
+                          + risk_free * k * disc_r * _norm_cdf(-d2)
+                          - dividend_yield * s * disc_q * _norm_cdf(-d1))
+        else:
+            delta = disc_q * _norm_cdf(d1)
+            theta_year = (-(s * disc_q * pdf * sigma) / (2.0 * sqrt_t)
+                          - risk_free * k * disc_r * _norm_cdf(d2)
+                          + dividend_yield * s * disc_q * _norm_cdf(d1))
+        return {
+            "delta": _num(delta),
+            "gamma": _num(gamma),
+            "theta": _num(theta_year / 365.0),
+            "vega": _num(vega),
+        }, None
+    except Exception:
+        return None, "model_error"
+
+
+def _cboe_symbol_candidates(symbol, matched_symbol=None):
+    raw = str(symbol or "").upper().strip().replace("^", "")
+    matched = str(matched_symbol or "").upper().strip().replace("^", "")
+    bases = _dedupe([raw, matched, raw.replace("-", "."), raw.replace("-", "/"), raw.replace("-", "")])
+    out = []
+    for b in bases:
+        if not b:
+            continue
+        out.append(f"_{b}" if b in CBOE_INDEX_SET else b)
+        out.append(b)
+    return _dedupe(out)
+
+
+def _fetch_cboe_greeks(symbol, matched_symbol=None):
+    """Return OCC option symbol -> Cboe option row, or {} if Cboe is unavailable."""
+    if not CBOE_GREEKS or requests is None:
+        return {}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; OptionsDeskBot/1.0)",
+        "Accept": "application/json,*/*",
+    }
+    for cand in _cboe_symbol_candidates(symbol, matched_symbol):
+        url = CBOE_OPTIONS_URL.format(symbol=quote(cand, safe=""))
+        try:
+            r = requests.get(url, headers=headers, timeout=CBOE_GREEKS_TIMEOUT)
+            if r.status_code == 404:
+                continue
+            r.raise_for_status()
+            j = r.json()
+            rows = (j.get("data") or {}).get("options") or []
+            if not rows:
+                continue
+            if cand != symbol:
+                _log(f"GREEKS {symbol}: using Cboe symbol '{cand}'")
+            return {str(o.get("option", "")).upper(): o for o in rows if o.get("option")}
+        except Exception as e:
+            _log_err(f"GREEKS {symbol}: Cboe candidate '{cand}' failed: {e}")
+            continue
+    return {}
+
+
+def _has_delta_gamma(q):
+    return _num(q.get("delta")) is not None and _num(q.get("gamma")) is not None
+
+
+def _apply_greeks_enrichment(symbol, matched_symbol, spot, quotes):
+    total = len(quotes)
+    cboe_rows = _fetch_cboe_greeks(symbol, matched_symbol)
+    stats = {
+        "enabled": bool(CBOE_GREEKS or BLACK_SCHOLES_GREEKS),
+        "primarySource": "cboe" if CBOE_GREEKS else None,
+        "fallbackSource": "black-scholes" if BLACK_SCHOLES_GREEKS else None,
+        "riskFreeRate": GREEKS_RISK_FREE_RATE if BLACK_SCHOLES_GREEKS else None,
+        "dividendYield": GREEKS_DIVIDEND_YIELD if BLACK_SCHOLES_GREEKS else None,
+        "total": total,
+        "cboeMatched": 0,
+        "computed": 0,
+        "missing": 0,
+        "cboeContracts": len(cboe_rows),
+    }
+
+    for q in quotes:
+        occ = str(q.get("symbol", "")).upper()
+        c = cboe_rows.get(occ)
+        if c:
+            for field in ("delta", "gamma", "theta", "vega"):
+                val = _num(c.get(field))
+                if val is not None:
+                    q[field] = val
+            if _has_delta_gamma(q):
+                q["greeksSource"] = "cboe"
+                q["greeksMissingReason"] = None
+                stats["cboeMatched"] += 1
+                continue
+
+        if BLACK_SCHOLES_GREEKS:
+            calc, reason = _black_scholes_greeks(q, spot)
+            if calc and calc.get("delta") is not None and calc.get("gamma") is not None:
+                q.update(calc)
+                q["greeksSource"] = "black-scholes"
+                q["greeksMissingReason"] = None
+                stats["computed"] += 1
+                continue
+            q["greeksMissingReason"] = reason or "unknown"
+        else:
+            q["greeksMissingReason"] = "black_scholes_disabled"
+        q["greeksSource"] = None
+        stats["missing"] += 1
+
+    return stats
 
 
 def _resolve_options(symbol):
@@ -722,10 +923,14 @@ def fetch_ticker(symbol):
     if not quotes:
         return None
 
+    spot = _spot(t)
+    greeks_meta = _apply_greeks_enrichment(symbol, matched, spot, quotes)
+
     return {
         "symbol": symbol,
         "updated": _now_iso(),
-        "underlyingPrice": _spot(t),
+        "underlyingPrice": spot,
+        "greeks": greeks_meta,
         "expirations": exps,
         "quotes": quotes,
     }
@@ -914,7 +1119,7 @@ def main():
     updated_files = []  # relative paths we wrote this run (reported at the end)
     no_option_syms = []  # symbols newly added to the skiplist this run
 
-    _log(f"Smart fetch v10: budget={MAX_FETCHES} successful writes, universe={len(universe)}, "
+    _log(f"Smart fetch v11: budget={MAX_FETCHES} successful writes, universe={len(universe)}, "
          f"today={_today_iso()}, timezone={MARKET_TZ_NAME}")
     _log(f"queue: {n_missing} missing (coverage) + {n_stale} stale (refresh, "
          f"oldest-first); {n_fresh} fresh skipped; "

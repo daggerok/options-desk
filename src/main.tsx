@@ -24,6 +24,13 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.28 - Static-cache greeks metadata:
+ *          - OptionQuote now carries optional `greeksSource` and
+ *            `greeksMissingReason` fields, and ChainMeta/ChainResult can carry a
+ *            top-level `greeks` enrichment summary from data/{TICKER}.json.
+ *          - Static-cache parsing preserves these fields so future greeks-based
+ *            analytics can distinguish provider-supplied Cboe delayed greeks
+ *            from Black-Scholes model estimates.
  * v0.9.27 - Local-index company names in ticker suggestions:
  *          - data/index.json may now include `names: { TICKER: companyName }`.
  *            The local fallback suggestion source reads that map, displays the
@@ -543,6 +550,23 @@ function isAbortError(e: unknown): boolean {
 // DOMAIN TYPES
 // ============================================================================
 
+/** Source of greeks stored on a quote. `black-scholes` is a model estimate. */
+type GreeksSource = 'marketdata' | 'cboe' | 'dolthub' | 'black-scholes' | null;
+
+/** Top-level greeks enrichment summary written by scripts/fetch_data.py. */
+interface GreeksSummary {
+    enabled?: boolean;
+    primarySource?: string | null;
+    fallbackSource?: string | null;
+    riskFreeRate?: number | null;
+    dividendYield?: number | null;
+    total?: number;
+    cboeMatched?: number;
+    computed?: number;
+    missing?: number;
+    cboeContracts?: number;
+}
+
 /** A single normalized option contract quote (provider-agnostic shape). */
 interface OptionQuote {
     /** OCC-style option symbol, e.g. "AAPL260717C00110000". */
@@ -566,6 +590,10 @@ interface OptionQuote {
     gamma: number | null;
     theta: number | null;
     vega: number | null;
+    /** Where delta/gamma/theta/vega came from, if known. */
+    greeksSource?: GreeksSource;
+    /** Why greeks are still missing after enrichment, if known. */
+    greeksMissingReason?: string | null;
 }
 
 /** Lightweight chain metadata (expirations + spot) — the cheap first fetch. */
@@ -575,6 +603,8 @@ interface ChainMeta {
     underlyingPrice: number | null;
     /** Sorted unique list of ISO expirations available. */
     expirations: string[];
+    /** Optional greeks enrichment summary for static-cache files. */
+    greeks?: GreeksSummary;
 }
 
 /** Full chain result for a symbol (used internally by BULK providers). */
@@ -1140,11 +1170,16 @@ const staticProvider: DataProvider = {
             gamma: num(q.gamma),
             theta: num(q.theta),
             vega: num(q.vega),
+            greeksSource: q.greeksSource === 'cboe' || q.greeksSource === 'black-scholes' || q.greeksSource === 'marketdata' || q.greeksSource === 'dolthub'
+                ? q.greeksSource
+                : null,
+            greeksMissingReason: q.greeksMissingReason == null ? null : String(q.greeksMissingReason),
         }));
         const expirations = asArray<string>(j.expirations).length
             ? asArray<string>(j.expirations).map(String)
             : Array.from(new Set(quotes.map((q) => q.expiration).filter(Boolean))).sort();
-        return { symbol: raw, underlyingPrice: num(j.underlyingPrice), expirations, quotes };
+        const greeks = j.greeks && typeof j.greeks === 'object' ? j.greeks as GreeksSummary : undefined;
+        return { symbol: raw, underlyingPrice: num(j.underlyingPrice), expirations, quotes, greeks };
     },
 };
 
@@ -1833,7 +1868,7 @@ async function loadMeta(provider: DataProvider, symbol: string, ctx: ProviderCon
         if (!provider.fetchAll) throw new Error('Provider misconfigured (bulk without fetchAll).');
         const result = await provider.fetchAll(symbol, ctx);
         putBulk(provider.id, result);
-        return { symbol: result.symbol, underlyingPrice: result.underlyingPrice, expirations: result.expirations };
+        return { symbol: result.symbol, underlyingPrice: result.underlyingPrice, expirations: result.expirations, greeks: result.greeks };
     }
     if (!provider.fetchMeta) throw new Error('Provider misconfigured (lazy without fetchMeta).');
     const meta = await provider.fetchMeta(symbol, ctx);
