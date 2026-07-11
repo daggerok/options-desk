@@ -701,7 +701,7 @@ def _rows_from_frame(frame, expiration, side):
             "volume": _num(r.get("volume")),
             "openInterest": _num(r.get("openInterest")),
             "iv": _num(r.get("impliedVolatility")),  # decimal (0.25 = 25%)
-            "delta": None, "gamma": None, "theta": None, "vega": None,
+            "delta": None, "gamma": None, "theta": None, "vega": None, "rho": None,
             "greeksSource": None,
             "greeksMissingReason": "not_enriched",
         })
@@ -744,8 +744,9 @@ def _black_scholes_greeks(q, spot, risk_free=GREEKS_RISK_FREE_RATE, dividend_yie
 
     Theta is returned per calendar day and vega is returned per 1 vol-point
     (divide raw dV/dsigma by 100), matching the common convention used by Cboe's
-    delayed endpoint. Delta/gamma are standard Black-Scholes values.
-    """
+    delayed endpoint. Delta/gamma/rho are standard Black-Scholes values.
+    Rho is returned per 1 percentage point change in interest rate (divide raw
+    dV/dr by 100), matching the common convention."""
     s = _num(spot)
     k = _num(q.get("strike"))
     sigma = _num(q.get("iv"))
@@ -772,16 +773,19 @@ def _black_scholes_greeks(q, spot, risk_free=GREEKS_RISK_FREE_RATE, dividend_yie
             theta_year = (-(s * disc_q * pdf * sigma) / (2.0 * sqrt_t)
                           + risk_free * k * disc_r * _norm_cdf(-d2)
                           - dividend_yield * s * disc_q * _norm_cdf(-d1))
+            rho = -k * t * disc_r * _norm_cdf(-d2) / 100.0
         else:
             delta = disc_q * _norm_cdf(d1)
             theta_year = (-(s * disc_q * pdf * sigma) / (2.0 * sqrt_t)
                           - risk_free * k * disc_r * _norm_cdf(d2)
                           + dividend_yield * s * disc_q * _norm_cdf(d1))
+            rho = k * t * disc_r * _norm_cdf(d2) / 100.0
         return {
             "delta": _num(delta),
             "gamma": _num(gamma),
             "theta": _num(theta_year / 365.0),
             "vega": _num(vega),
+            "rho": _num(rho),
         }, None
     except Exception:
         return None, "model_error"
@@ -852,7 +856,7 @@ def _apply_greeks_enrichment(symbol, matched_symbol, spot, quotes):
         occ = str(q.get("symbol", "")).upper()
         c = cboe_rows.get(occ)
         if c:
-            for field in ("delta", "gamma", "theta", "vega"):
+            for field in ("delta", "gamma", "theta", "vega", "rho"):
                 val = _num(c.get(field))
                 if val is not None:
                     q[field] = val
