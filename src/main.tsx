@@ -24,6 +24,14 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.29 - Desk columns + compact theme picker:
+ *          - Options desk columns are now user-configurable in Settings. OI,
+ *            Volume, IV and Greeks can be toggled; Bid/Mid/Ask and Strike stay
+ *            visible so the desk remains readable. Greeks are enabled by
+ *            default and render delta/gamma/theta/vega when available.
+ *          - Missing quote data now renders as an empty cell instead of a dash.
+ *          - Theme switch is now a compact current-theme icon with an animated
+ *            dropdown of the other themes; Escape/click-away closes it.
  * v0.9.28 - Static-cache greeks metadata:
  *          - OptionQuote now carries optional `greeksSource` and
  *            `greeksMissingReason` fields, and ChainMeta/ChainResult can carry a
@@ -752,22 +760,28 @@ function num(v: unknown): number | null {
     return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
-/** Format a number for display, with a graceful "—" for null/undefined. */
+/** Format a number for display; missing data renders as an empty cell. */
 function fmt(v: number | null | undefined, digits = 2): string {
-    if (v == null || !Number.isFinite(v)) return '—';
+    if (v == null || !Number.isFinite(v)) return '';
     return v.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
 /** Format an integer-ish value (volume / OI) with thousands separators. */
 function fmtInt(v: number | null | undefined): string {
-    if (v == null || !Number.isFinite(v)) return '—';
+    if (v == null || !Number.isFinite(v)) return '';
     return Math.round(v).toLocaleString();
 }
 
 /** Format implied volatility (decimal) as a percentage string. */
 function fmtPct(v: number | null | undefined): string {
-    if (v == null || !Number.isFinite(v)) return '—';
+    if (v == null || !Number.isFinite(v)) return '';
     return `${(v * 100).toFixed(1)}%`;
+}
+
+/** Format greeks; missing values stay visually empty, while real zero prints as 0.0000. */
+function fmtGreek(v: number | null | undefined, digits = 4): string {
+    if (v == null || !Number.isFinite(v)) return '';
+    return v.toFixed(digits);
 }
 
 /** Convert a "YYYY-MM-DD" date to unix seconds (UTC midnight). */
@@ -1901,6 +1915,13 @@ async function loadExpiration(provider: DataProvider, symbol: string, expiration
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
+interface DeskColumnSettings {
+    openInterest: boolean;
+    volume: boolean;
+    iv: boolean;
+    greeks: boolean;
+}
+
 interface Settings {
     providerId: string;
     theme: ThemeMode;
@@ -1913,6 +1934,8 @@ interface Settings {
     tokens: Record<string, string>;
     /** Per-provider API secrets (for KEY+SECRET providers like Alpaca). */
     secrets: Record<string, string>;
+    /** Column groups shown in the options desk. Greeks are enabled by default. */
+    deskColumns: DeskColumnSettings;
     lastTicker: string;
 }
 
@@ -1926,6 +1949,7 @@ const DEFAULT_SETTINGS: Settings = {
     workerUrl: '',
     tokens: {},
     secrets: {},
+    deskColumns: { openInterest: true, volume: true, iv: true, greeks: true },
     lastTicker: 'AAPL',
 };
 
@@ -1940,6 +1964,7 @@ function loadSettings(): Settings {
             ...parsed,
             tokens: { ...DEFAULT_SETTINGS.tokens, ...(parsed.tokens || {}) },
             secrets: { ...DEFAULT_SETTINGS.secrets, ...(parsed.secrets || {}) },
+            deskColumns: { ...DEFAULT_SETTINGS.deskColumns, ...(parsed.deskColumns || {}) },
         };
     } catch {
         return { ...DEFAULT_SETTINGS };
@@ -2064,8 +2089,8 @@ const SetupBadge: React.FC<{ provider: DataProvider; hasKey: boolean }> = ({ pro
 };
 
 /**
- * Segmented theme switch (Light / System / Dark) — placed on the top bar,
- * to the right of the API dropdown, per the product specification.
+ * Compact theme picker: shows only the current theme icon. Clicking it toggles a
+ * small animated menu with the other themes; Escape/click-away closes it.
  */
 const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (t: ThemeMode) => void }> = ({ value, onChange }) => {
     const options: { id: ThemeMode; icon: React.FC<{ className?: string }>; title: string }[] = [
@@ -2073,30 +2098,66 @@ const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (t: ThemeMode) => void
         { id: 'system', icon: Icon.Monitor, title: 'System' },
         { id: 'dark', icon: Icon.Moon, title: 'Dark' },
     ];
+    const [open, setOpen] = useState(false);
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const current = options.find((o) => o.id === value) ?? options[1];
+    const CurrentIcon = current.icon;
+    const choices = options.filter((o) => o.id !== value);
+
+    useEffect(() => {
+        if (!open) return undefined;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+        const onPointer = (e: MouseEvent) => {
+            if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        window.addEventListener('keydown', onKey);
+        window.addEventListener('mousedown', onPointer);
+        return () => {
+            window.removeEventListener('keydown', onKey);
+            window.removeEventListener('mousedown', onPointer);
+        };
+    }, [open]);
+
     return (
-        <div className="flex items-center gap-0.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-0.5">
-            {options.map((o) => {
-                const active = value === o.id;
-                const IconCmp = o.icon;
-                return (
-                    <button
-                        key={o.id}
-                        type="button"
-                        title={`${o.title} theme`}
-                        aria-label={`${o.title} theme`}
-                        aria-pressed={active}
-                        onClick={() => onChange(o.id)}
-                        className={
-                            'flex h-7 w-7 items-center justify-center rounded-md transition-colors ' +
-                            (active
-                                ? 'bg-white dark:bg-slate-950 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')
-                        }
-                    >
-                        <IconCmp className="h-4 w-4" />
-                    </button>
-                );
-            })}
+        <div ref={rootRef} className="relative">
+            <button
+                type="button"
+                title={`${current.title} theme`}
+                aria-label={`${current.title} theme`}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                onClick={() => setOpen((v) => !v)}
+                className={
+                    'flex h-8 w-8 items-center justify-center rounded-lg border transition-all duration-150 ' +
+                    (open
+                        ? 'scale-105 border-indigo-500 bg-indigo-50 text-indigo-600 shadow-sm dark:bg-indigo-950/40 dark:text-indigo-400'
+                        : 'border-slate-300 dark:border-slate-700 text-slate-500 hover:-translate-y-px hover:text-slate-800 dark:hover:text-slate-200')
+                }
+            >
+                <CurrentIcon className="h-4 w-4 transition-transform duration-150" />
+            </button>
+            {open && (
+                <div
+                    role="menu"
+                    className="absolute right-0 top-10 z-50 w-36 origin-top-right animate-fade-in rounded-xl border border-slate-200 bg-white p-1 shadow-xl ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10"
+                >
+                    {choices.map((o) => {
+                        const IconCmp = o.icon;
+                        return (
+                            <button
+                                key={o.id}
+                                type="button"
+                                role="menuitem"
+                                onClick={() => { onChange(o.id); setOpen(false); }}
+                                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 transition-all duration-150 hover:bg-indigo-50 hover:text-indigo-700 dark:text-slate-200 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300"
+                            >
+                                <IconCmp className="h-4 w-4" />
+                                <span>{o.title}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 };
@@ -2236,6 +2297,30 @@ const SettingsPanel: React.FC<{
                         )}
                     </>
                 )}
+
+                {/* ---- Desk columns: user-selectable visible data groups -------- */}
+                <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-3">
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Desk columns</h3>
+                    <div className="grid grid-cols-2 gap-1.5 text-xs">
+                        {([
+                            { id: 'openInterest', label: 'Open interest' },
+                            { id: 'volume', label: 'Volume' },
+                            { id: 'iv', label: 'IV' },
+                            { id: 'greeks', label: 'Greeks Δ Γ Θ Vega' },
+                        ] as const).map((c) => (
+                            <label key={c.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 hover:border-indigo-300 dark:border-slate-700 dark:text-slate-300 dark:hover:border-indigo-700">
+                                <input
+                                    type="checkbox"
+                                    checked={settings.deskColumns[c.id]}
+                                    onChange={(e) => onChange({ deskColumns: { ...settings.deskColumns, [c.id]: e.target.checked } })}
+                                    className="h-3.5 w-3.5 accent-indigo-600"
+                                />
+                                <span>{c.label}</span>
+                            </label>
+                        ))}
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-400">Bid / Mid / Ask and Strike stay visible so the desk remains readable.</p>
+                </div>
 
                 {/* ---- Cache: stats + clear actions --------------------------- */}
                 <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-3">
@@ -2483,33 +2568,65 @@ interface ChainSection {
     strikes: number[];
 }
 
-/** Shared 13-column grid template: 6 call cols, 1 strike col, 6 put cols. */
-const GRID_COLS = 'repeat(6, minmax(3.25rem, 1fr)) minmax(3.5rem, 0.7fr) repeat(6, minmax(3.25rem, 1fr))';
+type DeskColumnKey = 'openInterest' | 'volume' | 'iv' | 'delta' | 'gamma' | 'theta' | 'vega' | 'bid' | 'mid' | 'ask';
+interface DeskColumnDef {
+    key: DeskColumnKey;
+    label: string;
+    className?: string;
+    render: (q?: OptionQuote) => string;
+}
+
+/** Build the currently visible call/put columns from Settings → Desk columns. */
+function deskColumns(settings: DeskColumnSettings): { calls: DeskColumnDef[]; puts: DeskColumnDef[] } {
+    const oi: DeskColumnDef = { key: 'openInterest', label: 'OI', render: (q) => fmtInt(q?.openInterest) };
+    const vol: DeskColumnDef = { key: 'volume', label: 'Vol', render: (q) => fmtInt(q?.volume) };
+    const iv: DeskColumnDef = { key: 'iv', label: 'IV', className: 'text-slate-500', render: (q) => fmtPct(q?.iv) };
+    const greeks: DeskColumnDef[] = [
+        { key: 'delta', label: 'Δ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.delta) },
+        { key: 'gamma', label: 'Γ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.gamma) },
+        { key: 'theta', label: 'Θ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.theta) },
+        { key: 'vega', label: 'Vega', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.vega) },
+    ];
+    const callPrice: DeskColumnDef[] = [
+        { key: 'bid', label: 'Bid', render: (q) => fmt(q?.bid) },
+        { key: 'mid', label: 'Mid', className: 'font-medium text-emerald-600 dark:text-emerald-400', render: (q) => fmt(q?.mid) },
+        { key: 'ask', label: 'Ask', render: (q) => fmt(q?.ask) },
+    ];
+    const putPrice: DeskColumnDef[] = [
+        { key: 'bid', label: 'Bid', render: (q) => fmt(q?.bid) },
+        { key: 'mid', label: 'Mid', className: 'font-medium text-rose-600 dark:text-rose-400', render: (q) => fmt(q?.mid) },
+        { key: 'ask', label: 'Ask', render: (q) => fmt(q?.ask) },
+    ];
+
+    const callPrefix: DeskColumnDef[] = [];
+    if (settings.openInterest) callPrefix.push(oi);
+    if (settings.volume) callPrefix.push(vol);
+    if (settings.iv) callPrefix.push(iv);
+    if (settings.greeks) callPrefix.push(...greeks);
+
+    const putSuffix: DeskColumnDef[] = [];
+    if (settings.iv) putSuffix.push(iv);
+    if (settings.greeks) putSuffix.push(...greeks);
+    if (settings.volume) putSuffix.push(vol);
+    if (settings.openInterest) putSuffix.push(oi);
+
+    return { calls: [...callPrefix, ...callPrice], puts: [...putPrice, ...putSuffix] };
+}
+
+function gridCols(callCount: number, putCount: number): string {
+    return `repeat(${callCount}, minmax(3.25rem, 1fr)) minmax(3.5rem, 0.7fr) repeat(${putCount}, minmax(3.25rem, 1fr))`;
+}
+function deskMinWidth(callCount: number, putCount: number): string {
+    return `${Math.max(46, (callCount + putCount + 1) * 3.75)}rem`;
+}
 
 /** One data cell in the grid desk. */
 const Cell: React.FC<{ children?: React.ReactNode; className?: string }> = ({ children, className }) => (
     <div className={'px-2 py-1 text-right tabular-nums ' + (className || '')}>{children}</div>
 );
-/** Six call-side cells (OI, Vol, IV, Bid, Mid, Ask). */
-const CallCells: React.FC<{ q?: OptionQuote }> = ({ q }) => (
+const QuoteCells: React.FC<{ q?: OptionQuote; columns: DeskColumnDef[] }> = ({ q, columns }) => (
     <>
-        <Cell>{fmtInt(q?.openInterest)}</Cell>
-        <Cell>{fmtInt(q?.volume)}</Cell>
-        <Cell className="text-slate-500">{fmtPct(q?.iv)}</Cell>
-        <Cell>{fmt(q?.bid)}</Cell>
-        <Cell className="font-medium text-emerald-600 dark:text-emerald-400">{fmt(q?.mid)}</Cell>
-        <Cell>{fmt(q?.ask)}</Cell>
-    </>
-);
-/** Six put-side cells (Bid, Mid, Ask, IV, Vol, OI). */
-const PutCells: React.FC<{ q?: OptionQuote }> = ({ q }) => (
-    <>
-        <Cell>{fmt(q?.bid)}</Cell>
-        <Cell className="font-medium text-rose-600 dark:text-rose-400">{fmt(q?.mid)}</Cell>
-        <Cell>{fmt(q?.ask)}</Cell>
-        <Cell className="text-slate-500">{fmtPct(q?.iv)}</Cell>
-        <Cell>{fmtInt(q?.volume)}</Cell>
-        <Cell>{fmtInt(q?.openInterest)}</Cell>
+        {columns.map((c) => <Cell key={c.key} className={c.className}>{c.render(q)}</Cell>)}
     </>
 );
 
@@ -2541,6 +2658,8 @@ const ExpirationSection: React.FC<{
     section: ChainSection;
     index: number;
     spot: number | null;
+    callColumns: DeskColumnDef[];
+    putColumns: DeskColumnDef[];
     collapsed: boolean;
     active: boolean;
     onToggle: () => void;
@@ -2551,7 +2670,7 @@ const ExpirationSection: React.FC<{
     /** Registers this section's ATM (at-the-money) row element so the desk can
      *  scroll it to the vertical center on load / expand (center-strike view). */
     atmRef: (el: HTMLDivElement | null) => void;
-}> = ({ section, index, spot, collapsed, active, onToggle, innerRef, atmRef }) => {
+}> = ({ section, index, spot, callColumns, putColumns, collapsed, active, onToggle, innerRef, atmRef }) => {
     const { expiration, calls, puts, strikes } = section;
     const atmStrike = useMemo(() => {
         if (spot == null || strikes.length === 0) return null;
@@ -2617,9 +2736,9 @@ const ExpirationSection: React.FC<{
                             bodyAnim + ' ' + (active ? 'sticky' : '')
                         }
                     >
-                        <div className="od-calls col-span-6 px-2 py-1 text-center font-semibold text-emerald-700 dark:text-emerald-400">Calls</div>
-                        <div className="px-2 py-1 text-center font-semibold">Strike</div>
-                        <div className="od-puts col-span-6 px-2 py-1 text-center font-semibold text-rose-700 dark:text-rose-400">Puts</div>
+                        <div className="od-calls px-2 py-1 text-center font-semibold text-emerald-700 dark:text-emerald-400" style={{ gridColumn: `span ${callColumns.length}` }}>Calls</div>
+                        <div className="od-strike-cell px-2 py-1 text-center font-semibold">Strike</div>
+                        <div className="od-puts px-2 py-1 text-center font-semibold text-rose-700 dark:text-rose-400" style={{ gridColumn: `span ${putColumns.length}` }}>Puts</div>
                     </div>
                     {/* Column-label row (sticky only when active). */}
                     <div
@@ -2629,12 +2748,12 @@ const ExpirationSection: React.FC<{
                             bodyAnim + ' ' + (active ? 'sticky' : '')
                         }
                     >
-                        {['OI', 'Vol', 'IV', 'Bid', 'Mid', 'Ask'].map((h, k) => (
-                            <div key={`c${k}`} className="px-2 py-1 text-right font-medium">{h}</div>
+                        {callColumns.map((c) => (
+                            <div key={`c${c.key}`} className="px-2 py-1 text-right font-medium">{c.label}</div>
                         ))}
-                        <div className="px-2 py-1 text-center font-medium">$</div>
-                        {['Bid', 'Mid', 'Ask', 'IV', 'Vol', 'OI'].map((h, k) => (
-                            <div key={`p${k}`} className="px-2 py-1 text-right font-medium">{h}</div>
+                        <div className="od-strike-cell px-2 py-1 text-center font-medium">$</div>
+                        {putColumns.map((c) => (
+                            <div key={`p${c.key}`} className="px-2 py-1 text-right font-medium">{c.label}</div>
                         ))}
                     </div>
                     {/* Strike rows: staggered fade-in on open; uniform fade-out on close. */}
@@ -2653,14 +2772,14 @@ const ExpirationSection: React.FC<{
                                 }
                                 style={stagger ? { animationDelay: `${i * 18}ms` } : undefined}
                             >
-                                <CallCells q={calls.get(strike)} />
+                                <QuoteCells q={calls.get(strike)} columns={callColumns} />
                                 <div className={
-                                    'px-2 py-1 text-center font-semibold tabular-nums ' +
+                                    'od-strike-cell px-2 py-1 text-center font-semibold tabular-nums ' +
                                     (isAtm ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-900 dark:text-slate-100')
                                 }>
                                     {fmt(strike)}
                                 </div>
-                                <PutCells q={puts.get(strike)} />
+                                <QuoteCells q={puts.get(strike)} columns={putColumns} />
                             </div>
                         );
                     })}
@@ -2676,7 +2795,11 @@ const ExpirationSection: React.FC<{
  * PILES UP as you scroll down (un-piles scrolling up). A scroll listener marks
  * the in-view section active so its sub-headers stay pinned below the pile.
  */
-const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: number | null }> = ({ symbol, sections, spot }) => {
+const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: number | null; columns: DeskColumnSettings }> = ({ symbol, sections, spot, columns }) => {
+    const visibleColumns = useMemo(() => deskColumns(columns), [columns]);
+    const odGrid = useMemo(() => gridCols(visibleColumns.calls.length, visibleColumns.puts.length), [visibleColumns]);
+    const odMinWidth = useMemo(() => deskMinWidth(visibleColumns.calls.length, visibleColumns.puts.length), [visibleColumns]);
+
     // Collapsed set — SESSION-ONLY (never persisted). A freshly loaded chain must
     // ALWAYS start fully EXPANDED (empty set). Switching symbol resets it so the
     // new chain is expanded too. (See the v0.9.16 note above loadCollapsed's
@@ -2876,7 +2999,7 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
     }, [symbol, expKeyReset]);
 
     return (
-        <div style={{ ['--od-grid' as string]: GRID_COLS }}>
+        <div style={{ ['--od-grid' as string]: odGrid }}>
             {/* Controls ABOVE the desk (full width): count LEFT, toggle RIGHT. */}
             <div className="mb-2 flex w-full items-center justify-between">
                 <span className="text-xs text-slate-400">
@@ -2901,13 +3024,15 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
                 the min-width so columns stay comfortable / scroll horizontally on
                 small screens. */}
             <div ref={scrollRef} className="table-container w-full max-h-[calc(100dvh-210px)] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
-                <div className="od-desk min-w-[46rem]">
+                <div className="od-desk" style={{ minWidth: odMinWidth }}>
                     {sections.map((s, i) => (
                         <ExpirationSection
                             key={s.expiration}
                             section={s}
                             index={i}
                             spot={spot}
+                            callColumns={visibleColumns.calls}
+                            putColumns={visibleColumns.puts}
                             collapsed={collapsed.has(s.expiration)}
                             active={activeExp === s.expiration}
                             onToggle={() => toggleOne(s.expiration)}
@@ -3425,7 +3550,7 @@ const App: React.FC = () => {
                 {/* Option chain desk (one section per expiration), or guidance. */}
                 {!showOnboarding && (
                     chainSymbol && hasRows ? (
-                        <ChainTable symbol={chainSymbol} sections={sections} spot={spot} />
+                        <ChainTable symbol={chainSymbol} sections={sections} spot={spot} columns={settings.deskColumns} />
                     ) : meta && !expLoading && !chainSymbol ? (
                         <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
                             Pick one or more expirations and press <span className="mx-1 font-semibold text-indigo-500">Load</span> to fetch the chain.

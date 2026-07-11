@@ -42,7 +42,8 @@ A single-page **options board**: enter a ticker, get expirations, select one or 
 - **Two-step, quota-friendly loading:** nothing fetches on page open. Type/search a ticker → **Get dates**; select expiration(s) → **Load**.
 - **Ticker suggestions:** searchable ticker/company combobox for every provider. Local static suggestions use `data/index.json` names and mark known valid tickers without options as **`(no options)`**.
 - **Multiple expirations:** select one, many, or all expirations. Chains render stacked earliest-to-latest with sticky/piled expiration headers.
-- **Desk UX:** ATM row highlight, sticky Calls/Strike/Puts headers, themed scrollbars, collapse/expand controls, and automatic centering on the current strike after load/expand.
+- **Desk UX:** ATM row highlight, sticky Calls/Strike/Puts headers, greeks columns enabled by default, user-selectable desk column groups, empty cells for missing data, themed scrollbars, collapse/expand controls, and automatic centering on the current strike after load/expand.
+- **Theme UX:** compact current-theme icon with an animated dropdown for the other themes.
 - **Provider setup badges:** No setup / Free key / Needs proxy, plus onboarding when a token is required.
 - **Local browser state:** provider, theme, tokens, proxy URL, last ticker, and query cache are stored only in `localStorage`.
 
@@ -181,7 +182,8 @@ pyproject.toml                # Python deps for fetch_data.py
 - **Двухшаговая загрузка без лишних запросов:** при открытии ничего не грузится. Тикер → **Get dates**; экспирации → **Load**.
 - **Подсказки тикеров:** поиск по тикеру/названию для всех провайдеров. Локальные подсказки берут названия из `data/index.json`; тикеры из `no_options` помечаются **`(no options)`**.
 - **Несколько экспираций:** можно выбрать одну, несколько или все. Цепочки показываются стопкой от ранней к поздней со sticky-заголовками.
-- **Удобная доска:** подсветка ATM, sticky Calls/Strike/Puts, скроллбары в теме, сворачивание/разворачивание, автопрокрутка к текущему страйку после загрузки/разворачивания.
+- **Удобная доска:** подсветка ATM, sticky Calls/Strike/Puts, greeks-колонки включены по умолчанию, группы колонок можно включать/выключать в Settings, missing data показывается пустой ячейкой, скроллбары в теме, сворачивание/разворачивание, автопрокрутка к текущему страйку после загрузки/разворачивания.
+- **Theme UX:** компактная иконка текущей темы с animated dropdown для остальных тем.
 - **Бейджи настройки:** No setup / Free key / Needs proxy и подсказки, если нужен токен.
 - **Локальное состояние:** провайдер, тема, токены, URL прокси, последний тикер и кэш запросов хранятся только в `localStorage`.
 
