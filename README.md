@@ -37,7 +37,7 @@ A single-page **options board**: enter a ticker, get expirations, select one or 
 
 ---
 
-*Agentic developer note: keep these READMEs synchronized with `src/main.tsx`, `src/index.css`, `scripts/*`, and `.github/workflows/*`. Prefer correcting/removing stale comments over preserving inaccurate ones. For AI agents, see [AGENT.md](./AGENT.md).*
+*Agentic developer note: This is an Agentic AI-developed project. Agents must always start by reading [AGENT.md](./AGENT.md) as the main entry point and contract. Keep these READMEs synchronized with `src/main.tsx`, `src/index.css`, `scripts/*`, and `.github/workflows/*`. Prefer correcting/removing stale comments over preserving inaccurate ones.*
 
 ---
 
