@@ -50,5 +50,5 @@ Fetcher smoke (без mass commit): `TICKERS=AAPL MAX_FETCHES=1 REQUEST_SLEEP=0 
 
 - UI / providers / BS: `src/main.tsx`
 - Styles: `src/index.css`
-- Agent docs: `AGENT.md`, `CLAUDE.md`, `AGENTS.md`, `Setup.md`
+- Agent docs: `AGENT.md`, `CLAUDE.md`, `docs/AGENTS.ru.md`/`docs/AGENTS.en.md`, `docs/Setup.ru.md`/`docs/Setup.en.md`
 - Не коммитить: `dist/`, `node_modules/`, `.parcel-cache`, `.venv`, `__pycache__`, `package-lock.json`

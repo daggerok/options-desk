@@ -26,12 +26,12 @@ Agent docs:
 
 - `AGENT.md` — этот файл (главный контракт).
 - `CLAUDE.md` — короткий adapter для Claude Code.
-- `ARENA.md` — конфигурация для Arena.ai Agent Mode.
-- `AGENTS.md` — compatibility stub.
-- `Setup.md` — how-to по agentic setup в других проектах.
-- `.cursorrules` — правила для Cursor AI.
+- `docs/ARENA.ru.md` / `docs/ARENA.en.md` — конфигурация для Arena.ai Agent Mode.
+- `docs/AGENTS.ru.md` / `docs/AGENTS.en.md` — compatibility stub.
+- `docs/Setup.ru.md` / `docs/Setup.en.md` — how-to по agentic setup в других проектах.
+- `docs/.cursorrules` — правила для Cursor AI.
 - `SCRATCHPAD.md` — временный файл для заметок агента (игнорируется в git).
-- `DEVELOPMENT.md` — подробный гид разработчика (Developer Guide).
+- `docs/DEVELOPMENT.ru.md` / `docs/DEVELOPMENT.en.md` — подробный гид разработчика (Developer Guide).
 
 ## Текущая архитектура данных
 

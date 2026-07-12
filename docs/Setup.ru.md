@@ -21,8 +21,8 @@
 
 - `AGENT.md` — основной контракт, нейтральный для любых агентов.
 - `CLAUDE.md` — адаптер для Claude Code.
-- `AGENTS.md` — совместимость с агентами, которые ожидают plural form.
-- `Setup.md` — обучающий документ: как делать setup в новых и существующих проектах.
+- `AGENTS.ru.md` / `AGENTS.en.md` — совместимость с агентами, которые ожидают plural form.
+- `Setup.ru.md` / `Setup.en.md` — обучающий документ: как делать setup в новых и существующих проектах.
 
 ## 2. Хорошая методология: Spec → Verifier → Environment
 
@@ -289,8 +289,8 @@ grep -RInE 'TODO|FIXME|old|deprecated|Vite|webpack|no_options|provider|proxy' .
 
 - `AGENT.md` — главный контракт для любого AI агента (провайдеры, greeks, never/autopilot).
 - `CLAUDE.md` — короткий adapter для Claude Code (ссылается на `AGENT.md`).
-- `AGENTS.md` — compatibility checklist.
-- `Setup.md` — этот учебник (переносимый how-to).
+- `AGENTS.ru.md` / `AGENTS.en.md` — compatibility checklist.
+- `Setup.ru.md` / `Setup.en.md` — этот учебник (переносимый how-to).
 
 Правила специально учитывают Options Desk:
 
