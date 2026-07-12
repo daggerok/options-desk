@@ -254,7 +254,7 @@ MAX_FETCHES = int(os.environ.get("MAX_FETCHES", "40"))
 UNIVERSE_SIZE = int(os.environ.get("UNIVERSE_SIZE", "6000"))
 # Minimum market cap to include (USD). Default $10M = Microcap floor; anything
 # smaller (nano-caps) is dropped — they rarely have listed options.
-MIN_MARKET_CAP = float(os.environ.get("MIN_MARKET_CAP", "10000000"))
+MIN_MARKET_CAP = float(os.environ.get("MIN_MARKET_CAP", "9000000"))
 MAX_EXPIRATIONS = int(os.environ.get("MAX_EXPIRATIONS", "12"))
 RATE_LIMIT_HITS = int(os.environ.get("RATE_LIMIT_HITS", "3"))
 REQUEST_SLEEP = float(os.environ.get("REQUEST_SLEEP", "0.6"))
@@ -379,6 +379,9 @@ def _symbol_variants(sym):
                 break
         variants.append(base)  # BRKB (stripped)
     variants.append(raw)
+    # Smart fallback: if the raw/base symbol lacks options, it might be an index.
+    variants.append(f"^{base}")
+    variants.append(f"^{raw}")
     return _dedupe(variants)
 
 
@@ -988,12 +991,47 @@ def _file_updated(path):
 
 
 def is_fresh(path):
-    """True if the cached file exists and is FRESH per the working-day rules
-    (see `_file_is_fresh`): skip today's data, skip last-trading-day data when
-    the market is closed today, but re-fetch older data on a trading day."""
+    """
+    Continuous cyclic update rule:
+    We NEVER consider files 'fresh' (meaning we endlessly update oldest first),
+    EXCEPT during the weekend dead zone (Friday 20:00 EST to Sunday 18:00 EST).
+    During that dead zone, a single update is enough, so if a file was updated
+    after Friday 20:00 EST, it is skipped until Sunday 18:00 EST.
+    """
     if not os.path.exists(path):
         return False
-    return _file_is_fresh(_file_updated(path))
+        
+    updated_str = _file_updated(path)
+    if not updated_str:
+        return False
+        
+    try:
+        updated_dt = datetime.fromisoformat(updated_str)
+    except Exception:
+        return False
+        
+    now = datetime.now(_market_tz())
+    if updated_dt.tzinfo is None:
+        updated_dt = updated_dt.replace(tzinfo=timezone.utc).astimezone(_market_tz())
+    else:
+        updated_dt = updated_dt.astimezone(_market_tz())
+
+    # Determine this week's Friday 20:00 to Sunday 18:00
+    # Monday=0 ... Friday=4, Sunday=6
+    fri_offset = 4 - now.weekday()
+    fri_date = now.date() + timedelta(days=fri_offset)
+    
+    fri_dt = datetime.combine(fri_date, datetime.min.time()).replace(tzinfo=_market_tz())
+    dz_start = fri_dt + timedelta(hours=20)
+    dz_end = dz_start + timedelta(days=2, hours=-2)  # Sun 18:00
+    
+    if dz_start <= now < dz_end:
+        # We are IN the weekend dead zone. Skip if updated after dead zone started.
+        if updated_dt >= dz_start:
+            return True
+            
+    # Outside the dead zone, EVERYTHING is stale (continuous cyclic updates).
+    return False
 
 
 # ---- "No options" skiplist --------------------------------------------------
