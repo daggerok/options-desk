@@ -552,7 +552,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
-import { I18nProvider, useI18n, Language, LANGUAGES, providerDescription, translate } from './i18n';
+import { I18nProvider, useI18n, Language, LANGUAGES, DEFAULT_LANGUAGE, providerDescription, translate } from './i18n';
 
 // ============================================================================
 // DEBUG SYSTEM
