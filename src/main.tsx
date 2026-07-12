@@ -24,6 +24,12 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.33 - Single source of truth for model greeks (UI only):
+ *          - scripts/fetch_data.py no longer runs Black-Scholes / higher-order
+ *            math; it only attaches Cboe delayed 1st-order when available.
+ *          - λ + 2nd/3rd-order + full BS fallback remain exclusively in this
+ *            file (blackScholesGreeks / enrichQuotesWithModelGreeks) so live
+ *            and CACHE providers share one implementation without duplication.
  * v0.9.32 - Providers trimmed to CACHE + CBOE + NASDAQ + YAHOO:
  *          - Removed marketdata.app and DoltHub from the live registry.
  *          - Short uppercase labels; fixed dropdown order: CACHE, CBOE, NASDAQ, YAHOO.
@@ -871,13 +877,12 @@ function estimateSpot(quotes: OptionQuote[], expiration: string): number | null 
 }
 
 // ---------------------------------------------------------------------------
-// Client-side Black-Scholes greeks (mirrors scripts/fetch_data.py)
+// Client-side Black-Scholes greeks — SINGLE SOURCE OF TRUTH for model math
 // ---------------------------------------------------------------------------
-// Static cache gets λ + 2nd/3rd-order greeks at build time via fetch_data.py
-// (Cboe 1st-order + BS higher-order, or full BS fallback). Live/proxy providers
-// never ran that step, so desk columns for λ/Vanna/… stayed empty. We port the
-// same model here and enrich quotes after each provider fetch. Conventions match
-// the Python helper: theta per calendar day, vega/rho per 1 vol-point / 1pp rate.
+// scripts/fetch_data.py may attach provider Cboe 1st-order only. All model work
+// (missing 1st-order + λ + 2nd/3rd-order) happens here after every provider
+// fetch, including CACHE. Do not reintroduce BS in Python — that duplicates this.
+// Conventions: theta per calendar day; vega/rho per 1 vol-point / 1pp rate.
 const BS_RISK_FREE_RATE = 0.045;
 const BS_DIVIDEND_YIELD = 0.0;
 const HIGHER_ORDER_GREEK_KEYS = ['lambda', 'vanna', 'vomma', 'charm', 'speed', 'zomma', 'color'] as const;

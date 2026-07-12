@@ -72,7 +72,7 @@ bun run build-github-pages
 
 | UI label | Настройка | Покрытие | Греки | Заметки |
 |---|---|---|---|---|
-| **CACHE** *(default на GitHub Pages)* | Без настройки | Тикеры из `data/*.json` | CBOE/model-enriched по мере refresh | Same-origin static JSON (GitHub Actions/yfinance + CBOE delayed greeks + Black-Scholes). Без CORS и ключей. |
+| **CACHE** *(default на GitHub Pages)* | Без настройки | Тикеры из `data/*.json` | CBOE/model-enriched по мере refresh | Same-origin static JSON (GitHub Actions/yfinance + CBOE delayed 1st-order). Model/higher-order greeks считает браузер. Без CORS и ключей. |
 | **CBOE** *(default на localhost)* | Нужен прокси | CBOE delayed options | Да (provider + client BS higher-order) | Самый богатый delayed-фид (greeks/IV/OI/spot). Нужен Proxy base URL (`/api/cboe`). |
 | **NASDAQ** | Нужен прокси | NASDAQ option-chain | Нет IV → нет model greeks | Полная цепочка за один запрос: bid/ask/last/volume/OI. Прокси `/api/nasdaq`. |
 | **YAHOO** | Нужен прокси | Yahoo symbol search / option chains | Client Black-Scholes из IV | Lazy по expiration. Прокси обрабатывает crumb/cookies (`/api/options`). |
@@ -94,9 +94,13 @@ bun run build-github-pages
 
 ## Greeks в static cache
 
-Новые/обновлённые static cache файлы получают per-quote metadata `greeksSource`. Сборщик сначала берёт provider-supplied CBOE delayed greeks (`greeksSource: "cboe"`), а если CBOE не дал greeks, считает Black-Scholes estimate (`greeksSource: "black-scholes"`), когда есть spot/IV/expiration. Оставшиеся пропуски получают `greeksMissingReason`. Уже существующие файлы получат metadata по мере refresh workflow.
+**Единый источник model greeks — браузер** (`src/main.tsx`).
 
-Доступные greeks: **Delta (Δ)**, **Gamma (Γ)**, **Theta (Θ)**, **Vega**, и **Rho (ρ)**. Rho отключён по умолчанию в настройках колонок.
+- `scripts/fetch_data.py` пишет yfinance quotes и, если есть, **Cboe delayed 1st-order** (`delta`/`gamma`/`theta`/`vega`/`rho`, `greeksSource: "cboe"`).
+- Скрипт **не** считает λ / Vanna / Vomma / Charm / Speed / Zomma / Color и не делает full Black-Scholes fallback — это дубль UI.
+- После любого fetch (включая **CACHE**) приложение считает client-side Black-Scholes: missing 1st-order при наличии IV+spot и higher-order когда возможно.
+- Пропуски — `greeksMissingReason` (fetcher или client).
+
 
 ## Публикация на GitHub Pages
 
@@ -157,7 +161,7 @@ bun ./scripts/yahoo-proxy.ts
 
 ## Вспомогательная инфраструктура
 
-- `scripts/fetch_data.py` — умный yfinance-сборщик. Создаёт/обновляет `data/*.json`, обогащает greeks из CBOE delayed quotes плюс Black-Scholes fallback и ведёт `data/index.json` с `{ files, count, generated, names, no_options }`.
+- `scripts/fetch_data.py` — умный yfinance-сборщик. Создаёт/обновляет `data/*.json`, вешает Cboe delayed **1st-order** greeks (model greeks только в UI) и ведёт `data/index.json` с `{ files, count, generated, names, no_options }`.
 - `.github/workflows/update-data.yml` — плановый/ручной refresh данных.
 - `scripts/yahoo-proxy.ts` — локальный **Bun**-прокси:
   - `/api/options` — Yahoo optionChain с crumb/cookies.

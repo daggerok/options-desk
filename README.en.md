@@ -72,7 +72,7 @@ Only four sources. Short uppercase labels in the API dropdown.
 
 | UI label | Setup | Coverage | Greeks | Notes |
 |---|---|---|---|---|
-| **CACHE** *(default on GitHub Pages)* | No setup | Cached tickers in `data/*.json` | CBOE/model-enriched as files refresh | Same-origin static JSON from GitHub Actions/yfinance + CBOE delayed greeks + Black-Scholes fallback. No CORS, no keys. |
+| **CACHE** *(default on GitHub Pages)* | No setup | Cached tickers in `data/*.json` | CBOE/model-enriched as files refresh | Same-origin static JSON from GitHub Actions/yfinance + CBOE delayed 1st-order greeks. Model/higher-order greeks computed in the browser. No CORS, no keys. |
 | **CBOE** *(default on localhost)* | Needs proxy | CBOE delayed options | Yes (provider + client BS higher-order) | Richest delayed feed (greeks/IV/OI/spot). Requires Proxy base URL (`/api/cboe`). |
 | **NASDAQ** | Needs proxy | NASDAQ option-chain | No IV → no model greeks | Full chain in one call: bid/ask/last/volume/OI. Proxy `/api/nasdaq`. |
 | **YAHOO** | Needs proxy | Yahoo symbol search / option chains | Client Black-Scholes from IV | Lazy per-expiration. Companion proxy handles crumb/cookies (`/api/options`). |
@@ -94,9 +94,13 @@ Removed from the live registry (changelog only): marketdata.app, DoltHub, Tradie
 
 ## Static-cache greeks
 
-Newly refreshed static cache files include per-quote `greeksSource` metadata. The fetcher prefers provider-supplied CBOE delayed greeks (`greeksSource: "cboe"`) and falls back to model-estimated Black-Scholes greeks (`greeksSource: "black-scholes"`) when CBOE is missing but spot/IV/expiration inputs are usable. Remaining gaps carry `greeksMissingReason`. Existing files get this metadata as they are refreshed by the data workflow.
+**Single source of truth for model greeks: the browser** (`src/main.tsx`).
 
-Available greeks: **Delta (Δ)**, **Gamma (Γ)**, **Theta (Θ)**, **Vega**, and **Rho (ρ)**. Rho is disabled by default in desk column settings.
+- `scripts/fetch_data.py` writes yfinance quotes and, when available, **Cboe delayed 1st-order** greeks (`delta`/`gamma`/`theta`/`vega`/`rho`, `greeksSource: "cboe"`).
+- It does **not** compute λ / Vanna / Vomma / Charm / Speed / Zomma / Color or full Black-Scholes fallback — that would duplicate the UI.
+- After any provider fetch (including **CACHE**), the app runs client-side Black-Scholes enrichment: fills missing 1st-order when IV+spot allow, and always fills higher-order when possible.
+- Remaining gaps use `greeksMissingReason` (from fetcher or client).
+
 
 ## Deploy to GitHub Pages
 
@@ -159,7 +163,7 @@ For a deployable proxy that doesn't require local setup:
 
 These files are optional infrastructure outside the core app source:
 
-- `scripts/fetch_data.py` — smart yfinance fetcher. Builds/refreshes `data/*.json`, enriches static-cache greeks from CBOE delayed quotes plus Black-Scholes fallback, and maintains `data/index.json` with `{ files, count, generated, names, no_options }`.
+- `scripts/fetch_data.py` — smart yfinance fetcher. Builds/refreshes `data/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), and maintains `data/index.json` with `{ files, count, generated, names, no_options }`.
 - `.github/workflows/update-data.yml` — scheduled/manual data refresh workflow.
 - `scripts/yahoo-proxy.ts` — local **Bun** proxy serving:
   - `/api/options` — Yahoo optionChain with crumb/cookie handling.

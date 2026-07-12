@@ -25,8 +25,8 @@ Options Desk — static options-chain desk:
 Не путать:
 
 - `CBOE` provider — live/delayed через proxy.
-- `CACHE` — same-origin static JSON (build-time Cboe/BS enrichment).
-- `black-scholes` greeks — model estimate, не provider data.
+- `CACHE` — same-origin static JSON (build-time Cboe **1st-order** only; BS in UI).
+- `black-scholes` greeks — model estimate **только в UI** (`src/main.tsx`); не дублировать в `fetch_data.py`.
 - `marketdata` / `DoltHub` больше не в registry.
 
 ## Проверки

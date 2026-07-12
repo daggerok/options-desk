@@ -40,15 +40,17 @@ Options Desk — статическое React/TypeScript приложение д
 
 `marketdata.app` и `DoltHub` **удалены** из registry. Старые `providerId` в localStorage сбрасываются на host default.
 
-### Greeks
+### Greeks — single source of truth (NO duplication)
 
-Источники greeks:
+**Model / higher-order greeks живут ТОЛЬКО в UI** (`src/main.tsx`:
+`blackScholesGreeks` → `enrichQuotesWithModelGreeks` → `putBulk` / `loadExpiration`).
 
-1. **Static cache (build-time)** — `scripts/fetch_data.py` обогащает `data/*.json`
-   (Cboe delayed 1st-order + Black-Scholes higher-order / full BS fallback).
-2. **Live / proxy providers (runtime)** — `src/main.tsx` после fetch прогоняет
-   тот же Black-Scholes enrichment в браузере (`enrichQuotesWithModelGreeks` /
-   `putBulk` / `loadExpiration`). Proxy API менять не нужно.
+| Слой | Что делает | Чего НЕ делает |
+|------|------------|----------------|
+| `scripts/fetch_data.py` | yfinance quotes + **Cboe delayed 1st-order** (Δ Γ Θ Vega ρ) | **не** считает λ / 2nd / 3rd / full BS |
+| Live CBOE provider | provider 1st-order | model math |
+| Live YAHOO / NASDAQ | raw quotes (Yahoo: IV; NASDAQ: no IV) | model math |
+| **Browser runtime** | BS: missing 1st-order + **все** higher-order | — |
 
 Per-quote поля:
 
@@ -61,19 +63,17 @@ Per-quote поля:
 
 Правила:
 
-- `greeksSource: "cboe"` — provider 1st-order (CBOE live or static enrichment);
-  legacy static files may still tag `"marketdata"` / `"dolthub"`;
-  higher-order + `lambda` (и missing ρ) досчитываются BS **без перезаписи**
-  provider delta/gamma/theta/vega.
-- `greeksSource: "black-scholes"` — полная модельная оценка (типично Yahoo: есть IV,
-  нет greeks).
-- NASDAQ не отдаёт IV → model greeks остаются empty (`missing_iv`).
-- `greeksSource: null` + `greeksMissingReason` — не удалось посчитать.
-- Значение `0.0` — реальное значение/округление, не missing.
-- Missing data в desk UI — пустая ячейка, не dash.
-- Static-cache parse обязан маппить **все** greeks-поля без duplicate keys.
+- `greeksSource: "cboe"` — provider 1st-order; UI досчитывает λ + 2nd/3rd **без
+  перезаписи** provider delta/gamma/theta/vega.
+- `greeksSource: "black-scholes"` — полная модельная оценка в UI (типично Yahoo).
+- NASDAQ без IV → model greeks empty (`missing_iv`).
+- Legacy static files may still contain precomputed higher-order / `black-scholes`
+  tags from older fetcher versions; UI skips recompute when higher-order already set.
+- **Запрещено** снова добавлять Black-Scholes в `fetch_data.py` — это дубль UI.
+- Missing data в desk UI — пустая ячейка; `0.0` — реальное значение.
 - Колонки λ / Vanna / … в Settings **disabled by default**.
-- BS assumptions (client + python): `r=0.045`, `q=0.0`; theta/day, vega per 1 vol-pt.
+- BS assumptions (client only): `r=0.045`, `q=0.0`; theta/day; vega per 1 vol-pt.
+
 
 ## Методология работы агента: Spec → Verifier → Environment
 

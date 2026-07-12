@@ -297,7 +297,7 @@ grep -RInE 'TODO|FIXME|old|deprecated|Vite|webpack|no_options|provider|proxy' .
 - static React/TypeScript + Parcel/Bun;
 - провайдеры только **CACHE / CBOE / NASDAQ / YAHOO** (порядок фиксирован; localhost→CBOE, Pages→CACHE);
 - yfinance/Cboe static cache;
-- greeks metadata (build-time + client BS);
+- greeks: Cboe 1st-order at build-time; **all model/higher-order BS only in UI** (no py duplicate);
 - provider proxies;
 - GitHub Pages;
 - data refresh workflow;
