@@ -24,6 +24,8 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.34 - Ticker input selects all text on focus/click so typing a new
+ *          symbol replaces the previous ticker without manual clear.
  * v0.9.33 - Single source of truth for model greeks (UI only):
  *          - scripts/fetch_data.py no longer runs Black-Scholes / higher-order
  *            math; it only attaches Cboe delayed 1st-order when available.
@@ -3607,7 +3609,17 @@ const App: React.FC = () => {
                                     setTickerInput(e.target.value.toUpperCase());
                                     setTickerSuggestionsOpen(true);
                                 }}
-                                onFocus={() => setTickerSuggestionsOpen(true)}
+                                onFocus={(e) => {
+                                    setTickerSuggestionsOpen(true);
+                                    // Select all so the next keystroke replaces the ticker
+                                    // without needing to backspace the previous symbol.
+                                    e.currentTarget.select();
+                                }}
+                                onClick={(e) => {
+                                    // Clicking an already-focused input still selects all
+                                    // (onFocus does not re-fire in that case).
+                                    e.currentTarget.select();
+                                }}
                                 onBlur={() => window.setTimeout(() => setTickerSuggestionsOpen(false), 120)}
                                 onKeyDown={onTickerKeyDown}
                                 placeholder="Ticker or company (e.g. AAPL, Tesla, SPX)"
