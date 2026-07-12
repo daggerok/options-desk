@@ -1,15 +1,17 @@
 # AGENTS.md
 
-Этот файл добавлен для совместимости с агентами, которые ищут именно `AGENTS.md`.
+Compatibility stub: агенты, которые ищут `AGENTS.md`, должны читать этот файл и затем **[`AGENT.md`](./AGENT.md)**. Claude-specific: [`CLAUDE.md`](./CLAUDE.md). How-to setup: [`Setup.md`](./Setup.md).
 
-Основные правила проекта находятся в [`AGENT.md`](./AGENT.md). Для Claude-специфичного поведения см. [`CLAUDE.md`](./CLAUDE.md).
+Короткий checklist:
 
-Коротко:
-
-- отвечать пользователю по-русски;
-- работать через Spec → Verifier → Environment;
-- начинать новые задачи от актуального `origin/master`;
-- не коммитить build/cache artifacts;
-- не менять workflow-файлы без явного разрешения и token с `workflow` scope;
-- после изменений запускать релевантные проверки;
-- stale comments исправлять, а не сохранять ради истории.
+1. Отвечать пользователю **по-русски**.
+2. Spec → Verifier → Environment (детали в `AGENT.md`).
+3. Новые задачи — от актуального `origin/master`, работа через PR.
+4. Провайдеры **только** `CACHE, CBOE, NASDAQ, YAHOO` (порядок фиксирован).
+5. Default selection: localhost → **CBOE**, GitHub Pages → **CACHE** (порядок списка не менять).
+6. **Model / higher-order greeks — только UI** (`src/main.tsx`). `fetch_data.py` = Cboe 1st-order only. Не дублировать BS в Python.
+7. Не коммитить `dist/`, `node_modules/`, `.parcel-cache`, `package-lock.json`, `.venv`, `__pycache__`.
+8. Не менять workflows без разрешения + token с `workflow` scope.
+9. Не обходить/`grep -r` всю `data/` (тысячи файлов).
+10. Перед PR: `npm run build`, `python -m py_compile scripts/fetch_data.py`, `node --check scripts/cloudflare-worker.js`.
+11. Stale comments/docs — исправлять, не тащить.

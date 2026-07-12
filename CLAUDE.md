@@ -1,34 +1,41 @@
-# CLAUDE.md — инструкции для Claude Code / Claude-совместимых агентов
+# CLAUDE.md — adapter для Claude Code / Claude-совместимых агентов
 
-> Главный источник правил для всех агентов: [`AGENT.md`](./AGENT.md). Этот файл — адаптер для Claude Code и похожих инструментов.
+> **Главный контракт:** [`AGENT.md`](./AGENT.md). Этот файл — короткий adapter; при конфликте побеждает `AGENT.md`.
 
 ## Обязательное поведение
 
-- Отвечай пользователю по-русски.
-- Перед кодингом для неоднозначных задач применяй цикл **Spec → Verifier → Environment** из `AGENT.md`.
-- Не принимай поверхностную формулировку задачи, если не хватает бизнес-контекста.
-- Для крупных архитектурных решений задавай вопросы и жди checkpoint.
-- После изменений запускай релевантные проверки и указывай их в PR.
+- Отвечай пользователю **по-русски**.
+- Неоднозначные задачи: **Spec → Verifier → Environment** (см. `AGENT.md`).
+- Не кодить «вслепую» без бизнес-контекста; крупные развилки — вопросы + checkpoint.
+- После изменений — проверки и перечисление их в PR.
+- Стартуя задачу: при критичных правилах явно опирайся на `AGENT.md` (Arena/другие runners могут не auto-load этот файл).
 
-## Проектный контекст
+## Проект (факты)
 
-Options Desk — static options-chain desk:
+- Stack: React + TypeScript + Tailwind v4 + Parcel/Bun.
+- Providers (UI): **CACHE, CBOE, NASDAQ, YAHOO** — fixed order.
+- Defaults: localhost/LAN → **CBOE**; GitHub Pages → **CACHE** (`defaultProviderId` in `src/main.tsx`).
+- Proxy: `scripts/yahoo-proxy.ts` / `scripts/cloudflare-worker.js` (`/api/cboe`, `/api/nasdaq`, `/api/options`, `/api/search`).
+- CACHE files: `data/*.json` + `data/index.json` via `scripts/fetch_data.py`.
 
-- Frontend: React + TypeScript + Tailwind CSS v4.
-- Build: Bun scripts + Parcel.
-- Static cache: `data/*.json` + `data/index.json`.
-- Data fetcher: `scripts/fetch_data.py`.
-- Proxy infra: `scripts/yahoo-proxy.ts`, `scripts/cloudflare-worker.js`.
+## Anti-duplication (критично)
+
+| Место | Greeks |
+|-------|--------|
+| `fetch_data.py` | Cboe delayed **1st-order only** |
+| `src/main.tsx` | **Единственный** Black-Scholes + λ + 2nd/3rd |
+
+**Никогда** не возвращать `_black_scholes_greeks` (и аналоги) в Python. Higher-order / model fallback — только `blackScholesGreeks` / `enrichQuotesWithModelGreeks`.
 
 Не путать:
 
-- `CBOE provider` в приложении — live/delayed через proxy.
-- `Cboe greeks enrichment` в `fetch_data.py` — build-time enrichment для static cache.
-- `black-scholes` greeks — model estimate, не provider data.
+- Live **CBOE** provider vs build-time Cboe enrichment в fetcher.
+- **CACHE** static JSON vs browser query cache (`localStorage`).
+- `greeksSource: "cboe"` (provider) vs `"black-scholes"` (UI model).
+
+Удалены из registry: marketdata, DoltHub (и старше).
 
 ## Проверки
-
-Минимальный набор:
 
 ```bash
 npm run build
@@ -37,17 +44,11 @@ node --check scripts/cloudflare-worker.js
 git diff --check
 ```
 
-Если меняется `scripts/fetch_data.py`, по возможности сделать smoke test с одним тикером и не коммитить массовый data refresh без явного запроса.
+Fetcher smoke (без mass commit): `TICKERS=AAPL MAX_FETCHES=1 REQUEST_SLEEP=0 python scripts/fetch_data.py`.
 
-## Работа с файлами
+## Файлы
 
-- Основная логика UI — `src/main.tsx`.
-- Стили desk/grid/sticky — `src/index.css`.
-- Agent docs — `AGENT.md`, `CLAUDE.md`, `AGENTS.md`, `Setup.md`.
-- Не коммитить `dist/`, `node_modules/`, `.parcel-cache`, `.venv`, `__pycache__`, `package-lock.json`.
-
-## Важное про `CLAUDE.md`
-
-Claude Code обычно читает `CLAUDE.md` автоматически, когда работает в репозитории. Но не все agent runners делают это одинаково.
-
-Для Arena.ai Agent Mode нельзя полагаться на 100% auto-load этого файла в каждом новом диалоге. Если задача критична, лучше явно сказать агенту: “прочитай AGENT.md / CLAUDE.md перед началом”.
+- UI / providers / BS: `src/main.tsx`
+- Styles: `src/index.css`
+- Agent docs: `AGENT.md`, `CLAUDE.md`, `AGENTS.md`, `Setup.md`
+- Не коммитить: `dist/`, `node_modules/`, `.parcel-cache`, `.venv`, `__pycache__`, `package-lock.json`

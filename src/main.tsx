@@ -24,12 +24,30 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.36 - Rename primary action button label Get dates → Expirations
+ *          (loading: Loading…). Internal getDates() name unchanged.
+ * v0.9.35 - After confirming a ticker (suggestion click, or Enter in the
+ *          input), focus jumps to the Expirations button so Space/Enter runs
+ *          the fetch without a mouse trip (mirrors Load-button focus UX).
+ * v0.9.34 - Ticker input selects all text on focus/click so typing a new
+ *          symbol replaces the previous ticker without manual clear.
+ * v0.9.33 - Single source of truth for model greeks (UI only):
+ *          - scripts/fetch_data.py no longer runs Black-Scholes / higher-order
+ *            math; it only attaches Cboe delayed 1st-order when available.
+ *          - λ + 2nd/3rd-order + full BS fallback remain exclusively in this
+ *            file (blackScholesGreeks / enrichQuotesWithModelGreeks) so live
+ *            and CACHE providers share one implementation without duplication.
+ * v0.9.32 - Providers trimmed to CACHE + CBOE + NASDAQ + YAHOO:
+ *          - Removed marketdata.app and DoltHub from the live registry.
+ *          - Short uppercase labels; fixed dropdown order: CACHE, CBOE, NASDAQ, YAHOO.
+ *          - Default selection only (not order): CBOE on localhost/LAN; CACHE on Pages.
+ *          - Settings migration: unknown/removed providerId resets to host default.
  * v0.9.31 - Client-side Black-Scholes greeks enrichment for live providers:
  *          - Higher-order greeks (λ, vanna, vomma, charm, speed, zomma, color)
  *            used to exist only on Static cache because scripts/fetch_data.py
  *            pre-computed them at build time. Live providers (CBOE/Yahoo/
- *            marketdata/DoltHub/…) now get the same model enrichment in the
- *            browser after fetch, using spot + IV + strike + side + expiration.
+ *            NASDAQ) now get the same model enrichment in the browser after
+ *            fetch, using spot + IV + strike + side + expiration.
  *          - Provider-supplied 1st-order greeks (e.g. CBOE delta/gamma) are kept;
  *            only missing fields are filled. Full model set is used when the
  *            provider has IV but no greeks (Yahoo). NASDAQ still has no IV, so
@@ -508,17 +526,15 @@
  *   - scripts/cloudflare-worker.js    deployable proxy (Yahoo/NASDAQ/CBOE/search/raw)
  *
  * WHY THESE API CHOICES (research summary, keep for future agents):
- *   - marketdata.app: CORS:*, AAPL keyless -> the reliable zero-setup default.
- *   - Static cache: same-origin JSON on GitHub Pages -> zero CORS, zero keys.
- *   - Yahoo (via proxy): needs crumb/cookies -> only works behind our proxy.
- *   - NASDAQ (via proxy): free full-chain endpoint, but no browser CORS.
- *   - CBOE (via proxy): richest no-key delayed data, but no browser CORS.
- *   - DoltHub: free SQL-over-HTTP, no key, but a FROZEN historical archive
- *     (~2024-11-11) — research/backtesting only, greeks but no volume/OI/spot.
- *   - Removed historical experiments (kept in changelog only): Tradier, Alpaca,
- *     Alpha Vantage, Polygon/Massive, Finnhub/Twelve Data and others were not
- *     viable for this static app because of sensitive sign-up, gated options
- *     access, low limits, or discontinued/premium endpoints.
+ *   - Dropdown order is fixed: CACHE, CBOE, NASDAQ, YAHOO.
+ *   - CACHE (static): same-origin data/*.json -> zero CORS/keys.
+ *     DEFAULT selection on hosted/static deploys (GitHub Pages).
+ *   - CBOE (via proxy): richest no-key delayed data (greeks/IV/OI/spot).
+ *     DEFAULT selection on localhost/LAN when proxy is expected.
+ *   - NASDAQ (via proxy): free full-chain, no browser CORS; no IV/greeks in feed.
+ *   - YAHOO (via proxy): crumb/cookies handled by companion proxy; lazy per-exp.
+ *   - Removed from registry (changelog only): marketdata.app, DoltHub, Tradier,
+ *     Alpaca, Alpha Vantage, Polygon/Massive, Finnhub/Twelve Data, etc.
  *
  * DATA FLOW (deferred):
  *   [Get dates] -> loadMeta(symbol) -> ChainMeta{ underlyingPrice, expirations }
@@ -575,8 +591,9 @@ function isAbortError(e: unknown): boolean {
 // DOMAIN TYPES
 // ============================================================================
 
-/** Source of greeks stored on a quote. `black-scholes` is a model estimate. */
-type GreeksSource = 'marketdata' | 'cboe' | 'dolthub' | 'black-scholes' | null;
+/** Source of greeks stored on a quote. `black-scholes` is a model estimate.
+ *  Legacy static files may still carry `marketdata` / `dolthub` tags. */
+type GreeksSource = 'cboe' | 'black-scholes' | 'marketdata' | 'dolthub' | null;
 
 /** Top-level greeks enrichment summary written by scripts/fetch_data.py. */
 interface GreeksSummary {
@@ -867,13 +884,12 @@ function estimateSpot(quotes: OptionQuote[], expiration: string): number | null 
 }
 
 // ---------------------------------------------------------------------------
-// Client-side Black-Scholes greeks (mirrors scripts/fetch_data.py)
+// Client-side Black-Scholes greeks — SINGLE SOURCE OF TRUTH for model math
 // ---------------------------------------------------------------------------
-// Static cache gets λ + 2nd/3rd-order greeks at build time via fetch_data.py
-// (Cboe 1st-order + BS higher-order, or full BS fallback). Live/proxy providers
-// never ran that step, so desk columns for λ/Vanna/… stayed empty. We port the
-// same model here and enrich quotes after each provider fetch. Conventions match
-// the Python helper: theta per calendar day, vega/rho per 1 vol-point / 1pp rate.
+// scripts/fetch_data.py may attach provider Cboe 1st-order only. All model work
+// (missing 1st-order + λ + 2nd/3rd-order) happens here after every provider
+// fetch, including CACHE. Do not reintroduce BS in Python — that duplicates this.
+// Conventions: theta per calendar day; vega/rho per 1 vol-point / 1pp rate.
 const BS_RISK_FREE_RATE = 0.045;
 const BS_DIVIDEND_YIELD = 0.0;
 const HIGHER_ORDER_GREEK_KEYS = ['lambda', 'vanna', 'vomma', 'charm', 'speed', 'zomma', 'color'] as const;
@@ -1165,7 +1181,7 @@ function friendlyError(e: unknown, provider: DataProvider): string {
             return 'Could not reach the proxy. To fix this:\n\n1. Clone the repo: git clone https://github.com/daggerok/options-desk.git\n2. Install dependencies: bun install -E\n3. Run the proxy: bun ./scripts/yahoo-proxy.ts\n4. Set Proxy base URL in Settings to http://localhost:8787\n\nOr deploy scripts/cloudflare-worker.js and set the Worker URL instead.\n\nSee README.en.md for detailed instructions.';
         }
         return provider.needsProxy
-            ? 'Network/CORS error reaching the proxy. Try a different CORS proxy in Settings, or use marketdata.app / Static cache.'
+            ? 'Network/CORS error reaching the proxy. Try a different CORS proxy in Settings, or use CACHE (static data).'
             : 'Network error — could not reach the data provider. Check your connection and try again.';
     }
     if (msg.includes('Unexpected token') || msg.toLowerCase().includes('json')) {
@@ -1177,82 +1193,6 @@ function friendlyError(e: unknown, provider: DataProvider): string {
 // ============================================================================
 // DATA PROVIDERS
 // ============================================================================
-
-/**
- * marketdata.app provider (DEFAULT — the reliable zero-setup path).
- * Endpoint: https://api.marketdata.app/v1/options/chain/{SYMBOL}/
- * - CORS:* => direct browser fetch, NO proxy. AAPL keyless; other tickers need
- *   a free "Free Forever" token (100 req/day, data delayed >=24h).
- * - Response is column-oriented (parallel arrays). Includes underlyingPrice.
- */
-const marketdataProvider: DataProvider = {
-    id: 'marketdata',
-    label: 'marketdata.app — AAPL works, no setup',
-    description:
-        'marketdata.app — direct browser access (no proxy). AAPL needs no key at all (the reliable default). ' +
-        'For any other ticker, paste a free token (100 requests/day, data delayed ≥24h).',
-    mode: 'bulk',
-    setup: 'none',
-    supportsToken: true,
-    needsProxy: false,
-    keyUrl: 'https://www.marketdata.app',
-    keyHint: 'Register at marketdata.app (no credit card) and copy your token. AAPL works without a key.',
-    demoSymbol: 'AAPL',
-    needsKeyFor(symbol, ctx) {
-        const raw = symbol.trim().toUpperCase().replace(/^[_.]/, '');
-        return raw !== 'AAPL' && !ctx.token;
-    },
-    async fetchAll(symbol, ctx) {
-        const raw = symbol.toUpperCase().replace(/^[_.]/, '');
-        if (raw !== 'AAPL' && !ctx.token) {
-            throw new Error(`marketdata.app needs a free token for "${raw}" (only AAPL is keyless). Add one in Settings → API key.`);
-        }
-        const qs = ctx.token ? `?token=${encodeURIComponent(ctx.token)}` : '';
-        const target = `https://api.marketdata.app/v1/options/chain/${raw}/${qs}`;
-        dbg('marketdata fetchAll', { symbol: raw, hasToken: !!ctx.token });
-
-        const res = await fetch(target, { headers: { Accept: 'application/json' }, signal: ctx.signal });
-        const json: any = await res.json().catch(() => null);
-
-        if (!json || json.s === 'error') {
-            const em = String(json?.errmsg || `HTTP ${res.status}`);
-            if (/token|credential|auth/i.test(em)) throw new Error('marketdata.app rejected the token. Check it in Settings → API key, or use AAPL (keyless).');
-            if (/plan|limit|exceed/i.test(em)) throw new Error('marketdata.app daily limit reached (100/day free). Try again tomorrow, or use Static cache / DoltHub / proxy providers.');
-            throw new Error(`marketdata.app error: ${em}`);
-        }
-        if (json.s === 'no_data') throw new Error(`No option data for "${raw}". Check the ticker symbol.`);
-
-        const n = Array.isArray(json.optionSymbol) ? json.optionSymbol.length : 0;
-        const quotes: OptionQuote[] = [];
-        for (let i = 0; i < n; i++) {
-            const bid = num(json.bid?.[i]);
-            const ask = num(json.ask?.[i]);
-            const expTs = num(json.expiration?.[i]);
-            const expiration = expTs != null
-                ? new Date(expTs * 1000).toISOString().slice(0, 10)
-                : (parseOccSymbol(String(json.optionSymbol[i]))?.expiration ?? '');
-            quotes.push({
-                symbol: String(json.optionSymbol[i]),
-                expiration,
-                side: json.side?.[i] === 'put' ? 'put' : 'call',
-                strike: num(json.strike?.[i]) ?? 0,
-                bid,
-                ask,
-                mid: num(json.mid?.[i]) ?? computeMid(bid, ask),
-                last: num(json.last?.[i]),
-                volume: num(json.volume?.[i]),
-                openInterest: num(json.openInterest?.[i]),
-                iv: num(json.iv?.[i]),
-                delta: num(json.delta?.[i]),
-                gamma: num(json.gamma?.[i]),
-                theta: num(json.theta?.[i]),
-                vega: num(json.vega?.[i]),
-            });
-        }
-        const expirations = Array.from(new Set(quotes.map((q) => q.expiration).filter(Boolean))).sort();
-        return { symbol: raw, underlyingPrice: num(json.underlyingPrice?.[0]), expirations, quotes };
-    },
-};
 
 /**
  * Fetch a same-origin static JSON file with DIAGNOSTIC error handling.
@@ -1444,10 +1384,10 @@ async function suggestTickers(provider: DataProvider, query: string, ctx: Provid
  */
 const staticProvider: DataProvider = {
     id: 'static',
-    label: 'Static cache (data.json) — no setup',
+    label: 'CACHE',
     description:
-        'Static cache — reads the site’s own ./data/{TICKER}.json (built by the GitHub Action + yfinance). ' +
-        '100% CORS-free on GitHub Pages, no keys. Only cached tickers are available (see the searchable picker).',
+        'Local static cache — same-origin data/{TICKER}.json (GitHub Action + yfinance + CBOE/BS greeks). ' +
+        'No proxy, no keys. Best default on GitHub Pages. Only cached tickers are listed.',
     mode: 'bulk',
     setup: 'none',
     supportsToken: false,
@@ -1557,10 +1497,10 @@ async function proxyTickerSuggestions(providerId: 'yahoo' | 'nasdaq' | 'cboe', q
  */
 const yahooProvider: DataProvider = {
     id: 'yahoo',
-    label: 'Yahoo (via proxy) — needs proxy',
+    label: 'YAHOO',
     description:
-        'Yahoo Finance via a small proxy that handles its crumb/cookie auth. Run scripts/yahoo-proxy.ts locally ' +
-        '(default http://localhost:8787) or deploy scripts/cloudflare-worker.js and set the URL in Settings.',
+        'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/yahoo-proxy.ts or Cloudflare Worker. ' +
+        'Lazy per-expiration. No provider greeks; client Black-Scholes fills them when IV is present.',
     mode: 'lazy',
     setup: 'proxy',
     supportsToken: false,
@@ -1628,122 +1568,6 @@ const yahooProvider: DataProvider = {
     },
 };
 
-/**
- * DoltHub provider (LAZY — free, no key, HISTORICAL archive).
- * SQL-over-HTTP: GET https://www.dolthub.com/api/v1alpha1/dolthub/options/master?q=<SQL>
- * - The public `dolthub/options` database exposes an `option_chain` table with
- *   date/expiration/strike/call_put/bid/ask/vol/greeks (delta..rho). No volume
- *   or open-interest columns, and NO underlying spot (UI estimates via parity).
- * - IMPORTANT: this dataset is a FROZEN HISTORICAL ARCHIVE. Verified live that
- *   the latest stored date is 2024-11-11 and it hasn't advanced in ~11 months,
- *   so we HARDCODE that date (DOLT_LATEST_DATE) as a constant. This is critical:
- *   a correlated `MAX(date)` subquery scans the 5.63GB DB and TIMES OUT (>25s),
- *   which is exactly the "hangs then network error" bug that was reported.
- *   Filtering by an explicit indexed date returns in <1s.
- * - CORS: DoltHub reflects the request Origin (works from a browser). It can be
- *   slow/occasionally blocked; if so, route via the Worker /raw proxy in
- *   Settings — the provider honors ctx.proxyTemplate when it contains {url}.
- * - LAZY: meta lists the distinct expirations at DOLT_LATEST_DATE for the
- *   symbol; each expiration is then queried on demand.
- */
-const DOLT_BASE = 'https://www.dolthub.com/api/v1alpha1/dolthub/options/master';
-/** The frozen latest snapshot date in dolthub/options (verified 2024-11-11). */
-const DOLT_LATEST_DATE = '2024-11-11';
-/** Escape single quotes for safe literal embedding in a DoltHub SQL string. */
-function sqlLit(s: string): string { return s.replace(/'/g, "''"); }
-/** Run a DoltHub SQL query, optionally via the user's CORS proxy template. */
-async function doltQuery(sql: string, ctx: ProviderContext): Promise<any[]> {
-    const target = `${DOLT_BASE}?q=${encodeURIComponent(sql)}`;
-    // If a proxy template with {url} is configured (e.g. a Worker), use it.
-    const url = ctx.proxyTemplate && ctx.proxyTemplate.includes('{url}')
-        ? proxied(target, ctx.proxyTemplate)
-        : target;
-    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
-    const text = await res.text();
-    let json: any;
-    try { json = JSON.parse(text); }
-    catch { throw new Error('DoltHub returned a non-JSON response (possibly a CORS block). Try the Worker /raw proxy in Settings.'); }
-    if (json.query_execution_status && json.query_execution_status !== 'Success') {
-        throw new Error(`DoltHub query error: ${json.query_execution_message || 'failed'}`);
-    }
-    return Array.isArray(json.rows) ? json.rows : [];
-}
-const dolthubProvider: DataProvider = {
-    id: 'dolthub',
-    label: 'DoltHub — historical, free (no key)',
-    description:
-        `DoltHub dolthub/options — free SQL-over-HTTP, no key. HISTORICAL archive (frozen at ${DOLT_LATEST_DATE}), ` +
-        'great for research/backtesting — NOT live. Greeks included; no volume/OI/spot. If it stalls or is CORS-blocked, use the Worker /raw proxy.',
-    mode: 'lazy',
-    setup: 'none',
-    supportsToken: false,
-    needsProxy: false,
-    demoSymbol: 'AAPL',
-    needsKeyFor() { return false; },
-    async suggestTickers(query, ctx) {
-        // DoltHub is SQL-addressable, so we can ask the option archive itself for
-        // supported symbols at the frozen latest date. Keep this prefix-based (not
-        // `%foo%`) so the indexed primary-key path stays fast while typing.
-        const raw = normalizeTickerSymbol(query).replace(/^[_.]/, '');
-        if (!raw) return [];
-        const rows = await doltQuery(
-            `SELECT DISTINCT act_symbol FROM option_chain ` +
-            `WHERE date='${DOLT_LATEST_DATE}' AND act_symbol LIKE '${sqlLit(raw)}%' ` +
-            `ORDER BY act_symbol LIMIT 24`,
-            ctx,
-        );
-        return rows.map((r) => ({
-            symbol: normalizeTickerSymbol(r.act_symbol),
-            name: `DoltHub options archive (${DOLT_LATEST_DATE})`,
-            source: 'DoltHub',
-            hasOptions: true,
-        })).filter((s) => s.symbol);
-    },
-    async fetchMeta(symbol, ctx) {
-        const raw = symbol.toUpperCase().replace(/^[_.]/, '');
-        // Fixed date -> uses the PRIMARY KEY index, returns fast (no MAX subquery).
-        const sql =
-            `SELECT DISTINCT expiration FROM option_chain ` +
-            `WHERE act_symbol='${sqlLit(raw)}' AND date='${DOLT_LATEST_DATE}' ` +
-            `ORDER BY expiration`;
-        const rows = await doltQuery(sql, ctx);
-        const expirations = rows.map((r) => String(r.expiration)).filter(Boolean).sort();
-        if (expirations.length === 0) {
-            throw new Error(`No historical data for "${raw}" in DoltHub (archive is dated ${DOLT_LATEST_DATE}). Try AAPL, MSFT, SPY, TSLA, etc.`);
-        }
-        return { symbol: raw, underlyingPrice: null, expirations };
-    },
-    async fetchExpiration(symbol, expiration, ctx) {
-        const raw = symbol.toUpperCase().replace(/^[_.]/, '');
-        const sql =
-            `SELECT * FROM option_chain ` +
-            `WHERE act_symbol='${sqlLit(raw)}' AND date='${DOLT_LATEST_DATE}' AND expiration='${sqlLit(expiration)}' ` +
-            `ORDER BY strike`;
-        const rows = await doltQuery(sql, ctx);
-        return rows.map((r) => {
-            const bid = num(r.bid);
-            const ask = num(r.ask);
-            return {
-                symbol: `${raw}${String(expiration).replace(/-/g, '').slice(2)}${String(r.call_put).toLowerCase() === 'put' ? 'P' : 'C'}${String(Math.round((num(r.strike) ?? 0) * 1000)).padStart(8, '0')}`,
-                expiration: String(r.expiration ?? expiration),
-                side: String(r.call_put).toLowerCase() === 'put' ? 'put' : 'call',
-                strike: num(r.strike) ?? 0,
-                bid,
-                ask,
-                mid: computeMid(bid, ask),
-                last: null,
-                volume: null,          // not in this dataset
-                openInterest: null,    // not in this dataset
-                iv: num(r.vol),
-                delta: num(r.delta),
-                gamma: num(r.gamma),
-                theta: num(r.theta),
-                vega: num(r.vega),
-                rho: num(r.rho),
-            } as OptionQuote;
-        });
-    },
-};
 
 /**
  * NASDAQ provider (BULK — free, no key, needs a proxy; no CORS of its own).
@@ -1770,11 +1594,10 @@ function nq(v: unknown): number | null {
 }
 const nasdaqProvider: DataProvider = {
     id: 'nasdaq',
-    label: 'NASDAQ — full chain, needs proxy',
+    label: 'NASDAQ',
     description:
-        'NASDAQ option chain — free, no key, ALL expirations in one call (bid/ask/last/volume/OI, no greeks). ' +
-        'NASDAQ blocks direct browser calls, so it needs a proxy: run scripts/yahoo-proxy.ts locally (it serves ' +
-        '/api/nasdaq) or deploy the Cloudflare Worker, then set the Proxy base URL in Settings.',
+        'NASDAQ option chain via proxy (/api/nasdaq) — full chain one call (bid/ask/last/volume/OI). ' +
+        'No IV/greeks in feed (higher-order stay empty). Needs Proxy base URL.',
     mode: 'bulk',
     setup: 'proxy',
     supportsToken: false,
@@ -1856,11 +1679,10 @@ const nasdaqProvider: DataProvider = {
  */
 const cboeProvider: DataProvider = {
     id: 'cboe',
-    label: 'CBOE — richest data, needs proxy',
+    label: 'CBOE',
     description:
-        'CBOE Global Delayed Quotes — free, no key, all US equities & indices, richest data (greeks/IV/OI + spot). ' +
-        'CBOE blocks direct browser calls, so it needs a proxy: run scripts/yahoo-proxy.ts locally (it also serves ' +
-        '/api/cboe) or deploy the Cloudflare Worker, then set the Proxy base URL in Settings.',
+        'CBOE delayed options via proxy (/api/cboe) — equities & indices, greeks/IV/OI + spot. ' +
+        'Default on localhost when proxy is available. Needs Proxy base URL.',
     mode: 'bulk',
     setup: 'proxy',
     supportsToken: false,
@@ -1893,7 +1715,7 @@ const cboeProvider: DataProvider = {
         const text = await res.text();
         let json: any;
         try { json = JSON.parse(text); }
-        catch { throw new Error('The proxy returned a non-JSON page. Check the Proxy base URL / CORS proxy in Settings, or use marketdata.app / Static cache.'); }
+        catch { throw new Error('The proxy returned a non-JSON page. Check the Proxy base URL / CORS proxy in Settings, or use CACHE (static data).'); }
         const data = json?.data;
         if (!data || !Array.isArray(data.options)) throw new Error(`No option data for "${raw}". Check the ticker symbol.`);
         const quotes: OptionQuote[] = [];
@@ -1920,34 +1742,27 @@ const cboeProvider: DataProvider = {
 };
 
 /**
- * Ordered provider registry — WORKS-FIRST (per product requirement).
- * All remaining providers are privacy-friendly: NO account with sensitive
- * personal data is ever required.
- *   1. no-setup, direct browser  -> marketdata (AAPL keyless)
- *   2. no-setup, same-origin      -> Static cache (data.json)
- *   3. no-key, free SQL-over-HTTP -> DoltHub (historical archive)
- *   4. proxy, no key              -> Yahoo (via proxy)
- *   5. proxy, no key              -> NASDAQ (full chain)
- *   6. proxy, no key              -> CBOE (richest live data)
- * First entry is the DEFAULT.
+ * Provider registry — only four sources, fixed dropdown order everywhere:
+ *   CACHE  = same-origin static data/*.json (no proxy)
+ *   CBOE   = delayed options via proxy /api/cboe
+ *   NASDAQ = full chain via proxy /api/nasdaq
+ *   YAHOO  = option chain via proxy /api/options (lazy)
+ *
+ * Order never changes: CACHE, CBOE, NASDAQ, YAHOO.
+ * Host only picks the DEFAULT selection:
+ *   - localhost / LAN              -> CBOE (proxy expected)
+ *   - GitHub Pages / hosted static -> CACHE (no proxy required)
  */
-/**
- * Base (GitHub-Pages) order: no-setup providers first, proxy providers last —
- * because on a hosted static site the user has no local proxy running.
- */
-const PROVIDERS_BASE: DataProvider[] = [
-    marketdataProvider,   // no setup: AAPL keyless (the reliable default)
-    staticProvider,       // no setup: same-origin data.json (great for Pages)
-    dolthubProvider,      // no setup: free SQL-over-HTTP (historical archive)
-    yahooProvider,        // proxy: Yahoo via crumb-handling proxy
-    nasdaqProvider,       // proxy: NASDAQ full chain (no key)
-    cboeProvider,         // proxy: richest no-key live data (all tickers+indices)
+const PROVIDERS: DataProvider[] = [
+    staticProvider,  // CACHE
+    cboeProvider,    // CBOE
+    nasdaqProvider,  // NASDAQ
+    yahooProvider,   // YAHOO
 ];
 
 /**
  * Are we running locally (localhost / 127.* / 0.0.0.0 / *.local / private LAN)?
- * When true, the user very likely has the local proxy running, so we surface the
- * proxy-backed providers (CBOE, NASDAQ, Yahoo) FIRST by reversing the list.
+ * Local -> default CBOE; hosted (e.g. GitHub Pages) -> default CACHE.
  */
 function isLocalHost(): boolean {
     try {
@@ -1960,16 +1775,10 @@ function isLocalHost(): boolean {
     } catch { return false; }
 }
 
-/**
- * Active provider registry — ORDER depends on where we run (per requirement):
- *   - LOCAL (localhost / 127.x / 0.0.0.0 / LAN): REVERSED so the proxy-backed
- *     providers (CBOE, NASDAQ, Yahoo…) come FIRST — you have the proxy running.
- *   - HOSTED (e.g. GitHub Pages): the base order (no-setup providers first).
- * First entry is the DEFAULT.
- */
-const PROVIDERS: DataProvider[] = isLocalHost()
-    ? [...PROVIDERS_BASE].reverse()
-    : PROVIDERS_BASE;
+/** Default provider id for this host — not the same as dropdown order. */
+function defaultProviderId(): string {
+    return isLocalHost() ? 'cboe' : 'static';
+}
 
 /** Curated public CORS proxies for CBOE. "{url}" = encoded target URL. */
 const PROXY_PRESETS: { label: string; template: string }[] = [
@@ -2326,7 +2135,8 @@ interface Settings {
 const SETTINGS_KEY = 'options-desk.settings.v5';
 
 const DEFAULT_SETTINGS: Settings = {
-    providerId: PROVIDERS[0].id,           // marketdata.app (works, no setup)
+    // Host-aware default selection; dropdown order stays CACHE, CBOE, NASDAQ, YAHOO.
+    providerId: defaultProviderId(),
     theme: 'system',
     proxyTemplate: PROXY_PRESETS[0].template,
     proxyBase: 'http://localhost:8787',    // local Bun Yahoo proxy default
@@ -2340,13 +2150,19 @@ const DEFAULT_SETTINGS: Settings = {
     lastTicker: 'AAPL',
 };
 
+/** Fresh settings object with the current host default (not a shared mutable ref). */
+function freshDefaultSettings(): Settings {
+    return { ...DEFAULT_SETTINGS, providerId: defaultProviderId() };
+}
+
 /** Load settings from localStorage, merged over defaults (forward-compatible). */
 function loadSettings(): Settings {
     try {
         const raw = localStorage.getItem(SETTINGS_KEY);
-        if (!raw) return { ...DEFAULT_SETTINGS };
+        if (!raw) return freshDefaultSettings();
         const parsed = JSON.parse(raw);
-        return {
+        const hostDefault = defaultProviderId();
+        const merged: Settings = {
             ...DEFAULT_SETTINGS,
             ...parsed,
             tokens: { ...DEFAULT_SETTINGS.tokens, ...(parsed.tokens || {}) },
@@ -2356,8 +2172,13 @@ function loadSettings(): Settings {
                 puts: { ...DEFAULT_SETTINGS.deskColumns.puts, ...((parsed.deskColumns as any)?.puts || {}) },
             },
         };
+        // Drop removed providers (marketdata, dolthub, …) → fall back to host default.
+        if (!PROVIDERS.some((p) => p.id === merged.providerId)) {
+            merged.providerId = hostDefault;
+        }
+        return merged;
     } catch {
-        return { ...DEFAULT_SETTINGS };
+        return freshDefaultSettings();
     }
 }
 
@@ -3510,7 +3331,7 @@ const App: React.FC = () => {
 
     // ---- Chain data state (DEFERRED loading; nothing fetches on mount) ------
     const [tickerInput, setTickerInput] = useState<string>(settings.lastTicker);
-    const [meta, setMeta] = useState<ChainMeta | null>(null);      // set by "Get dates"
+    const [meta, setMeta] = useState<ChainMeta | null>(null);      // set by "Expirations"
     // MULTIPLE selected expirations (set by checkboxes); loaded top→bottom.
     const [selectedExps, setSelectedExps] = useState<string[]>([]);
     // Loaded quotes per expiration: { "YYYY-MM-DD": OptionQuote[] }.
@@ -3529,6 +3350,8 @@ const App: React.FC = () => {
     // AbortControllers so the Cancel button can stop in-flight requests.
     const metaAbort = useRef<AbortController | null>(null);
     const expAbort = useRef<AbortController | null>(null);
+    // Focused after confirming a ticker so Space/Enter triggers Expirations.
+    const getDatesBtnRef = useRef<HTMLButtonElement | null>(null);
     // Focused after picking an expiration so Enter immediately triggers Load.
     const loadBtnRef = useRef<HTMLButtonElement | null>(null);
 
@@ -3588,7 +3411,7 @@ const App: React.FC = () => {
     }, [provider.id]);
 
     /**
-     * STEP 1 — "Get dates": load ONLY expirations (+ spot). No chain yet.
+     * STEP 1 — "Expirations": load ONLY expirations (+ spot). No chain yet.
      * `credsOverride` lets the onboarding pass just-entered key/secret without
      * waiting for the async settings state to commit (avoids a stale-closure race).
      */
@@ -3676,6 +3499,12 @@ const App: React.FC = () => {
         requestAnimationFrame(() => loadBtnRef.current?.focus());
     }, []);
 
+    /** Move focus to Expirations (after ticker confirm) so Space/Enter activates it. */
+    const focusGetDatesButton = useCallback(() => {
+        // rAF: wait for React to commit closed dropdown / updated value.
+        requestAnimationFrame(() => getDatesBtnRef.current?.focus());
+    }, []);
+
     /** Select a suggestion into the ticker input without auto-fetching. */
     const chooseTickerSuggestion = useCallback((s: TickerSuggestion) => {
         setTickerInput(s.symbol);
@@ -3686,13 +3515,27 @@ const App: React.FC = () => {
         } else {
             setNotice('');
         }
-    }, []);
+        focusGetDatesButton();
+    }, [focusGetDatesButton]);
 
     /** Keyboard navigation for the custom ticker suggestion popover. */
     const onTickerKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Escape') {
             setTickerSuggestionsOpen(false);
             setActiveTickerSuggestion(-1);
+            return;
+        }
+        if (e.key === 'Enter') {
+            // Confirm ticker → focus Expirations (Space/Enter there runs the fetch).
+            // Do not submit the form from the input; button receives the next activation.
+            e.preventDefault();
+            if (tickerSuggestionsOpen && activeTickerSuggestion >= 0 && tickerSuggestions[activeTickerSuggestion]) {
+                chooseTickerSuggestion(tickerSuggestions[activeTickerSuggestion]);
+            } else {
+                setTickerSuggestionsOpen(false);
+                setActiveTickerSuggestion(-1);
+                focusGetDatesButton();
+            }
             return;
         }
         if (!tickerSuggestionsOpen || tickerSuggestions.length === 0) return;
@@ -3702,11 +3545,8 @@ const App: React.FC = () => {
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
             setActiveTickerSuggestion((i) => Math.max(i - 1, -1));
-        } else if (e.key === 'Enter' && activeTickerSuggestion >= 0) {
-            e.preventDefault();
-            chooseTickerSuggestion(tickerSuggestions[activeTickerSuggestion]);
         }
-    }, [tickerSuggestionsOpen, tickerSuggestions, activeTickerSuggestion, chooseTickerSuggestion]);
+    }, [tickerSuggestionsOpen, tickerSuggestions, activeTickerSuggestion, chooseTickerSuggestion, focusGetDatesButton]);
 
     // Whether the current provider+settings require a key for the typed ticker.
     const showOnboarding = useMemo(() => {
@@ -3739,19 +3579,19 @@ const App: React.FC = () => {
     }, [meta, expData]);
     const spotIsEstimated = meta != null && meta.underlyingPrice == null && spot != null;
 
-    // Onboarding preview: keyless demo, else jump to marketdata AAPL.
+    // Onboarding preview: provider demo ticker, else jump to CACHE + AAPL.
     const onboardingPreview = useCallback(() => {
         if (provider.demoSymbol) {
             setTickerInput(provider.demoSymbol);
             getDates(provider.demoSymbol);
         } else {
-            patchSettings({ providerId: 'marketdata', lastTicker: 'AAPL' });
+            patchSettings({ providerId: 'static', lastTicker: 'AAPL' });
             setTickerInput('AAPL');
         }
     }, [provider, getDates, patchSettings]);
     const previewLabel = provider.demoSymbol
         ? `or get ${provider.demoSymbol}’s dates now (no key needed)`
-        : 'or switch to marketdata.app’s free AAPL';
+        : 'or switch to CACHE (AAPL static data)';
 
     const showTickerSuggestions = tickerSuggestionsOpen && (tickerSuggestionsLoading || tickerSuggestions.length > 0);
 
@@ -3765,8 +3605,8 @@ const App: React.FC = () => {
                 onSetToken={setToken}
                 onSetSecret={setSecret}
                 onClearData={() => { clearCacheData(); resetView(); }}
-                onClearSettings={() => { clearSettingsStore(); setSettings({ ...DEFAULT_SETTINGS }); resetView(); }}
-                onClearAll={() => { clearAll(); setSettings({ ...DEFAULT_SETTINGS }); resetView(); }}
+                onClearSettings={() => { clearSettingsStore(); setSettings(freshDefaultSettings()); resetView(); }}
+                onClearAll={() => { clearAll(); setSettings(freshDefaultSettings()); resetView(); }}
             />
 
             {/* Width: comfortable centered column on phones/tablets, but on LARGE
@@ -3774,7 +3614,7 @@ const App: React.FC = () => {
                 option desk uses all the horizontal space instead of a narrow
                 column. See index.css for the matching container note. */}
             <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
-                {/* ---- Controls: STEP 1 (ticker → Get dates), STEP 2 (exp → Load) ---- */}
+                {/* ---- Controls: STEP 1 (ticker → Expirations), STEP 2 (exp → Load) ---- */}
                 <div className="mb-4 flex flex-wrap items-center gap-2">
                     {/* Ticker input — searchable suggestions use provider-native search when possible, then data/index.json fallback. */}
                     <form
@@ -3793,7 +3633,17 @@ const App: React.FC = () => {
                                     setTickerInput(e.target.value.toUpperCase());
                                     setTickerSuggestionsOpen(true);
                                 }}
-                                onFocus={() => setTickerSuggestionsOpen(true)}
+                                onFocus={(e) => {
+                                    setTickerSuggestionsOpen(true);
+                                    // Select all so the next keystroke replaces the ticker
+                                    // without needing to backspace the previous symbol.
+                                    e.currentTarget.select();
+                                }}
+                                onClick={(e) => {
+                                    // Clicking an already-focused input still selects all
+                                    // (onFocus does not re-fire in that case).
+                                    e.currentTarget.select();
+                                }}
                                 onBlur={() => window.setTimeout(() => setTickerSuggestionsOpen(false), 120)}
                                 onKeyDown={onTickerKeyDown}
                                 placeholder="Ticker or company (e.g. AAPL, Tesla, SPX)"
@@ -3840,15 +3690,16 @@ const App: React.FC = () => {
                             )}
                         </div>
                         <button
+                            ref={getDatesBtnRef}
                             type="submit"
                             disabled={metaLoading}
-                            className="rounded-md bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                            className="rounded-md bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50 focus:ring-2 focus:ring-slate-400 focus:ring-offset-1 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:focus:ring-offset-slate-900"
                         >
-                            {metaLoading ? 'Getting…' : 'Get dates'}
+                            {metaLoading ? 'Loading…' : 'Expirations'}
                         </button>
                     </form>
 
-                    {/* Multi-expiration selector + Load — after "Get dates" succeeds.
+                    {/* Multi-expiration selector + Load — after "Expirations" succeeds.
                         Pick one or MANY dates (checkboxes); they render stacked
                         earliest→latest. "All"/"None" quick toggles included. */}
                     {meta && (
@@ -3982,7 +3833,7 @@ const App: React.FC = () => {
                         </div>
                     ) : (!meta && !metaLoading && !error) ? (
                         <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
-                            Enter a ticker and press <span className="mx-1 font-semibold text-slate-600 dark:text-slate-300">Get dates</span> to begin.
+                            Enter a ticker and press <span className="mx-1 font-semibold text-slate-600 dark:text-slate-300">Expirations</span> to begin.
                         </div>
                     ) : null
                 )}

@@ -41,11 +41,11 @@
 
 Пример хорошего вопроса:
 
-> “Greeks должны быть provider-supplied only или можно model-estimated Black-Scholes?”
+> “Model greeks (λ / 2nd / 3rd) только в UI, а fetch_data.py — лишь Cboe 1st-order?”
 
 Плохой подход:
 
-> “Ок, сейчас всё сделаю” — без уточнения источника greeks, схемы metadata и требований к UI.
+> “Ок, сейчас всё сделаю” — без уточнения, где живёт BS (UI vs Python), схемы metadata и UX defaults.
 
 ### The Verifier
 
@@ -287,20 +287,25 @@ grep -RInE 'TODO|FIXME|old|deprecated|Vite|webpack|no_options|provider|proxy' .
 
 В этом репозитории setup сделан так:
 
-- `AGENT.md` — главный контракт для любого AI агента.
-- `CLAUDE.md` — короткий adapter для Claude Code.
-- `AGENTS.md` — compatibility file.
-- `Setup.md` — учебник, чтобы владелец проекта мог повторить setup в новых проектах.
+- `AGENT.md` — главный контракт для любого AI агента (провайдеры, greeks, never/autopilot).
+- `CLAUDE.md` — короткий adapter для Claude Code (ссылается на `AGENT.md`).
+- `AGENTS.md` — compatibility checklist.
+- `Setup.md` — этот учебник (переносимый how-to).
 
 Правила специально учитывают Options Desk:
 
 - static React/TypeScript + Parcel/Bun;
-- yfinance/Cboe static cache;
-- greeks metadata;
-- provider proxies;
-- GitHub Pages;
-- data refresh workflow;
-- PAT limitation with workflow scope;
-- запрет на случайный mass data refresh.
+- **ровно 4 провайдера**, fixed dropdown order `CACHE, CBOE, NASDAQ, YAHOO`;
+- default selection only: localhost → CBOE, GitHub Pages → CACHE;
+- yfinance + Cboe **1st-order** в `fetch_data.py` для CACHE;
+- **single source of truth** для model/higher-order greeks — `src/main.tsx` (не дублировать в Python);
+- companion proxy (Bun / Cloudflare Worker) для CBOE/NASDAQ/YAHOO;
+- GitHub Pages deploy + scheduled data refresh workflow;
+- PAT limitation with `workflow` scope;
+- запрет mass `data/` walk и mass data commit без явной просьбы.
 
-Главная идея: agent docs должны быть не “ритуальными файлами”, а рабочим контрактом между владельцем проекта и AI-агентами.
+Пример хорошего checkpoint-вопроса для этого repo:
+
+> «Higher-order greeks считать только в UI, а в fetch_data.py оставить Cboe 1st-order — верно?»
+
+Главная идея: agent docs — рабочий контракт, а не ритуальные файлы. При смене архитектуры (провайдеры, greeks ownership) **сначала** обновляют `AGENT.md` / `CLAUDE.md` / `AGENTS.md`, потом код — или в том же PR, но docs не оставляют stale.

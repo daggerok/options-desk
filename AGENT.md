@@ -10,141 +10,84 @@
 
 ## Что это за проект
 
-Options Desk — статическое React/TypeScript приложение для просмотра опционных цепочек.
+Options Desk — статическое React/TypeScript приложение для просмотра опционных цепочек (GitHub Pages + localhost).
 
 Ключевые части:
 
-- `src/main.tsx` — основное React-приложение, провайдеры данных, state/cache, UI.
+- `src/main.tsx` — React app: **4 провайдера**, state/cache, UI, **единственный** Black-Scholes / higher-order greeks.
 - `src/index.css` — Tailwind CSS v4, theme tokens, sticky desk/grid CSS.
-- `scripts/fetch_data.py` — build-time static cache generator: yfinance + Cboe greeks enrichment + `data/index.json`.
-- `scripts/yahoo-proxy.ts` — локальный Bun proxy для Yahoo/NASDAQ/CBOE/search.
-- `scripts/cloudflare-worker.js` — Cloudflare Worker proxy для публичного GitHub Pages.
-- `data/*.json` — статический cache опционных цепочек.
+- `scripts/fetch_data.py` — build-time CACHE generator: yfinance + **Cboe delayed 1st-order only** + `data/index.json`. **Без** model BS.
+- `scripts/yahoo-proxy.ts` — локальный Bun proxy: `/api/cboe`, `/api/nasdaq`, `/api/options` (Yahoo), `/api/search`.
+- `scripts/cloudflare-worker.js` — Cloudflare Worker с теми же endpoints (+ `/raw`).
+- `data/*.json` — static cache цепочек (quotes + optional Cboe 1st-order).
 - `data/index.json` — manifest: `files`, `count`, `generated`, `names`, `no_options`.
+
+Agent docs:
+
+- `AGENT.md` — этот файл (главный контракт).
+- `CLAUDE.md` — короткий adapter для Claude Code.
+- `AGENTS.md` — compatibility stub.
+- `Setup.md` — how-to по agentic setup в других проектах.
 
 ## Текущая архитектура данных
 
-### Провайдеры
+### Провайдеры (только 4)
 
-- `marketdata.app` — direct browser, AAPL без ключа, остальные тикеры с token.
-- `Static cache` — читает `data/*.json` same-origin.
-- `DoltHub` — исторический архив `2024-11-11`, не live.
-- `Yahoo via proxy` — lazy provider через `/api/options`.
-- `NASDAQ via proxy` — bulk provider через `/api/nasdaq`.
-- `CBOE via proxy` — bulk provider через `/api/cboe`.
+Короткие **uppercase** labels в UI. Порядок dropdown **фиксирован везде**:
 
-### Greeks
+```text
+CACHE, CBOE, NASDAQ, YAHOO
+```
 
-Источники greeks:
+| UI label | id | Режим | Proxy | Default selection |
+|----------|-----|--------|-------|-------------------|
+| **CACHE** | `static` | bulk | нет (`data/*.json`) | **GitHub Pages / hosted** |
+| **CBOE** | `cboe` | bulk | `/api/cboe` | **localhost / LAN** |
+| **NASDAQ** | `nasdaq` | bulk | `/api/nasdaq` | — |
+| **YAHOO** | `yahoo` | lazy | `/api/options` | — |
 
-1. **Static cache (build-time)** — `scripts/fetch_data.py` обогащает `data/*.json`
-   (Cboe delayed 1st-order + Black-Scholes higher-order / full BS fallback).
-2. **Live / proxy providers (runtime)** — `src/main.tsx` после fetch прогоняет
-   тот же Black-Scholes enrichment в браузере (`enrichQuotesWithModelGreeks` /
-   `putBulk` / `loadExpiration`). Proxy API менять не нужно.
+- Default selection: `defaultProviderId()` → `cboe` на localhost/LAN, `static` на hosted.
+- Порядок списка **не** переворачивать под host — меняется только selected default.
+- Удалены из registry: `marketdata.app`, `DoltHub` (и более старые experiments).
+- Неизвестный `providerId` в localStorage → host default (`freshDefaultSettings` / migration).
 
-Per-quote поля:
+### Greeks — single source of truth (запрет дублирования)
 
-- 1st-order: `delta`, `gamma`, `theta`, `vega`, `rho`;
-- leverage: `lambda` (Ω);
-- 2nd-order: `vanna`, `vomma`, `charm`;
-- 3rd-order: `speed`, `zomma`, `color`;
-- metadata: `greeksSource`, `greeksMissingReason`;
-- top-level (chain): `greeks` summary.
+| Слой | Делает | **Запрещено** |
+|------|--------|----------------|
+| `scripts/fetch_data.py` | yfinance + Cboe **1st-order** (Δ Γ Θ Vega ρ) | BS, λ, 2nd/3rd order |
+| Live CBOE / YAHOO / NASDAQ | raw / provider fields | model math в proxy |
+| **`src/main.tsx` runtime** | BS: missing 1st-order + **все** higher-order | второй параллельный BS в Python |
+
+Реализация UI: `blackScholesGreeks` → `enrichQuoteWithModelGreeks` → `enrichQuotesWithModelGreeks` / `enrichChainResult` → `putBulk` / `loadExpiration`.
+
+Per-quote:
+
+- 1st-order: `delta`, `gamma`, `theta`, `vega`, `rho`
+- leverage: `lambda`
+- 2nd: `vanna`, `vomma`, `charm`
+- 3rd: `speed`, `zomma`, `color`
+- meta: `greeksSource`, `greeksMissingReason`; chain-level `greeks` summary
 
 Правила:
 
-- `greeksSource: "cboe"` / `"marketdata"` / `"dolthub"` — provider 1st-order;
-  higher-order + `lambda` (и missing ρ) досчитываются BS **без перезаписи**
-  provider delta/gamma/theta/vega.
-- `greeksSource: "black-scholes"` — полная модельная оценка (типично Yahoo: есть IV,
-  нет greeks).
-- NASDAQ не отдаёт IV → model greeks остаются empty (`missing_iv`).
-- `greeksSource: null` + `greeksMissingReason` — не удалось посчитать.
-- Значение `0.0` — реальное значение/округление, не missing.
-- Missing data в desk UI — пустая ячейка, не dash.
-- Static-cache parse обязан маппить **все** greeks-поля без duplicate keys.
+- Provider 1st-order **не перезаписывать** model-значениями; UI только **досчитывает** missing + higher-order.
+- `greeksSource: "cboe"` — provider; `"black-scholes"` — полная модель в UI; `null` + reason — gap.
+- NASDAQ без IV → model greeks empty (`missing_iv`).
+- Legacy `data/*.json` могут ещё содержать precomputed higher-order — UI skip recompute, если они уже есть.
+- BS assumptions (client only): `r=0.045`, `q=0.0`; theta/day; vega per 1 vol-pt.
 - Колонки λ / Vanna / … в Settings **disabled by default**.
-- BS assumptions (client + python): `r=0.045`, `q=0.0`; theta/day, vega per 1 vol-pt.
+- Missing cell = пусто; `0.0` = реальное значение.
 
-## Методология работы агента: Spec → Verifier → Environment
+## Методология: Spec → Verifier → Environment
 
-Перед существенными изменениями агент должен пройти три этапа.
+### 1. Spec
 
-### 1. The Spec
+- Понять бизнес-цель, не только текст задачи.
+- При неоднозначности — конкретные вопросы пользователю.
+- Маленькие isolated buckets; архитектурные развилки — checkpoint.
 
-- Сначала понять бизнес-цель, а не только поверхностную задачу.
-- Если задача неоднозначна — интервьюировать пользователя, задавая конкретные вопросы.
-- Разбивать работу на небольшие изолированные buckets.
-- Для архитектурных развилок просить подтверждение пользователя.
-
-### 2. The Verifier
-
-До кодинга определить, чем будет проверяться результат:
-
-- `npm run build` — основной frontend build.
-- `python -m py_compile scripts/fetch_data.py` — синтаксис Python fetcher.
-- `node --check scripts/cloudflare-worker.js` — синтаксис Worker.
-- Для изменений в data fetcher — локальный точечный smoke test на одном тикере, если это безопасно.
-- Для UI изменений — build минимум; если возможно, дополнительно ручной сценарий описать в PR.
-
-### 3. The Environment
-
-Работать через git branch + PR.
-
-- Всегда начинать с актуального `origin/master`, если пользователь просит новую задачу.
-- Не смешивать data-refresh commits с UI/docs изменениями, если пользователь не попросил.
-- Не коммитить `dist/`, `node_modules/`, `.parcel-cache`, `package-lock.json`, `.venv`, `__pycache__`.
-- Учитывать, что предоставленный PAT может не иметь `workflow` scope; workflow-файлы менять только если push разрешён или пользователь дал подходящий token.
-
-## Автопилот / спросить сначала / никогда
-
-### Автопилот
-
-Можно делать без отдельного подтверждения, если задача уже согласована:
-
-- исправлять stale comments/docs в затронутых файлах;
-- запускать build/lint/smoke checks;
-- создавать feature branch;
-- пушить branch и создавать PR;
-- добавлять type-safe metadata, если она нужна для уже согласованной функциональности;
-- править README/agent docs, чтобы они соответствовали фактическому коду.
-
-### Спросить сначала
-
-Нужно спросить перед тем как:
-
-- менять схему `data/*.json` так, что старые файлы перестанут читаться;
-- массово перегенерировать/коммитить `data/*.json`;
-- менять `.github/workflows/*`;
-- менять provider ordering или default provider;
-- добавлять платный API/provider;
-- удалять крупные исторические changelog sections;
-- менять UX по умолчанию, если это не явно задано пользователем.
-
-### Никогда не делать
-
-- Не раскрывать secrets/tokens в коммитах, README, PR body или логах.
-- Не коммитить локальные build/cache artifacts.
-- Не делать force push в чужие ветки без явной команды.
-- Не менять workflow-файлы, если token не имеет `workflow` scope и push будет заблокирован.
-- Не утверждать, что provider data гарантированно 100% complete, если источник free/delayed/best-effort.
-- **НИКОГДА не искать/перебирать/grep-ить/listaть файлы в `data/` директории.** Там ~4000 файлов (тикеров). Это займёт очень много времени. Допустимые случаи:
-  - Если известен конкретный тикер (например, AAPL) — можно прочитать `data/AAPL.json` напрямую.
-  - Если нужно проверить существование файла или прочитать `data/index.json` для общего обзора.
-  - Если задача явно требует работу с конкретным тикером/файлом.
-  - ВСЕ остальные случаи — сначала спросить пользователя.
-
-## Комментарии и agentic headers
-
-- Сохранять полезные архитектурные комментарии.
-- Исправлять или удалять stale comments, если они вводят в заблуждение.
-- Agentic changelog должен отражать реальное поведение.
-- Не добавлять комментарии “на всякий случай”, если они не помогают будущему агенту.
-
-## PR checklist
-
-Перед PR:
+### 2. Verifier (до кодинга)
 
 ```bash
 npm run build
@@ -153,11 +96,67 @@ node --check scripts/cloudflare-worker.js
 git diff --check
 ```
 
-Если менялись только docs — build всё равно желателен, если затронуты source comments рядом с кодом.
+- Data fetcher: точечный smoke `TICKERS=AAPL MAX_FETCHES=1 REQUEST_SLEEP=0 python scripts/fetch_data.py` **без** mass commit `data/` без просьбы.
+- UI: build минимум; в PR — ручной сценарий (provider + Settings columns).
 
-В PR body указать:
+### 3. Environment
 
-- что изменено;
-- как проверено;
-- есть ли ограничения/следующие шаги;
-- если data files не обновлялись — явно написать это.
+- Новые задачи — от актуального `origin/master`, feature branch + PR.
+- Не смешивать mass data-refresh с UI/docs, если не просили.
+- Не коммитить `dist/`, `node_modules/`, `.parcel-cache`, `package-lock.json`, `.venv`, `__pycache__`.
+- Workflow (`.github/workflows/*`) — только с `workflow` scope token / явным OK.
+
+## Автопилот / спросить сначала / никогда
+
+### Автопилот
+
+- stale comments/docs в затронутых файлах;
+- build/lint/smoke;
+- feature branch + push + PR;
+- type-safe metadata под уже согласованную фичу;
+- sync README/agent docs с фактическим кодом.
+
+### Спросить сначала
+
+- схема `data/*.json`, ломающая старые файлы;
+- mass regenerate/commit `data/*.json`;
+- `.github/workflows/*`;
+- **менять fixed provider order** (`CACHE, CBOE, NASDAQ, YAHOO`) или host defaults;
+- добавлять 5-й provider / платный API;
+- снова вводить model greeks в Python (нарушает single source of truth);
+- удалять крупные historical changelog sections;
+- менять UX defaults без явной просьбы.
+
+### Никогда
+
+- Secrets/tokens в коммитах, README, PR, логах.
+- Build/cache artifacts в git.
+- Force push в чужие ветки без явной команды.
+- Workflow без `workflow` scope.
+- Утверждать 100% complete free/delayed data.
+- **Дублировать business logic** в двух местах (особенно Black-Scholes: UI only).
+- **Искать/list/grep по всей `data/`** (~тысячи файлов). Допустимо:
+  - известный тикер → `data/AAPL.json`;
+  - `data/index.json`;
+  - явная просьба по конкретному файлу;
+  - иначе — спросить.
+
+## Комментарии и agentic headers
+
+- Полезные архитектурные комментарии сохранять.
+- Stale — править или удалять.
+- Changelog в `main.tsx` / `fetch_data.py` должен совпадать с поведением.
+- Не писать комментарии «на всякий случай».
+
+## PR checklist
+
+```bash
+npm run build
+python -m py_compile scripts/fetch_data.py
+node --check scripts/cloudflare-worker.js
+git diff --check
+```
+
+В PR body: что / как проверено / ограничения / обновлялись ли data files.
+
+Если трогали greeks: явно подтвердить, что model math **не** появился в `fetch_data.py`.
