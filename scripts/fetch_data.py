@@ -1168,18 +1168,28 @@ def build_work_queue(universe):
     # PHASE 2: existing files that are stale (need refresh), oldest-updated first.
     #  We consider ALL cached files on disk (even ones no longer in the universe)
     #  so nothing goes permanently stale. Fresh files are skipped entirely.
+    is_explicit = bool(os.environ.get("TICKERS") or os.environ.get("TICKER"))
+    refresh_candidates = universe if is_explicit else cached
+    
     stale = []
     fresh_skipped = 0
-    for sym in cached:
+    for sym in refresh_candidates:
         path = os.path.join(DATA_DIR, f"{sym}.json")
         if is_fresh(path):
             fresh_skipped += 1
             continue
+        # Don't add to stale if already in missing
+        if sym in missing:
+            continue
         stale.append((sym, _file_updated(path)))
+        
     # Oldest `updated` first ("" sorts first -> unreadable/undated get priority).
     stale.sort(key=lambda t: t[1])
     stale_syms = [s for s, _ in stale]
 
+    # If the user explicitly provided TICKERS/TICKER, do not respect the cache
+    # beyond what's requested, so only process `missing + stale_syms` which
+    # are already filtered to `universe`
     return missing + stale_syms, len(missing), len(stale_syms), fresh_skipped
 
 
