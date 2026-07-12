@@ -24,6 +24,9 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.35 - After confirming a ticker (suggestion click, or Enter in the
+ *          input), focus jumps to the Get dates button so Space/Enter runs
+ *          the fetch without a mouse trip (mirrors Load-button focus UX).
  * v0.9.34 - Ticker input selects all text on focus/click so typing a new
  *          symbol replaces the previous ticker without manual clear.
  * v0.9.33 - Single source of truth for model greeks (UI only):
@@ -3345,6 +3348,8 @@ const App: React.FC = () => {
     // AbortControllers so the Cancel button can stop in-flight requests.
     const metaAbort = useRef<AbortController | null>(null);
     const expAbort = useRef<AbortController | null>(null);
+    // Focused after confirming a ticker so Space/Enter triggers Get dates.
+    const getDatesBtnRef = useRef<HTMLButtonElement | null>(null);
     // Focused after picking an expiration so Enter immediately triggers Load.
     const loadBtnRef = useRef<HTMLButtonElement | null>(null);
 
@@ -3492,6 +3497,12 @@ const App: React.FC = () => {
         requestAnimationFrame(() => loadBtnRef.current?.focus());
     }, []);
 
+    /** Move focus to Get dates (after ticker confirm) so Space/Enter activates it. */
+    const focusGetDatesButton = useCallback(() => {
+        // rAF: wait for React to commit closed dropdown / updated value.
+        requestAnimationFrame(() => getDatesBtnRef.current?.focus());
+    }, []);
+
     /** Select a suggestion into the ticker input without auto-fetching. */
     const chooseTickerSuggestion = useCallback((s: TickerSuggestion) => {
         setTickerInput(s.symbol);
@@ -3502,13 +3513,27 @@ const App: React.FC = () => {
         } else {
             setNotice('');
         }
-    }, []);
+        focusGetDatesButton();
+    }, [focusGetDatesButton]);
 
     /** Keyboard navigation for the custom ticker suggestion popover. */
     const onTickerKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Escape') {
             setTickerSuggestionsOpen(false);
             setActiveTickerSuggestion(-1);
+            return;
+        }
+        if (e.key === 'Enter') {
+            // Confirm ticker → focus Get dates (Space/Enter there runs the fetch).
+            // Do not submit the form from the input; button receives the next activation.
+            e.preventDefault();
+            if (tickerSuggestionsOpen && activeTickerSuggestion >= 0 && tickerSuggestions[activeTickerSuggestion]) {
+                chooseTickerSuggestion(tickerSuggestions[activeTickerSuggestion]);
+            } else {
+                setTickerSuggestionsOpen(false);
+                setActiveTickerSuggestion(-1);
+                focusGetDatesButton();
+            }
             return;
         }
         if (!tickerSuggestionsOpen || tickerSuggestions.length === 0) return;
@@ -3518,11 +3543,8 @@ const App: React.FC = () => {
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
             setActiveTickerSuggestion((i) => Math.max(i - 1, -1));
-        } else if (e.key === 'Enter' && activeTickerSuggestion >= 0) {
-            e.preventDefault();
-            chooseTickerSuggestion(tickerSuggestions[activeTickerSuggestion]);
         }
-    }, [tickerSuggestionsOpen, tickerSuggestions, activeTickerSuggestion, chooseTickerSuggestion]);
+    }, [tickerSuggestionsOpen, tickerSuggestions, activeTickerSuggestion, chooseTickerSuggestion, focusGetDatesButton]);
 
     // Whether the current provider+settings require a key for the typed ticker.
     const showOnboarding = useMemo(() => {
@@ -3666,9 +3688,10 @@ const App: React.FC = () => {
                             )}
                         </div>
                         <button
+                            ref={getDatesBtnRef}
                             type="submit"
                             disabled={metaLoading}
-                            className="rounded-md bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                            className="rounded-md bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50 focus:ring-2 focus:ring-slate-400 focus:ring-offset-1 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:focus:ring-offset-slate-900"
                         >
                             {metaLoading ? 'Getting…' : 'Get dates'}
                         </button>
