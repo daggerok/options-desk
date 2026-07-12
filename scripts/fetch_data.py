@@ -254,7 +254,7 @@ MAX_FETCHES = int(os.environ.get("MAX_FETCHES", "40"))
 UNIVERSE_SIZE = int(os.environ.get("UNIVERSE_SIZE", "6000"))
 # Minimum market cap to include (USD). Default $10M = Microcap floor; anything
 # smaller (nano-caps) is dropped — they rarely have listed options.
-MIN_MARKET_CAP = float(os.environ.get("MIN_MARKET_CAP", "10000000"))
+MIN_MARKET_CAP = float(os.environ.get("MIN_MARKET_CAP", "9000000"))
 MAX_EXPIRATIONS = int(os.environ.get("MAX_EXPIRATIONS", "12"))
 RATE_LIMIT_HITS = int(os.environ.get("RATE_LIMIT_HITS", "3"))
 REQUEST_SLEEP = float(os.environ.get("REQUEST_SLEEP", "0.6"))
@@ -379,6 +379,9 @@ def _symbol_variants(sym):
                 break
         variants.append(base)  # BRKB (stripped)
     variants.append(raw)
+    # Smart fallback: if the raw/base symbol lacks options, it might be an index.
+    variants.append(f"^{base}")
+    variants.append(f"^{raw}")
     return _dedupe(variants)
 
 
@@ -624,10 +627,10 @@ def load_universe():
       4. tiny built-in fallback only if live sources fail.
     """
     # Explicit override wins (kept for convenience / testing).
-    override = os.environ.get("TICKERS")
+    override = os.environ.get("TICKERS") or os.environ.get("TICKER")
     if override:
         syms = _dedupe([_canonical(t) for t in override.replace(",", " ").split() if t.strip()])
-        _log(f"universe/override: using {len(syms)} symbols from TICKERS env: {', '.join(syms[:20])}")
+        _log(f"universe/override: using {len(syms)} symbols from TICKERS/TICKER env: {', '.join(syms[:20])}")
         return syms
 
     if requests is None:
@@ -701,7 +704,9 @@ def _rows_from_frame(frame, expiration, side):
             "volume": _num(r.get("volume")),
             "openInterest": _num(r.get("openInterest")),
             "iv": _num(r.get("impliedVolatility")),  # decimal (0.25 = 25%)
-            "delta": None, "gamma": None, "theta": None, "vega": None, "rho": None, "rho": None,
+            "delta": None, "gamma": None, "theta": None, "vega": None, "rho": None,
+            "lambda": None, "vanna": None, "vomma": None, "charm": None,
+            "speed": None, "zomma": None, "color": None,
             "greeksSource": None,
             "greeksMissingReason": "not_enriched",
         })
@@ -768,24 +773,51 @@ def _black_scholes_greeks(q, spot, risk_free=GREEKS_RISK_FREE_RATE, dividend_yie
         pdf = _norm_pdf(d1)
         gamma = disc_q * pdf / (s * sigma * sqrt_t)
         vega = s * disc_q * pdf * sqrt_t / 100.0
+        
         if q.get("side") == "put":
             delta = disc_q * (_norm_cdf(d1) - 1.0)
             theta_year = (-(s * disc_q * pdf * sigma) / (2.0 * sqrt_t)
                           + risk_free * k * disc_r * _norm_cdf(-d2)
                           - dividend_yield * s * disc_q * _norm_cdf(-d1))
             rho = -k * t * disc_r * _norm_cdf(-d2) / 100.0
+            theo_price = k * disc_r * _norm_cdf(-d2) - s * disc_q * _norm_cdf(-d1)
+            charm_raw = -dividend_yield * disc_q * _norm_cdf(-d1) - disc_q * pdf * (2 * (risk_free - dividend_yield) * t - d2 * sigma * sqrt_t) / (2 * t * sigma * sqrt_t)
         else:
             delta = disc_q * _norm_cdf(d1)
             theta_year = (-(s * disc_q * pdf * sigma) / (2.0 * sqrt_t)
                           - risk_free * k * disc_r * _norm_cdf(d2)
                           + dividend_yield * s * disc_q * _norm_cdf(d1))
             rho = k * t * disc_r * _norm_cdf(d2) / 100.0
+            theo_price = s * disc_q * _norm_cdf(d1) - k * disc_r * _norm_cdf(d2)
+            charm_raw = dividend_yield * disc_q * _norm_cdf(d1) - disc_q * pdf * (2 * (risk_free - dividend_yield) * t - d2 * sigma * sqrt_t) / (2 * t * sigma * sqrt_t)
+        
+        opt_price = _num(q.get("last"))
+        if opt_price is None or opt_price <= 0:
+            opt_price = theo_price
+        
+        lambda_ = (delta * s / opt_price) if opt_price > 0 else 0
+        vanna = -disc_q * pdf * d2 / sigma / 100.0
+        vega_raw = s * disc_q * pdf * sqrt_t
+        vomma = vega_raw * d1 * d2 / sigma / 10000.0
+        charm = charm_raw / 365.0
+        speed = -gamma * (1.0 + d1 / (sigma * sqrt_t)) / s
+        zomma = gamma * (d1 * d2 - 1.0) / sigma / 100.0
+        color_raw = -gamma * (2 * dividend_yield * t + 1.0 + (2 * (risk_free - dividend_yield) * t - d2 * sigma * sqrt_t) * d1 / (sigma * sqrt_t)) / (2 * t)
+        color = color_raw / 365.0
+
         return {
             "delta": _num(delta),
             "gamma": _num(gamma),
             "theta": _num(theta_year / 365.0),
             "vega": _num(vega),
             "rho": _num(rho),
+            "lambda": _num(lambda_),
+            "vanna": _num(vanna),
+            "vomma": _num(vomma),
+            "charm": _num(charm),
+            "speed": _num(speed),
+            "zomma": _num(zomma),
+            "color": _num(color),
         }, None
     except Exception:
         return None, "model_error"
@@ -864,6 +896,11 @@ def _apply_greeks_enrichment(symbol, matched_symbol, spot, quotes):
                 q["greeksSource"] = "cboe"
                 q["greeksMissingReason"] = None
                 stats["cboeMatched"] += 1
+                if BLACK_SCHOLES_GREEKS:
+                    calc, reason = _black_scholes_greeks(q, spot)
+                    if calc:
+                        for k in ("lambda", "vanna", "vomma", "charm", "speed", "zomma", "color"):
+                            q[k] = calc.get(k)
                 continue
 
         if BLACK_SCHOLES_GREEKS:
@@ -954,12 +991,47 @@ def _file_updated(path):
 
 
 def is_fresh(path):
-    """True if the cached file exists and is FRESH per the working-day rules
-    (see `_file_is_fresh`): skip today's data, skip last-trading-day data when
-    the market is closed today, but re-fetch older data on a trading day."""
+    """
+    Continuous cyclic update rule:
+    We NEVER consider files 'fresh' (meaning we endlessly update oldest first),
+    EXCEPT during the weekend dead zone (Friday 20:00 EST to Sunday 18:00 EST).
+    During that dead zone, a single update is enough, so if a file was updated
+    after Friday 20:00 EST, it is skipped until Sunday 18:00 EST.
+    """
     if not os.path.exists(path):
         return False
-    return _file_is_fresh(_file_updated(path))
+        
+    updated_str = _file_updated(path)
+    if not updated_str:
+        return False
+        
+    try:
+        updated_dt = datetime.fromisoformat(updated_str)
+    except Exception:
+        return False
+        
+    now = datetime.now(_market_tz())
+    if updated_dt.tzinfo is None:
+        updated_dt = updated_dt.replace(tzinfo=timezone.utc).astimezone(_market_tz())
+    else:
+        updated_dt = updated_dt.astimezone(_market_tz())
+
+    # Determine this week's Friday 20:00 to Sunday 18:00
+    # Monday=0 ... Friday=4, Sunday=6
+    fri_offset = 4 - now.weekday()
+    fri_date = now.date() + timedelta(days=fri_offset)
+    
+    fri_dt = datetime.combine(fri_date, datetime.min.time()).replace(tzinfo=_market_tz())
+    dz_start = fri_dt + timedelta(hours=20)
+    dz_end = dz_start + timedelta(days=2, hours=-2)  # Sun 18:00
+    
+    if dz_start <= now < dz_end:
+        # We are IN the weekend dead zone. Skip if updated after dead zone started.
+        if updated_dt >= dz_start:
+            return True
+            
+    # Outside the dead zone, EVERYTHING is stale (continuous cyclic updates).
+    return False
 
 
 # ---- "No options" skiplist --------------------------------------------------
@@ -1096,18 +1168,28 @@ def build_work_queue(universe):
     # PHASE 2: existing files that are stale (need refresh), oldest-updated first.
     #  We consider ALL cached files on disk (even ones no longer in the universe)
     #  so nothing goes permanently stale. Fresh files are skipped entirely.
+    is_explicit = bool(os.environ.get("TICKERS") or os.environ.get("TICKER"))
+    refresh_candidates = universe if is_explicit else cached
+    
     stale = []
     fresh_skipped = 0
-    for sym in cached:
+    for sym in refresh_candidates:
         path = os.path.join(DATA_DIR, f"{sym}.json")
         if is_fresh(path):
             fresh_skipped += 1
             continue
+        # Don't add to stale if already in missing
+        if sym in missing:
+            continue
         stale.append((sym, _file_updated(path)))
+        
     # Oldest `updated` first ("" sorts first -> unreadable/undated get priority).
     stale.sort(key=lambda t: t[1])
     stale_syms = [s for s, _ in stale]
 
+    # If the user explicitly provided TICKERS/TICKER, do not respect the cache
+    # beyond what's requested, so only process `missing + stale_syms` which
+    # are already filtered to `universe`
     return missing + stale_syms, len(missing), len(stale_syms), fresh_skipped
 
 

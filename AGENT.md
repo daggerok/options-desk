@@ -35,19 +35,26 @@ Options Desk — статическое React/TypeScript приложение д
 
 ### Greeks
 
-Статический cache после refresh может содержать:
+Статический cache после refresh (`scripts/fetch_data.py`) может содержать:
 
-- per-quote: `delta`, `gamma`, `theta`, `vega`;
+- 1st-order per-quote: `delta`, `gamma`, `theta`, `vega`, `rho`;
+- leverage: `lambda` (Ω);
+- 2nd-order: `vanna`, `vomma`, `charm`;
+- 3rd-order: `speed`, `zomma`, `color`;
 - per-quote metadata: `greeksSource`, `greeksMissingReason`;
 - top-level metadata: `greeks` summary.
 
 Правила:
 
-- `greeksSource: "cboe"` — provider-supplied Cboe delayed greeks.
-- `greeksSource: "black-scholes"` — модельная оценка, не provider data.
+- `greeksSource: "cboe"` — provider-supplied Cboe delayed greeks (обычно 1st-order).
+- Higher-order + `lambda` часто досчитываются Black-Scholes поверх Cboe 1st-order.
+- `greeksSource: "black-scholes"` — полная модельная оценка, не provider data.
 - `greeksSource: null` + `greeksMissingReason` — greeks не удалось получить/посчитать.
 - Значение `0.0` — это реальное значение/округление до нуля, не missing.
 - Missing data в desk UI показывается пустой ячейкой, а не dash.
+- Static-cache provider в `src/main.tsx` обязан маппить **все** greeks-поля
+  (`lambda` + 2nd/3rd order) без дубликатов ключей в object literal.
+- В Settings → Desk columns новые колонки (λ / Vanna / …) **disabled by default**.
 
 ## Методология работы агента: Spec → Verifier → Environment
 

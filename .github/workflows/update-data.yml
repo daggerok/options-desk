@@ -29,14 +29,17 @@ name: Update options data
 on:
   schedule:
     # The script is resumable, so more runs simply grow the cache faster.
-    - cron: "2 0,8,16 * * 0-6"    # Mon-Thu: 00:02, 08:02, 16:02
-    - cron: "3 1,9,17 * * 0-6"    # Tue-Fri: 01:03, 09:03, 17:03
-    - cron: "5 2,10,18 * * 0-6"   # Wed-Sat: 02:05, 10:05, 18:05
-    - cron: "8 3,11,19 * * 0-6"   # Thu-Sun: 03:08, 11:08, 19:08
-    - cron: "13 4,12,20 * * 0-6"  # Mon-Thu: 04:13, 12:13, 20:13
-    - cron: "21 5,13,21 * * 0-6"  # Tue-Fri: 05:21, 13:21, 21:21
-    - cron: "34 6,14,22 * * 0-6"  # Wed-Sat: 06:34, 14:34, 22:03
-    - cron: "55 7,15,23 * * 0-6"  # Thu-Sun: 07:55, 15:55, 23:04
+    - cron: "0 0-3 * * 0-6"
+    - cron: "1 4-7 * * 0-6"
+    - cron: "2 8-11 * * 0-6"
+    - cron: "3 12-15 * * 0-6"
+    - cron: "5 16-19 * * 0-6"
+    - cron: "8 20-23 * * 0-6"
+    - cron: "13 * * * 0-6"
+    - cron: "21 * * * 0-6"
+    - cron: "34 * * * 0-6"
+    - cron: "45 * * * 0-6"
+    - cron: "55 * * * 0-6"
   workflow_dispatch: {} # allow manual runs from the Actions tab
 
 permissions:
@@ -51,10 +54,10 @@ jobs:
       # screener), skips files already refreshed today, and fetches top-down
       # until the per-run budget is hit or the source rate-limits us. Each run
       # APPENDS to the cache and the next run resumes where this one stopped.
-      MAX_FETCHES: "400"          # NEW (non-skipped) fetches per run (chunk size)
-      UNIVERSE_SIZE: "6000"       # consider the FULL market-cap-ranked US universe
+      MAX_FETCHES: "250"          # NEW (non-skipped) fetches per run (chunk size)
+      UNIVERSE_SIZE: "5000"       # consider the FULL market-cap-ranked US universe
       MIN_MARKET_CAP: "9000000"   # Microcap floor ($10M); drops nano-caps
-      MAX_EXPIRATIONS: "20"       # expirations stored per ticker (keeps JSON small)
+      MAX_EXPIRATIONS: "50"       # expirations stored per ticker (keeps JSON small)
       REQUEST_SLEEP: "1"          # politeness delay between fetches (seconds)
       PYTHONUNBUFFERED: "1"       # stream Python progress logs to Actions immediately
     steps:
