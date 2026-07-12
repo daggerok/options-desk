@@ -12,4 +12,5 @@
 - не коммитить build/cache artifacts;
 - не менять workflow-файлы без явного разрешения и token с `workflow` scope;
 - после изменений запускать релевантные проверки;
-- stale comments исправлять, а не сохранять ради истории.
+- stale comments исправлять, а не сохранять ради истории;
+- провайдеры только CBOE / YAHOO / NASDAQ / CACHE (localhost default CBOE, Pages default CACHE).

@@ -24,14 +24,22 @@ Options Desk — статическое React/TypeScript приложение д
 
 ## Текущая архитектура данных
 
-### Провайдеры
+### Провайдеры (только 4)
 
-- `marketdata.app` — direct browser, AAPL без ключа, остальные тикеры с token.
-- `Static cache` — читает `data/*.json` same-origin.
-- `DoltHub` — исторический архив `2024-11-11`, не live.
-- `Yahoo via proxy` — lazy provider через `/api/options`.
-- `NASDAQ via proxy` — bulk provider через `/api/nasdaq`.
-- `CBOE via proxy` — bulk provider через `/api/cboe`.
+Короткие uppercase labels в UI dropdown:
+
+| UI label | id | Режим | Нужен proxy | Default |
+|----------|-----|--------|-------------|---------|
+| **CBOE** | `cboe` | bulk | да (`/api/cboe`) | **localhost / LAN** |
+| **YAHOO** | `yahoo` | lazy | да (`/api/options`) | — |
+| **NASDAQ** | `nasdaq` | bulk | да (`/api/nasdaq`) | — |
+| **CACHE** | `static` | bulk | нет (same-origin `data/*.json`) | **GitHub Pages / hosted** |
+
+Порядок в dropdown:
+- local: `CBOE, YAHOO, NASDAQ, CACHE`
+- hosted: `CACHE, CBOE, YAHOO, NASDAQ`
+
+`marketdata.app` и `DoltHub` **удалены** из registry. Старые `providerId` в localStorage сбрасываются на host default.
 
 ### Greeks
 

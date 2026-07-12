@@ -16,15 +16,18 @@ Options Desk — static options-chain desk:
 
 - Frontend: React + TypeScript + Tailwind CSS v4.
 - Build: Bun scripts + Parcel.
+- Providers (UI labels): **CBOE**, **YAHOO**, **NASDAQ**, **CACHE** only.
+- Defaults: localhost → CBOE; GitHub Pages → CACHE.
 - Static cache: `data/*.json` + `data/index.json`.
 - Data fetcher: `scripts/fetch_data.py`.
 - Proxy infra: `scripts/yahoo-proxy.ts`, `scripts/cloudflare-worker.js`.
 
 Не путать:
 
-- `CBOE provider` в приложении — live/delayed через proxy.
-- `Cboe greeks enrichment` в `fetch_data.py` — build-time enrichment для static cache.
+- `CBOE` provider — live/delayed через proxy.
+- `CACHE` — same-origin static JSON (build-time Cboe/BS enrichment).
 - `black-scholes` greeks — model estimate, не provider data.
+- `marketdata` / `DoltHub` больше не в registry.
 
 ## Проверки
 

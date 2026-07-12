@@ -295,8 +295,9 @@ grep -RInE 'TODO|FIXME|old|deprecated|Vite|webpack|no_options|provider|proxy' .
 Правила специально учитывают Options Desk:
 
 - static React/TypeScript + Parcel/Bun;
+- провайдеры только **CBOE / YAHOO / NASDAQ / CACHE** (localhost→CBOE, Pages→CACHE);
 - yfinance/Cboe static cache;
-- greeks metadata;
+- greeks metadata (build-time + client BS);
 - provider proxies;
 - GitHub Pages;
 - data refresh workflow;
