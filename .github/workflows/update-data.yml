@@ -75,8 +75,8 @@ jobs:
 
       - name: Commit updated data
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "Maksim Kostromin"
+          git config user.email "daggerok@gmail.com"
           # Stage the refreshed chains + data/index.json (which also holds the
           # no-options skiplist under the `no_options` key since fetch_data.py v9).
           git add data/ || true
