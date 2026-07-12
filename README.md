@@ -8,32 +8,32 @@ A single-page **options board**: enter a ticker, get expirations, select one or 
 
 ## Table of contents / Оглавление
 
-- [English (full documentation)](README.en.md)
-  - [What you get](README.en.md#what-you-get)
-  - [Quick start](README.en.md#quick-start)
-  - [How to use](README.en.md#how-to-use)
-  - [Data providers](README.en.md#data-providers)
-  - [Ticker suggestions](README.en.md#ticker-suggestions)
-  - [Static-cache greeks](README.en.md#static-cache-greeks)
-  - [Deploy to GitHub Pages](README.en.md#deploy-to-github-pages)
-  - [Proxy setup for GitHub Pages](README.en.md#proxy-setup-for-github-pages)
-  - [Companion infrastructure](README.en.md#companion-infrastructure)
-  - [Project structure](README.en.md#project-structure)
-  - [Privacy & keys](README.en.md#privacy--keys)
-  - [Troubleshooting](README.en.md#troubleshooting)
-- [Русская документация](README.ru.md)
-  - [Что это умеет](README.ru.md#что-это-умеет)
-  - [Быстрый старт](README.ru.md#быстрый-старт)
-  - [Как пользоваться](README.ru.md#как-пользоваться)
-  - [Провайдеры данных](README.ru.md#провайдеры-данных)
-  - [Подсказки тикеров](README.ru.md#подсказки-тикеров)
-  - [Greeks в static cache](README.ru.md#greeks-в-static-cache)
-  - [Публикация на GitHub Pages](README.ru.md#публикация-на-github-pages)
-  - [Настройка прокси для GitHub Pages](README.ru.md#настройка-прокси-для-github-pages)
-  - [Вспомогательная инфраструктура](README.ru.md#вспомогательная-инфраструктура)
-  - [Структура проекта](README.ru.md#структура-проекта)
-  - [Приватность и ключи](README.ru.md#приватность-и-ключи)
-  - [Решение проблем](README.ru.md#решение-проблем)
+- [English (full documentation)](docs/README.en.md)
+  - [What you get](docs/README.en.md#what-you-get)
+  - [Quick start](docs/README.en.md#quick-start)
+  - [How to use](docs/README.en.md#how-to-use)
+  - [Data providers](docs/README.en.md#data-providers)
+  - [Ticker suggestions](docs/README.en.md#ticker-suggestions)
+  - [Static-cache greeks](docs/README.en.md#static-cache-greeks)
+  - [Deploy to GitHub Pages](docs/README.en.md#deploy-to-github-pages)
+  - [Proxy setup for GitHub Pages](docs/README.en.md#proxy-setup-for-github-pages)
+  - [Companion infrastructure](docs/README.en.md#companion-infrastructure)
+  - [Project structure](docs/README.en.md#project-structure)
+  - [Privacy & keys](docs/README.en.md#privacy--keys)
+  - [Troubleshooting](docs/README.en.md#troubleshooting)
+- [Русская документация](docs/README.ru.md)
+  - [Что это умеет](docs/README.ru.md#что-это-умеет)
+  - [Быстрый старт](docs/README.ru.md#быстрый-старт)
+  - [Как пользоваться](docs/README.ru.md#как-пользоваться)
+  - [Провайдеры данных](docs/README.ru.md#провайдеры-данных)
+  - [Подсказки тикеров](docs/README.ru.md#подсказки-тикеров)
+  - [Greeks в static cache](docs/README.ru.md#greeks-в-static-cache)
+  - [Публикация на GitHub Pages](docs/README.ru.md#публикация-на-github-pages)
+  - [Настройка прокси для GitHub Pages](docs/README.ru.md#настройка-прокси-для-github-pages)
+  - [Вспомогательная инфраструктура](docs/README.ru.md#вспомогательная-инфраструктура)
+  - [Структура проекта](docs/README.ru.md#структура-проекта)
+  - [Приватность и ключи](docs/README.ru.md#приватность-и-ключи)
+  - [Решение проблем](docs/README.ru.md#решение-проблем)
 
 ---
 
@@ -44,9 +44,12 @@ A single-page **options board**: enter a ticker, get expirations, select one or 
 ## Agentic Setup
 
 This repository is optimized for AI-agentic development. It includes:
-- [AGENT.md](./AGENT.md): Main agent contract and rules.
+- [AGENT.md](./AGENT.md): Main agent contract and rules (English).
+- [AGENT.ru.md](./docs/AGENT.ru.md): Main agent contract and rules (Russian).
 - [CLAUDE.md](./CLAUDE.md): Adapter for Claude Code.
 - [.cursorrules](./.cursorrules): Rules for Cursor AI.
-- [Setup.md](./Setup.md): Tutorial on setting up agentic workflows.
+- [Setup.md](./docs/Setup.md): Tutorial on setting up agentic workflows.
+- [ARENA.md](./ARENA.md): Specific rules for Arena.ai.
+- [DEVELOPMENT.md](./docs/DEVELOPMENT.md): Detailed developer guide.
 
 We use **Bun** for JavaScript/TypeScript and **uv** for Python to ensure fast and reproducible environments.
