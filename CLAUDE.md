@@ -16,8 +16,8 @@ Options Desk — static options-chain desk:
 
 - Frontend: React + TypeScript + Tailwind CSS v4.
 - Build: Bun scripts + Parcel.
-- Providers (UI labels): **CBOE**, **YAHOO**, **NASDAQ**, **CACHE** only.
-- Defaults: localhost → CBOE; GitHub Pages → CACHE.
+- Providers (UI labels): **CACHE**, **CBOE**, **NASDAQ**, **YAHOO** only.
+- Dropdown order always: CACHE, CBOE, NASDAQ, YAHOO. Default only: localhost → CBOE; Pages → CACHE.
 - Static cache: `data/*.json` + `data/index.json`.
 - Data fetcher: `scripts/fetch_data.py`.
 - Proxy infra: `scripts/yahoo-proxy.ts`, `scripts/cloudflare-worker.js`.

@@ -30,14 +30,13 @@ Options Desk — статическое React/TypeScript приложение д
 
 | UI label | id | Режим | Нужен proxy | Default |
 |----------|-----|--------|-------------|---------|
-| **CBOE** | `cboe` | bulk | да (`/api/cboe`) | **localhost / LAN** |
-| **YAHOO** | `yahoo` | lazy | да (`/api/options`) | — |
-| **NASDAQ** | `nasdaq` | bulk | да (`/api/nasdaq`) | — |
 | **CACHE** | `static` | bulk | нет (same-origin `data/*.json`) | **GitHub Pages / hosted** |
+| **CBOE** | `cboe` | bulk | да (`/api/cboe`) | **localhost / LAN** |
+| **NASDAQ** | `nasdaq` | bulk | да (`/api/nasdaq`) | — |
+| **YAHOO** | `yahoo` | lazy | да (`/api/options`) | — |
 
-Порядок в dropdown:
-- local: `CBOE, YAHOO, NASDAQ, CACHE`
-- hosted: `CACHE, CBOE, YAHOO, NASDAQ`
+Порядок в dropdown **везде один**: `CACHE, CBOE, NASDAQ, YAHOO`.
+Меняется только default selection: localhost → **CBOE**, GitHub Pages → **CACHE**.
 
 `marketdata.app` и `DoltHub` **удалены** из registry. Старые `providerId` в localStorage сбрасываются на host default.
 

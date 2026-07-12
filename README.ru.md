@@ -64,7 +64,7 @@ bun run build-github-pages
 4. Выбери одну или несколько дат, либо **All**.
 5. Нажми **Load**, чтобы увидеть цепочку.
 
-На `localhost` / private LAN default — **CBOE** (список: CBOE, YAHOO, NASDAQ, CACHE). На GitHub Pages / hosted static default — **CACHE** (список: CACHE, CBOE, YAHOO, NASDAQ).
+Порядок в dropdown всегда **CACHE, CBOE, NASDAQ, YAHOO**. Меняется только default: `localhost` / private LAN → **CBOE**; GitHub Pages / hosted static → **CACHE**.
 
 ## Провайдеры данных
 
@@ -74,10 +74,11 @@ bun run build-github-pages
 |---|---|---|---|---|
 | **CACHE** *(default на GitHub Pages)* | Без настройки | Тикеры из `data/*.json` | CBOE/model-enriched по мере refresh | Same-origin static JSON (GitHub Actions/yfinance + CBOE delayed greeks + Black-Scholes). Без CORS и ключей. |
 | **CBOE** *(default на localhost)* | Нужен прокси | CBOE delayed options | Да (provider + client BS higher-order) | Самый богатый delayed-фид (greeks/IV/OI/spot). Нужен Proxy base URL (`/api/cboe`). |
-| **YAHOO** | Нужен прокси | Yahoo symbol search / option chains | Client Black-Scholes из IV | Lazy по expiration. Прокси обрабатывает crumb/cookies (`/api/options`). |
 | **NASDAQ** | Нужен прокси | NASDAQ option-chain | Нет IV → нет model greeks | Полная цепочка за один запрос: bid/ask/last/volume/OI. Прокси `/api/nasdaq`. |
+| **YAHOO** | Нужен прокси | Yahoo symbol search / option chains | Client Black-Scholes из IV | Lazy по expiration. Прокси обрабатывает crumb/cookies (`/api/options`). |
 
-**Defaults:** `localhost` / private LAN → **CBOE**; hosted static (GitHub Pages) → **CACHE**.
+**Порядок в dropdown (всегда):** `CACHE, CBOE, NASDAQ, YAHOO`.  
+**Default selection:** `localhost` / private LAN → **CBOE**; hosted static (GitHub Pages) → **CACHE**.
 
 Удалены из registry (только changelog): marketdata.app, DoltHub, Tradier, Alpaca, Polygon/Massive, Alpha Vantage и другие gated-эксперименты.
 

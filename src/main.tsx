@@ -24,10 +24,10 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
- * v0.9.32 - Providers trimmed to CACHE + CBOE + YAHOO + NASDAQ:
+ * v0.9.32 - Providers trimmed to CACHE + CBOE + NASDAQ + YAHOO:
  *          - Removed marketdata.app and DoltHub from the live registry.
- *          - Short uppercase labels in the API dropdown: CBOE, YAHOO, NASDAQ, CACHE.
- *          - Default: CBOE on localhost/LAN (proxy expected); CACHE on GitHub Pages.
+ *          - Short uppercase labels; fixed dropdown order: CACHE, CBOE, NASDAQ, YAHOO.
+ *          - Default selection only (not order): CBOE on localhost/LAN; CACHE on Pages.
  *          - Settings migration: unknown/removed providerId resets to host default.
  * v0.9.31 - Client-side Black-Scholes greeks enrichment for live providers:
  *          - Higher-order greeks (λ, vanna, vomma, charm, speed, zomma, color)
@@ -513,12 +513,13 @@
  *   - scripts/cloudflare-worker.js    deployable proxy (Yahoo/NASDAQ/CBOE/search/raw)
  *
  * WHY THESE API CHOICES (research summary, keep for future agents):
- *   - CACHE (static): same-origin data/*.json on GitHub Pages -> zero CORS/keys.
- *     DEFAULT on hosted/static deploys.
+ *   - Dropdown order is fixed: CACHE, CBOE, NASDAQ, YAHOO.
+ *   - CACHE (static): same-origin data/*.json -> zero CORS/keys.
+ *     DEFAULT selection on hosted/static deploys (GitHub Pages).
  *   - CBOE (via proxy): richest no-key delayed data (greeks/IV/OI/spot).
- *     DEFAULT on localhost/LAN when proxy is expected.
- *   - YAHOO (via proxy): crumb/cookies handled by companion proxy; lazy per-exp.
+ *     DEFAULT selection on localhost/LAN when proxy is expected.
  *   - NASDAQ (via proxy): free full-chain, no browser CORS; no IV/greeks in feed.
+ *   - YAHOO (via proxy): crumb/cookies handled by companion proxy; lazy per-exp.
  *   - Removed from registry (changelog only): marketdata.app, DoltHub, Tradier,
  *     Alpaca, Alpha Vantage, Polygon/Massive, Finnhub/Twelve Data, etc.
  *
@@ -1729,30 +1730,22 @@ const cboeProvider: DataProvider = {
 };
 
 /**
- * Provider registry — only four sources:
+ * Provider registry — only four sources, fixed dropdown order everywhere:
  *   CACHE  = same-origin static data/*.json (no proxy)
  *   CBOE   = delayed options via proxy /api/cboe
- *   YAHOO  = option chain via proxy /api/options (lazy)
  *   NASDAQ = full chain via proxy /api/nasdaq
+ *   YAHOO  = option chain via proxy /api/options (lazy)
  *
- * Default depends on host:
- *   - localhost / LAN  -> CBOE (proxy expected)
+ * Order never changes: CACHE, CBOE, NASDAQ, YAHOO.
+ * Host only picks the DEFAULT selection:
+ *   - localhost / LAN              -> CBOE (proxy expected)
  *   - GitHub Pages / hosted static -> CACHE (no proxy required)
- *
- * Dropdown order is stable short names: CBOE, YAHOO, NASDAQ, CACHE on local;
- * CACHE first on hosted so the default works without a proxy.
  */
-const PROVIDERS_LOCAL: DataProvider[] = [
-    cboeProvider,
-    yahooProvider,
-    nasdaqProvider,
-    staticProvider,
-];
-const PROVIDERS_HOSTED: DataProvider[] = [
-    staticProvider,
-    cboeProvider,
-    yahooProvider,
-    nasdaqProvider,
+const PROVIDERS: DataProvider[] = [
+    staticProvider,  // CACHE
+    cboeProvider,    // CBOE
+    nasdaqProvider,  // NASDAQ
+    yahooProvider,   // YAHOO
 ];
 
 /**
@@ -1770,10 +1763,10 @@ function isLocalHost(): boolean {
     } catch { return false; }
 }
 
-/** Active provider list; first entry is the DEFAULT. */
-const PROVIDERS: DataProvider[] = isLocalHost()
-    ? PROVIDERS_LOCAL
-    : PROVIDERS_HOSTED;
+/** Default provider id for this host — not the same as dropdown order. */
+function defaultProviderId(): string {
+    return isLocalHost() ? 'cboe' : 'static';
+}
 
 /** Curated public CORS proxies for CBOE. "{url}" = encoded target URL. */
 const PROXY_PRESETS: { label: string; template: string }[] = [
@@ -2130,7 +2123,8 @@ interface Settings {
 const SETTINGS_KEY = 'options-desk.settings.v5';
 
 const DEFAULT_SETTINGS: Settings = {
-    providerId: PROVIDERS[0].id,           // CBOE on localhost, CACHE on GitHub Pages
+    // Host-aware default selection; dropdown order stays CACHE, CBOE, NASDAQ, YAHOO.
+    providerId: defaultProviderId(),
     theme: 'system',
     proxyTemplate: PROXY_PRESETS[0].template,
     proxyBase: 'http://localhost:8787',    // local Bun Yahoo proxy default
@@ -2144,12 +2138,18 @@ const DEFAULT_SETTINGS: Settings = {
     lastTicker: 'AAPL',
 };
 
+/** Fresh settings object with the current host default (not a shared mutable ref). */
+function freshDefaultSettings(): Settings {
+    return { ...DEFAULT_SETTINGS, providerId: defaultProviderId() };
+}
+
 /** Load settings from localStorage, merged over defaults (forward-compatible). */
 function loadSettings(): Settings {
     try {
         const raw = localStorage.getItem(SETTINGS_KEY);
-        if (!raw) return { ...DEFAULT_SETTINGS };
+        if (!raw) return freshDefaultSettings();
         const parsed = JSON.parse(raw);
+        const hostDefault = defaultProviderId();
         const merged: Settings = {
             ...DEFAULT_SETTINGS,
             ...parsed,
@@ -2162,11 +2162,11 @@ function loadSettings(): Settings {
         };
         // Drop removed providers (marketdata, dolthub, …) → fall back to host default.
         if (!PROVIDERS.some((p) => p.id === merged.providerId)) {
-            merged.providerId = DEFAULT_SETTINGS.providerId;
+            merged.providerId = hostDefault;
         }
         return merged;
     } catch {
-        return { ...DEFAULT_SETTINGS };
+        return freshDefaultSettings();
     }
 }
 
@@ -3574,8 +3574,8 @@ const App: React.FC = () => {
                 onSetToken={setToken}
                 onSetSecret={setSecret}
                 onClearData={() => { clearCacheData(); resetView(); }}
-                onClearSettings={() => { clearSettingsStore(); setSettings({ ...DEFAULT_SETTINGS }); resetView(); }}
-                onClearAll={() => { clearAll(); setSettings({ ...DEFAULT_SETTINGS }); resetView(); }}
+                onClearSettings={() => { clearSettingsStore(); setSettings(freshDefaultSettings()); resetView(); }}
+                onClearAll={() => { clearAll(); setSettings(freshDefaultSettings()); resetView(); }}
             />
 
             {/* Width: comfortable centered column on phones/tablets, but on LARGE

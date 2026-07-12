@@ -13,4 +13,4 @@
 - не менять workflow-файлы без явного разрешения и token с `workflow` scope;
 - после изменений запускать релевантные проверки;
 - stale comments исправлять, а не сохранять ради истории;
-- провайдеры только CBOE / YAHOO / NASDAQ / CACHE (localhost default CBOE, Pages default CACHE).
+- провайдеры только CACHE / CBOE / NASDAQ / YAHOO (порядок фиксирован; localhost default CBOE, Pages default CACHE).

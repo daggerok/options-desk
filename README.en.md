@@ -64,7 +64,7 @@ bun run build-github-pages
 4. Select one or more expirations, or **All**.
 5. Press **Load** to render the chain.
 
-On `localhost` / private LAN the default provider is **CBOE** (list: CBOE, YAHOO, NASDAQ, CACHE). On GitHub Pages / hosted static the default is **CACHE** (list: CACHE, CBOE, YAHOO, NASDAQ).
+Dropdown order is always **CACHE, CBOE, NASDAQ, YAHOO**. Default selection only: `localhost` / private LAN → **CBOE**; GitHub Pages / hosted static → **CACHE**.
 
 ## Data providers
 
@@ -74,10 +74,11 @@ Only four sources. Short uppercase labels in the API dropdown.
 |---|---|---|---|---|
 | **CACHE** *(default on GitHub Pages)* | No setup | Cached tickers in `data/*.json` | CBOE/model-enriched as files refresh | Same-origin static JSON from GitHub Actions/yfinance + CBOE delayed greeks + Black-Scholes fallback. No CORS, no keys. |
 | **CBOE** *(default on localhost)* | Needs proxy | CBOE delayed options | Yes (provider + client BS higher-order) | Richest delayed feed (greeks/IV/OI/spot). Requires Proxy base URL (`/api/cboe`). |
-| **YAHOO** | Needs proxy | Yahoo symbol search / option chains | Client Black-Scholes from IV | Lazy per-expiration. Companion proxy handles crumb/cookies (`/api/options`). |
 | **NASDAQ** | Needs proxy | NASDAQ option-chain | No IV → no model greeks | Full chain in one call: bid/ask/last/volume/OI. Proxy `/api/nasdaq`. |
+| **YAHOO** | Needs proxy | Yahoo symbol search / option chains | Client Black-Scholes from IV | Lazy per-expiration. Companion proxy handles crumb/cookies (`/api/options`). |
 
-**Defaults:** `localhost` / private LAN → **CBOE**; hosted static (e.g. GitHub Pages) → **CACHE**.
+**Dropdown order (always):** `CACHE, CBOE, NASDAQ, YAHOO`.  
+**Default selection only:** `localhost` / private LAN → **CBOE**; hosted static (e.g. GitHub Pages) → **CACHE**.
 
 Removed from the live registry (changelog only): marketdata.app, DoltHub, Tradier, Alpaca, Polygon/Massive, Alpha Vantage, and other gated experiments.
 
