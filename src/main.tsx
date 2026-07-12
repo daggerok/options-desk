@@ -1187,6 +1187,8 @@ const staticProvider: DataProvider = {
             theta: num(q.theta),
             vega: num(q.vega),
             rho: num(q.rho),
+            lambda: num(q.lambda),
+            rho: num(q.rho),
             vanna: num(q.vanna),
             vomma: num(q.vomma),
             charm: num(q.charm),
@@ -1596,7 +1598,7 @@ const cboeProvider: DataProvider = {
                 last: num(o.last_trade_price),
                 volume: num(o.volume),
                 openInterest: num(o.open_interest),
-                iv: num(o.iv), delta: num(o.delta), gamma: num(o.gamma), theta: num(o.theta), vega: num(o.vega), rho: num(o.rho), rho: num(o.rho),
+                iv: num(o.iv), delta: num(o.delta), gamma: num(o.gamma), theta: num(o.theta), vega: num(o.vega), rho: num(o.rho), rho: num(o.rho), rho: num(o.rho),
             });
         }
         const expirations = Array.from(new Set(quotes.map((q) => q.expiration))).sort();

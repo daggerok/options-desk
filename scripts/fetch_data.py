@@ -701,7 +701,7 @@ def _rows_from_frame(frame, expiration, side):
             "volume": _num(r.get("volume")),
             "openInterest": _num(r.get("openInterest")),
             "iv": _num(r.get("impliedVolatility")),  # decimal (0.25 = 25%)
-            "delta": None, "gamma": None, "theta": None, "vega": None, "rho": None, "rho": None,
+            "delta": None, "gamma": None, "theta": None, "vega": None, "rho": None, "lambda": None, "rho": None, "rho": None,
             "greeksSource": None,
             "greeksMissingReason": "not_enriched",
         })
