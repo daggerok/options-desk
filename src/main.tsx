@@ -1942,6 +1942,14 @@ interface SideColumnSettings {
     theta: boolean;
     vega: boolean;
     rho: boolean;
+    // higher-order greeks
+    lambda: boolean;
+    vanna: boolean;
+    vomma: boolean;
+    charm: boolean;
+    speed: boolean;
+    zomma: boolean;
+    color: boolean;
 }
 
 interface DeskColumnSettings {
@@ -1977,8 +1985,8 @@ const DEFAULT_SETTINGS: Settings = {
     tokens: {},
     secrets: {},
     deskColumns: {
-        calls: { openInterest: true, volume: true, iv: true, delta: true, gamma: true, theta: true, vega: true, rho: false },
-        puts: { openInterest: true, volume: true, iv: true, delta: true, gamma: true, theta: true, vega: true, rho: false },
+        calls: { openInterest: true, volume: true, iv: true, delta: true, gamma: true, theta: true, vega: true, rho: false, lambda: false, vanna: false, vomma: false, charm: false, speed: false, zomma: false, color: false },
+        puts: { openInterest: true, volume: true, iv: true, delta: true, gamma: true, theta: true, vega: true, rho: false, lambda: false, vanna: false, vomma: false, charm: false, speed: false, zomma: false, color: false },
     },
     lastTicker: 'AAPL',
 };
@@ -2350,6 +2358,14 @@ const SettingsPanel: React.FC<{
                                         { id: 'theta', label: 'Theta Θ' },
                                         { id: 'vega', label: 'Vega' },
                                         { id: 'rho', label: 'Rho ρ' },
+                                        // higher-order greeks
+                                        { id: 'lambda', label: 'Lambda λ' },
+                                        { id: 'vanna', label: 'Vanna' },
+                                        { id: 'vomma', label: 'Vomma' },
+                                        { id: 'charm', label: 'Charm' },
+                                        { id: 'speed', label: 'Speed' },
+                                        { id: 'zomma', label: 'Zomma' },
+                                        { id: 'color', label: 'Color' },
                                     ] as const).map((c) => (
                                         <label key={c.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 hover:border-indigo-300 dark:border-slate-700 dark:text-slate-300 dark:hover:border-indigo-700">
                                             <input
@@ -2632,6 +2648,13 @@ function deskColumns(settings: DeskColumnSettings): { calls: DeskColumnDef[]; pu
     const theta: DeskColumnDef = { key: 'theta', label: 'Θ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.theta) };
     const vega: DeskColumnDef = { key: 'vega', label: 'Vega', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.vega) };
     const rho: DeskColumnDef = { key: 'rho', label: 'ρ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.rho) };
+    const lambda: DeskColumnDef = { key: 'lambda', label: 'λ', className: 'text-fuchsia-500', render: (q) => fmtGreek((q as any)?.lambda) };
+    const vanna: DeskColumnDef = { key: 'vanna', label: 'Vanna', className: 'text-amber-500', render: (q) => fmtGreek((q as any)?.vanna) };
+    const vomma: DeskColumnDef = { key: 'vomma', label: 'Vomma', className: 'text-amber-500', render: (q) => fmtGreek((q as any)?.vomma) };
+    const charm: DeskColumnDef = { key: 'charm', label: 'Charm', className: 'text-amber-500', render: (q) => fmtGreek((q as any)?.charm) };
+    const speed: DeskColumnDef = { key: 'speed', label: 'Speed', className: 'text-cyan-500', render: (q) => fmtGreek((q as any)?.speed) };
+    const zomma: DeskColumnDef = { key: 'zomma', label: 'Zomma', className: 'text-cyan-500', render: (q) => fmtGreek((q as any)?.zomma) };
+    const color: DeskColumnDef = { key: 'color', label: 'Color', className: 'text-cyan-500', render: (q) => fmtGreek((q as any)?.color) };
     const callPrice: DeskColumnDef[] = [
         { key: 'bid', label: 'Bid', render: (q) => fmt(q?.bid) },
         { key: 'mid', label: 'Mid', className: 'font-medium text-emerald-600 dark:text-emerald-400', render: (q) => fmt(q?.mid) },
@@ -2653,6 +2676,13 @@ function deskColumns(settings: DeskColumnSettings): { calls: DeskColumnDef[]; pu
         if (s.theta) cols.push(theta);
         if (s.vega) cols.push(vega);
         if (s.rho) cols.push(rho);
+        if (s.lambda) cols.push(lambda);
+        if (s.vanna) cols.push(vanna);
+        if (s.vomma) cols.push(vomma);
+        if (s.charm) cols.push(charm);
+        if (s.speed) cols.push(speed);
+        if (s.zomma) cols.push(zomma);
+        if (s.color) cols.push(color);
         return isCall ? [...cols, ...callPrice] : [...putPrice, ...cols.reverse()];
     };
 
