@@ -4,6 +4,22 @@ A single-page **options board**: enter a ticker, get expirations, select one or 
 
 ---
 
+*Agentic developer note: keep these READMEs synchronized with `src/main.tsx`, `src/index.css`, `scripts/*`, and `.github/workflows/*`. Prefer correcting/removing stale comments over preserving inaccurate ones. Rules for AI agents: [AGENT.md](./AGENT.md).*
+
+---
+
+## Agentic Setup
+
+This repository is optimized for AI-agentic development. It includes:
+- [AGENT.md](./AGENT.md): Main agent contract and rules.
+- [CLAUDE.md](./CLAUDE.md): Adapter for Claude Code.
+- [.cursorrules](./.cursorrules): Rules for Cursor AI.
+- [Setup.md](./Setup.md): Tutorial on setting up agentic workflows.
+
+We use **Bun** for JavaScript/TypeScript and **uv** for Python to ensure fast and reproducible environments.
+
+---
+
 ## Table of contents
 
 - [What you get](#what-you-get)
