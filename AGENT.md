@@ -26,10 +26,12 @@ Agent docs:
 
 - `AGENT.md` — этот файл (главный контракт).
 - `CLAUDE.md` — короткий adapter для Claude Code.
+- `ARENA.md` — конфигурация для Arena.ai Agent Mode.
 - `AGENTS.md` — compatibility stub.
 - `Setup.md` — how-to по agentic setup в других проектах.
 - `.cursorrules` — правила для Cursor AI.
 - `SCRATCHPAD.md` — временный файл для заметок агента (игнорируется в git).
+- `DEVELOPMENT.md` — подробный гид разработчика (Developer Guide).
 
 ## Текущая архитектура данных
 
@@ -98,8 +100,11 @@ node --check scripts/cloudflare-worker.js
 git diff --check
 ```
 
-- Data fetcher: точечный smoke `TICKERS=AAPL MAX_FETCHES=1 REQUEST_SLEEP=0 uv run python scripts/fetch_data.py` **без** mass commit `data/` без просьбы.
-- UI: build минимум; в PR — ручной сценарий (provider + Settings columns).
+- **Разработка и Тест (local):**
+  `bun run stop ; bun run kill ; bun run ps ; bun run start ; sleep 3 ; bun run logs`
+- **Data fetcher smoke test:**
+  `TICKERS=PEP,KO MAX_FETCHES=3 NASDAQ_TIMEOUT=5 uv run --with yfinance --with requests python scripts/fetch_data.py`
+- **UI:** build минимум; в PR — ручной сценарий (provider + Settings columns).
 
 ### 3. Environment
 

@@ -14,9 +14,11 @@ This repository is optimized for AI-agentic development. It includes:
 - [AGENT.md](./AGENT.md): Main agent contract and rules.
 - [CLAUDE.md](./CLAUDE.md): Adapter for Claude Code.
 - [.cursorrules](./.cursorrules): Rules for Cursor AI.
+- [ARENA.md](./ARENA.md): Specific rules for Arena.ai.
 - [Setup.md](./Setup.md): Tutorial on setting up agentic workflows.
+- [DEVELOPMENT.md](./DEVELOPMENT.md): Detailed developer guide.
 
-We use **Bun** for JavaScript/TypeScript and **uv** for Python to ensure fast and reproducible environments.
+We use **Bun** for JavaScript/TypeScript and **uv** for Python. **Important:** Always use `bun` instead of `npm`.
 
 ---
 
