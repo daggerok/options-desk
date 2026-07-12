@@ -54,8 +54,8 @@
 Для Options Desk типовые проверки:
 
 ```bash
-npm run build
-python -m py_compile scripts/fetch_data.py
+bun run build
+uv run python -m py_compile scripts/fetch_data.py
 node --check scripts/cloudflare-worker.js
 git diff --check
 ```
@@ -63,7 +63,7 @@ git diff --check
 Для data-fetcher задач:
 
 ```bash
-TICKERS=XSW MAX_FETCHES=1 REQUEST_SLEEP=0 python scripts/fetch_data.py
+TICKERS=XSW MAX_FETCHES=1 REQUEST_SLEEP=0 uv run python scripts/fetch_data.py
 ```
 
 Но массовый data refresh нельзя коммитить без явной просьбы.
@@ -145,7 +145,7 @@ Claude-specific notes:
 Даже в чистом проекте должны быть команды:
 
 ```bash
-npm run build
+bun run build
 npm test
 npm run lint
 ```

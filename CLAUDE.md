@@ -38,13 +38,13 @@
 ## Проверки
 
 ```bash
-npm run build
-python -m py_compile scripts/fetch_data.py
+bun run build
+uv run python -m py_compile scripts/fetch_data.py
 node --check scripts/cloudflare-worker.js
 git diff --check
 ```
 
-Fetcher smoke (без mass commit): `TICKERS=AAPL MAX_FETCHES=1 REQUEST_SLEEP=0 python scripts/fetch_data.py`.
+Fetcher smoke (без mass commit): `TICKERS=AAPL MAX_FETCHES=1 REQUEST_SLEEP=0 uv run python scripts/fetch_data.py`.
 
 ## Файлы
 
