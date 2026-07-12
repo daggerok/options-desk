@@ -624,10 +624,10 @@ def load_universe():
       4. tiny built-in fallback only if live sources fail.
     """
     # Explicit override wins (kept for convenience / testing).
-    override = os.environ.get("TICKERS")
+    override = os.environ.get("TICKERS") or os.environ.get("TICKER")
     if override:
         syms = _dedupe([_canonical(t) for t in override.replace(",", " ").split() if t.strip()])
-        _log(f"universe/override: using {len(syms)} symbols from TICKERS env: {', '.join(syms[:20])}")
+        _log(f"universe/override: using {len(syms)} symbols from TICKERS/TICKER env: {', '.join(syms[:20])}")
         return syms
 
     if requests is None:
@@ -701,7 +701,9 @@ def _rows_from_frame(frame, expiration, side):
             "volume": _num(r.get("volume")),
             "openInterest": _num(r.get("openInterest")),
             "iv": _num(r.get("impliedVolatility")),  # decimal (0.25 = 25%)
-            "delta": None, "gamma": None, "theta": None, "vega": None, "rho": None, "rho": None, "rho": None,
+            "delta": None, "gamma": None, "theta": None, "vega": None, "rho": None,
+            "lambda": None, "vanna": None, "vomma": None, "charm": None,
+            "speed": None, "zomma": None, "color": None,
             "greeksSource": None,
             "greeksMissingReason": "not_enriched",
         })
@@ -768,24 +770,51 @@ def _black_scholes_greeks(q, spot, risk_free=GREEKS_RISK_FREE_RATE, dividend_yie
         pdf = _norm_pdf(d1)
         gamma = disc_q * pdf / (s * sigma * sqrt_t)
         vega = s * disc_q * pdf * sqrt_t / 100.0
+        
         if q.get("side") == "put":
             delta = disc_q * (_norm_cdf(d1) - 1.0)
             theta_year = (-(s * disc_q * pdf * sigma) / (2.0 * sqrt_t)
                           + risk_free * k * disc_r * _norm_cdf(-d2)
                           - dividend_yield * s * disc_q * _norm_cdf(-d1))
             rho = -k * t * disc_r * _norm_cdf(-d2) / 100.0
+            theo_price = k * disc_r * _norm_cdf(-d2) - s * disc_q * _norm_cdf(-d1)
+            charm_raw = -dividend_yield * disc_q * _norm_cdf(-d1) - disc_q * pdf * (2 * (risk_free - dividend_yield) * t - d2 * sigma * sqrt_t) / (2 * t * sigma * sqrt_t)
         else:
             delta = disc_q * _norm_cdf(d1)
             theta_year = (-(s * disc_q * pdf * sigma) / (2.0 * sqrt_t)
                           - risk_free * k * disc_r * _norm_cdf(d2)
                           + dividend_yield * s * disc_q * _norm_cdf(d1))
             rho = k * t * disc_r * _norm_cdf(d2) / 100.0
+            theo_price = s * disc_q * _norm_cdf(d1) - k * disc_r * _norm_cdf(d2)
+            charm_raw = dividend_yield * disc_q * _norm_cdf(d1) - disc_q * pdf * (2 * (risk_free - dividend_yield) * t - d2 * sigma * sqrt_t) / (2 * t * sigma * sqrt_t)
+        
+        opt_price = _num(q.get("last"))
+        if opt_price is None or opt_price <= 0:
+            opt_price = theo_price
+        
+        lambda_ = (delta * s / opt_price) if opt_price > 0 else 0
+        vanna = -disc_q * pdf * d2 / sigma / 100.0
+        vega_raw = s * disc_q * pdf * sqrt_t
+        vomma = vega_raw * d1 * d2 / sigma / 10000.0
+        charm = charm_raw / 365.0
+        speed = -gamma * (1.0 + d1 / (sigma * sqrt_t)) / s
+        zomma = gamma * (d1 * d2 - 1.0) / sigma / 100.0
+        color_raw = -gamma * (2 * dividend_yield * t + 1.0 + (2 * (risk_free - dividend_yield) * t - d2 * sigma * sqrt_t) * d1 / (sigma * sqrt_t)) / (2 * t)
+        color = color_raw / 365.0
+
         return {
             "delta": _num(delta),
             "gamma": _num(gamma),
             "theta": _num(theta_year / 365.0),
             "vega": _num(vega),
             "rho": _num(rho),
+            "lambda": _num(lambda_),
+            "vanna": _num(vanna),
+            "vomma": _num(vomma),
+            "charm": _num(charm),
+            "speed": _num(speed),
+            "zomma": _num(zomma),
+            "color": _num(color),
         }, None
     except Exception:
         return None, "model_error"
@@ -864,6 +893,11 @@ def _apply_greeks_enrichment(symbol, matched_symbol, spot, quotes):
                 q["greeksSource"] = "cboe"
                 q["greeksMissingReason"] = None
                 stats["cboeMatched"] += 1
+                if BLACK_SCHOLES_GREEKS:
+                    calc, reason = _black_scholes_greeks(q, spot)
+                    if calc:
+                        for k in ("lambda", "vanna", "vomma", "charm", "speed", "zomma", "color"):
+                            q[k] = calc.get(k)
                 continue
 
         if BLACK_SCHOLES_GREEKS:
