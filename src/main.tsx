@@ -24,6 +24,11 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.30 - Static-cache higher-order greeks parse fix:
+ *          - Static provider now maps lambda + 2nd/3rd-order greeks
+ *            (vanna/vomma/charm/speed/zomma/color) exactly once (no duplicate
+ *            object keys). OptionQuote types document these optional fields.
+ *          - Desk column renderers read typed fields instead of `as any`.
  * v0.9.29 - Desk columns + compact theme picker:
  *          - Options desk columns are now user-configurable in Settings. OI,
  *            Volume, IV and Greeks can be toggled; Bid/Mid/Ask and Strike stay
@@ -599,8 +604,22 @@ interface OptionQuote {
     theta: number | null;
     vega: number | null;
     /** Rho: sensitivity to interest rates (per 1pp rate change). */
-    rho: number | null;
-    /** Where delta/gamma/theta/vega/rho came from, if known. */
+    rho?: number | null;
+    /** Lambda (Ω): leverage = delta * spot / option price. */
+    lambda?: number | null;
+    /** 2nd-order: dDelta/dVol (or dVega/dSpot). */
+    vanna?: number | null;
+    /** 2nd-order: dVega/dVol (volga). */
+    vomma?: number | null;
+    /** 2nd-order: dDelta/dTime (delta decay). */
+    charm?: number | null;
+    /** 3rd-order: dGamma/dSpot. */
+    speed?: number | null;
+    /** 3rd-order: dGamma/dVol. */
+    zomma?: number | null;
+    /** 3rd-order: dGamma/dTime. */
+    color?: number | null;
+    /** Where greeks came from, if known (cboe / black-scholes / …). */
     greeksSource?: GreeksSource;
     /** Why greeks are still missing after enrichment, if known. */
     greeksMissingReason?: string | null;
@@ -1187,20 +1206,13 @@ const staticProvider: DataProvider = {
             theta: num(q.theta),
             vega: num(q.vega),
             rho: num(q.rho),
+            lambda: num(q.lambda),
             vanna: num(q.vanna),
             vomma: num(q.vomma),
             charm: num(q.charm),
             speed: num(q.speed),
             zomma: num(q.zomma),
             color: num(q.color),
-            rho: num(q.rho),
-            vanna: num(q.vanna),
-            vomma: num(q.vomma),
-            charm: num(q.charm),
-            speed: num(q.speed),
-            zomma: num(q.zomma),
-            color: num(q.color),
-            rho: num(q.rho),
             greeksSource: q.greeksSource === 'cboe' || q.greeksSource === 'black-scholes' || q.greeksSource === 'marketdata' || q.greeksSource === 'dolthub'
                 ? q.greeksSource
                 : null,
@@ -1603,7 +1615,7 @@ const cboeProvider: DataProvider = {
                 last: num(o.last_trade_price),
                 volume: num(o.volume),
                 openInterest: num(o.open_interest),
-                iv: num(o.iv), delta: num(o.delta), gamma: num(o.gamma), theta: num(o.theta), vega: num(o.vega), rho: num(o.rho), rho: num(o.rho), rho: num(o.rho),
+                iv: num(o.iv), delta: num(o.delta), gamma: num(o.gamma), theta: num(o.theta), vega: num(o.vega), rho: num(o.rho),
             });
         }
         const expirations = Array.from(new Set(quotes.map((q) => q.expiration))).sort();
@@ -2648,13 +2660,13 @@ function deskColumns(settings: DeskColumnSettings): { calls: DeskColumnDef[]; pu
     const theta: DeskColumnDef = { key: 'theta', label: 'Θ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.theta) };
     const vega: DeskColumnDef = { key: 'vega', label: 'Vega', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.vega) };
     const rho: DeskColumnDef = { key: 'rho', label: 'ρ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.rho) };
-    const lambda: DeskColumnDef = { key: 'lambda', label: 'λ', className: 'text-fuchsia-500', render: (q) => fmtGreek((q as any)?.lambda) };
-    const vanna: DeskColumnDef = { key: 'vanna', label: 'Vanna', className: 'text-amber-500', render: (q) => fmtGreek((q as any)?.vanna) };
-    const vomma: DeskColumnDef = { key: 'vomma', label: 'Vomma', className: 'text-amber-500', render: (q) => fmtGreek((q as any)?.vomma) };
-    const charm: DeskColumnDef = { key: 'charm', label: 'Charm', className: 'text-amber-500', render: (q) => fmtGreek((q as any)?.charm) };
-    const speed: DeskColumnDef = { key: 'speed', label: 'Speed', className: 'text-cyan-500', render: (q) => fmtGreek((q as any)?.speed) };
-    const zomma: DeskColumnDef = { key: 'zomma', label: 'Zomma', className: 'text-cyan-500', render: (q) => fmtGreek((q as any)?.zomma) };
-    const color: DeskColumnDef = { key: 'color', label: 'Color', className: 'text-cyan-500', render: (q) => fmtGreek((q as any)?.color) };
+    const lambda: DeskColumnDef = { key: 'lambda', label: 'λ', className: 'text-fuchsia-500', render: (q) => fmtGreek(q?.lambda) };
+    const vanna: DeskColumnDef = { key: 'vanna', label: 'Vanna', className: 'text-amber-500', render: (q) => fmtGreek(q?.vanna) };
+    const vomma: DeskColumnDef = { key: 'vomma', label: 'Vomma', className: 'text-amber-500', render: (q) => fmtGreek(q?.vomma) };
+    const charm: DeskColumnDef = { key: 'charm', label: 'Charm', className: 'text-amber-500', render: (q) => fmtGreek(q?.charm) };
+    const speed: DeskColumnDef = { key: 'speed', label: 'Speed', className: 'text-cyan-500', render: (q) => fmtGreek(q?.speed) };
+    const zomma: DeskColumnDef = { key: 'zomma', label: 'Zomma', className: 'text-cyan-500', render: (q) => fmtGreek(q?.zomma) };
+    const color: DeskColumnDef = { key: 'color', label: 'Color', className: 'text-cyan-500', render: (q) => fmtGreek(q?.color) };
     const callPrice: DeskColumnDef[] = [
         { key: 'bid', label: 'Bid', render: (q) => fmt(q?.bid) },
         { key: 'mid', label: 'Mid', className: 'font-medium text-emerald-600 dark:text-emerald-400', render: (q) => fmt(q?.mid) },
