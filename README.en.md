@@ -23,7 +23,7 @@ A single-page **options board**: enter a ticker, get expirations, select one or 
 
 ## What you get
 
-- **Two-step, quota-friendly loading:** nothing fetches on page open. Type/search a ticker → **Get dates**; select expiration(s) → **Load**.
+- **Two-step, quota-friendly loading:** nothing fetches on page open. Type/search a ticker → **Expirations**; select expiration(s) → **Load**.
 - **Ticker suggestions:** searchable ticker/company combobox for every provider. Local static suggestions use `data/index.json` names and mark known valid tickers without options as **`(no options)`**.
 - **Multiple expirations:** select one, many, or all expirations. Chains render stacked earliest-to-latest with sticky/piled expiration headers.
 - **Desk UX:** ATM row highlight, sticky Calls/Strike/Puts headers, greeks columns enabled by default, user-selectable per-side/per-column desk settings, empty cells for missing data, themed scrollbars, collapse/expand controls, and automatic centering on the current strike after load/expand.
@@ -60,7 +60,7 @@ bun run build-github-pages
 
 1. Pick a provider in the top-bar **API** dropdown.
 2. Type a ticker or company name. Pick a suggestion if useful.
-3. Press **Get dates** to fetch expirations and spot metadata.
+3. Press **Expirations** to fetch expirations and spot metadata.
 4. Select one or more expirations, or **All**.
 5. Press **Load** to render the chain.
 
@@ -206,7 +206,7 @@ README.ru.md                  # Russian documentation
 
 ## Troubleshooting
 
-- **Nothing loads on open:** expected. Press **Get dates**, then **Load**.
+- **Nothing loads on open:** expected. Press **Expirations**, then **Load**.
 - **Needs proxy / CORS errors:** start `bun ./scripts/yahoo-proxy.ts` locally or set a Cloudflare Worker URL in Settings → Proxy base URL.
 - **`Unexpected token '<'`:** a proxy/server returned HTML instead of JSON. Check proxy URL/provider.
 - **CACHE says not cached:** the ticker is absent from `data/*.json`; use another provider or let the data workflow eventually cache it.

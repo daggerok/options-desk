@@ -24,8 +24,10 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.36 - Rename primary action button label Get dates → Expirations
+ *          (loading: Loading…). Internal getDates() name unchanged.
  * v0.9.35 - After confirming a ticker (suggestion click, or Enter in the
- *          input), focus jumps to the Get dates button so Space/Enter runs
+ *          input), focus jumps to the Expirations button so Space/Enter runs
  *          the fetch without a mouse trip (mirrors Load-button focus UX).
  * v0.9.34 - Ticker input selects all text on focus/click so typing a new
  *          symbol replaces the previous ticker without manual clear.
@@ -3329,7 +3331,7 @@ const App: React.FC = () => {
 
     // ---- Chain data state (DEFERRED loading; nothing fetches on mount) ------
     const [tickerInput, setTickerInput] = useState<string>(settings.lastTicker);
-    const [meta, setMeta] = useState<ChainMeta | null>(null);      // set by "Get dates"
+    const [meta, setMeta] = useState<ChainMeta | null>(null);      // set by "Expirations"
     // MULTIPLE selected expirations (set by checkboxes); loaded top→bottom.
     const [selectedExps, setSelectedExps] = useState<string[]>([]);
     // Loaded quotes per expiration: { "YYYY-MM-DD": OptionQuote[] }.
@@ -3348,7 +3350,7 @@ const App: React.FC = () => {
     // AbortControllers so the Cancel button can stop in-flight requests.
     const metaAbort = useRef<AbortController | null>(null);
     const expAbort = useRef<AbortController | null>(null);
-    // Focused after confirming a ticker so Space/Enter triggers Get dates.
+    // Focused after confirming a ticker so Space/Enter triggers Expirations.
     const getDatesBtnRef = useRef<HTMLButtonElement | null>(null);
     // Focused after picking an expiration so Enter immediately triggers Load.
     const loadBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -3409,7 +3411,7 @@ const App: React.FC = () => {
     }, [provider.id]);
 
     /**
-     * STEP 1 — "Get dates": load ONLY expirations (+ spot). No chain yet.
+     * STEP 1 — "Expirations": load ONLY expirations (+ spot). No chain yet.
      * `credsOverride` lets the onboarding pass just-entered key/secret without
      * waiting for the async settings state to commit (avoids a stale-closure race).
      */
@@ -3497,7 +3499,7 @@ const App: React.FC = () => {
         requestAnimationFrame(() => loadBtnRef.current?.focus());
     }, []);
 
-    /** Move focus to Get dates (after ticker confirm) so Space/Enter activates it. */
+    /** Move focus to Expirations (after ticker confirm) so Space/Enter activates it. */
     const focusGetDatesButton = useCallback(() => {
         // rAF: wait for React to commit closed dropdown / updated value.
         requestAnimationFrame(() => getDatesBtnRef.current?.focus());
@@ -3524,7 +3526,7 @@ const App: React.FC = () => {
             return;
         }
         if (e.key === 'Enter') {
-            // Confirm ticker → focus Get dates (Space/Enter there runs the fetch).
+            // Confirm ticker → focus Expirations (Space/Enter there runs the fetch).
             // Do not submit the form from the input; button receives the next activation.
             e.preventDefault();
             if (tickerSuggestionsOpen && activeTickerSuggestion >= 0 && tickerSuggestions[activeTickerSuggestion]) {
@@ -3612,7 +3614,7 @@ const App: React.FC = () => {
                 option desk uses all the horizontal space instead of a narrow
                 column. See index.css for the matching container note. */}
             <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
-                {/* ---- Controls: STEP 1 (ticker → Get dates), STEP 2 (exp → Load) ---- */}
+                {/* ---- Controls: STEP 1 (ticker → Expirations), STEP 2 (exp → Load) ---- */}
                 <div className="mb-4 flex flex-wrap items-center gap-2">
                     {/* Ticker input — searchable suggestions use provider-native search when possible, then data/index.json fallback. */}
                     <form
@@ -3693,11 +3695,11 @@ const App: React.FC = () => {
                             disabled={metaLoading}
                             className="rounded-md bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50 focus:ring-2 focus:ring-slate-400 focus:ring-offset-1 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:focus:ring-offset-slate-900"
                         >
-                            {metaLoading ? 'Getting…' : 'Get dates'}
+                            {metaLoading ? 'Loading…' : 'Expirations'}
                         </button>
                     </form>
 
-                    {/* Multi-expiration selector + Load — after "Get dates" succeeds.
+                    {/* Multi-expiration selector + Load — after "Expirations" succeeds.
                         Pick one or MANY dates (checkboxes); they render stacked
                         earliest→latest. "All"/"None" quick toggles included. */}
                     {meta && (
@@ -3831,7 +3833,7 @@ const App: React.FC = () => {
                         </div>
                     ) : (!meta && !metaLoading && !error) ? (
                         <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
-                            Enter a ticker and press <span className="mx-1 font-semibold text-slate-600 dark:text-slate-300">Get dates</span> to begin.
+                            Enter a ticker and press <span className="mx-1 font-semibold text-slate-600 dark:text-slate-300">Expirations</span> to begin.
                         </div>
                     ) : null
                 )}
