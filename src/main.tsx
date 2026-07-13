@@ -24,6 +24,12 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.38 - i18n(ru): translate the option-chain section headers that were
+ *          left in English under Russian locale — chain.calls/puts/strike now
+ *          render Коллы / Путы / Страйк (previously hard-coded "Calls/Puts/Strike"
+ *          in the RU dictionary). Settings deskColumns labels + the "(no options)"
+ *          ticker badge translated too. Greek-letter / IV / API labels stay in
+ *          Latin by design (standard in Russian options terminology).
  * v0.9.37 - i18n consolidation & fixes (PR #21):
  *          - Inlined src/i18n.tsx into this file (single-file continuity);
  *            src/ now holds only main.tsx, index.html, index.css, favicon.ico.
@@ -769,8 +775,8 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.workerUrlPlaceholder': 'https://name.you.workers.dev',
 
         'settings.deskColumns': 'Колонки доски',
-        'settings.deskColumns.calls': 'Calls',
-        'settings.deskColumns.puts': 'Puts',
+        'settings.deskColumns.calls': 'Коллы',
+        'settings.deskColumns.puts': 'Путы',
         'settings.deskColumns.openInterest': 'OI',
         'settings.deskColumns.volume': 'Объём',
         'settings.deskColumns.iv': 'IV',
@@ -845,9 +851,9 @@ const translations: Record<Language, Record<string, string>> = {
         'chain.expirationsPlural': 'экспираций',
         'chain.collapseAll': 'Свернуть все',
         'chain.expandAll': 'Развернуть все',
-        'chain.calls': 'Calls',
-        'chain.puts': 'Puts',
-        'chain.strike': 'Strike',
+        'chain.calls': 'Коллы',
+        'chain.puts': 'Путы',
+        'chain.strike': 'Страйк',
         'chain.strikeSymbol': '$',
         'chain.strikes': '{{count}} страйков',
 
@@ -888,7 +894,7 @@ const translations: Record<Language, Record<string, string>> = {
 
         'retry': 'Повторить',
         'expired': 'истёк',
-        'noOptions': '(no options)',
+        'noOptions': '(нет опционов)',
         'tickerFromIndex': 'Тикер из локального индекса',
         'validTickerFromIndex': 'Валидный тикер из локального индекса',
     },
