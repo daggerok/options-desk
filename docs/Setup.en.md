@@ -1,5 +1,7 @@
 # Setup.en.md — How to set up agentic AI development
 
+> **Languages:** English (current) · [Русский](Setup.ru.md)
+
 This document explains how to build a good AI-agent setup for a new project or an existing repository. It is written using the current Options Desk project as an example, but the approach can be transferred to other projects.
 
 ## 1. How Arena.ai Agent Mode works with `CLAUDE.md`

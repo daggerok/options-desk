@@ -8,8 +8,13 @@ A single-page **options board** with English / Russian interface: enter a ticker
 
 ## Documentation / Документация
 
-- [English documentation](docs/README.en.md)
-- [Русская документация](docs/README.ru.md)
+| Document / Документ | English | Русский |
+|---|---|---|
+| Overview & usage | [README](docs/README.en.md) | [README](docs/README.ru.md) |
+| Developer guide | [DEVELOPMENT](docs/DEVELOPMENT.en.md) | [DEVELOPMENT](docs/DEVELOPMENT.ru.md) |
+| Agentic-setup how-to | [Setup](docs/Setup.en.md) | [Setup](docs/Setup.ru.md) |
+| Arena.ai adapter | [ARENA](docs/ARENA.en.md) | [ARENA](docs/ARENA.ru.md) |
+| `AGENTS.md` compat stub | [AGENTS](docs/AGENTS.en.md) | [AGENTS](docs/AGENTS.ru.md) |
 
 ---
 
@@ -21,7 +26,7 @@ A single-page **options board** with English / Russian interface: enter a ticker
 
 This repository is optimized for AI-agentic development. Core agent files stay in the repository root; extended guides live in [`./docs`](./docs).
 
-- [AGENT.md](./AGENT.md): Main agent contract and rules.
+- [AGENT.md](./AGENT.md): Main agent contract and rules (главный контракт, RU).
 - [CLAUDE.md](./CLAUDE.md): Adapter for Claude Code.
 - [docs/.cursorrules](./docs/.cursorrules): Rules for Cursor AI.
-- [docs/Setup.md](./docs/Setup.md): Tutorial on setting up agentic workflows.
+- Tutorial on setting up agentic workflows: [English](./docs/Setup.en.md) or [Russian](./docs/Setup.ru.md).

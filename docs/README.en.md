@@ -1,10 +1,12 @@
 # Options Desk — English Documentation
 
+> **Languages:** English (current) · [Русский](README.ru.md) · root [`README.md`](../README.md)
+
 A single-page **options board**: enter a ticker, get expirations, select one or more dates, and view the classic **Calls | Strike | Puts** chain with bid / mid / ask, IV, volume, open interest and greeks where the provider supplies them. The app is a static React + TypeScript + Tailwind CSS v4 site built by Parcel and deployable to GitHub Pages.
 
 ---
 
-*Agentic developer note: This is an Agentic AI-developed project. Agents must always start by reading [AGENT.md](./AGENT.md) as the main entry point and contract. Keep these READMEs synchronized with `src/main.tsx`, `src/index.css`, `scripts/*`, and `.github/workflows/*`. Prefer correcting/removing stale comments over preserving inaccurate ones.*
+*Agentic developer note: This is an Agentic AI-developed project. Agents must always start by reading [AGENT.md](../AGENT.md) as the main entry point and contract. Keep these READMEs synchronized with `src/main.tsx`, `src/index.css`, `scripts/*`, and `.github/workflows/*`. Prefer correcting/removing stale comments over preserving inaccurate ones.*
 
 ---
 
@@ -15,9 +17,9 @@ This repository is optimized for AI-agentic development. Core agent files stay i
 - [AGENT.md](../AGENT.md): Main agent contract and rules.
 - [CLAUDE.md](../CLAUDE.md): Adapter for Claude Code.
 - [.cursorrules](./.cursorrules): Rules for Cursor AI.
-- [ARENA.en.md](./ARENA.en.md) / [ARENA.ru.md](./ARENA.ru.md): Specific rules for Arena.ai.
-- [Setup.en.md](./Setup.en.md) / [Setup.ru.md](./Setup.ru.md): Tutorial on setting up agentic workflows.
-- [DEVELOPMENT.en.md](./DEVELOPMENT.en.md) / [DEVELOPMENT.ru.md](./DEVELOPMENT.ru.md): Detailed developer guide.
+- Arena.ai adapter: [English](./ARENA.en.md) or [Russian](./ARENA.ru.md).
+- Agentic-setup tutorial: [English](./Setup.en.md) or [Russian](./Setup.ru.md).
+- Developer guide: [English](./DEVELOPMENT.en.md) or [Russian](./DEVELOPMENT.ru.md).
 
 We use **Bun** for JavaScript/TypeScript and **uv** for Python. **Important:** Always use `bun` instead of `npm`.
 

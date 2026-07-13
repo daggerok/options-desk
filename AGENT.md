@@ -1,5 +1,7 @@
 # AGENT.md — правила агентной разработки для Options Desk
 
+> **Двуязычно / Bilingual:** расширенные руководства в [`./docs`](./docs) (`*.en.md` / `*.ru.md`). Этот файл — канонический контракт (RU); EN-компаньоны: [`docs/README.en.md`](./docs/README.en.md), [`docs/DEVELOPMENT.en.md`](./docs/DEVELOPMENT.en.md), [`docs/ARENA.en.md`](./docs/ARENA.en.md).
+
 Этот файл — основной контракт для AI-агентов, которые работают с репозиторием `options-desk`.
 
 ## Язык общения

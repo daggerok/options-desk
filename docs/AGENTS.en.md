@@ -1,5 +1,7 @@
 # AGENTS.en.md
 
+> **Languages:** English (current) · [Русский](AGENTS.ru.md) · **Main contract:** root [`AGENT.md`](../AGENT.md)
+
 Compatibility stub: agents that look for `AGENTS.md` should read this file and then **[`AGENT.md`](../AGENT.md)**. Claude-specific: [`CLAUDE.md`](../CLAUDE.md). How-to setup: [`Setup.en.md`](./Setup.en.md) / [`Setup.ru.md`](./Setup.ru.md).
 
 Short checklist:

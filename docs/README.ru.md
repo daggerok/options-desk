@@ -1,10 +1,12 @@
 # Options Desk — Русская документация
 
+> **Языки:** [English](README.en.md) · Русский (текущий) · корневой [`README.md`](../README.md)
+
 Одностраничная **опционная доска**: вводишь тикер, получаешь даты экспираций, выбираешь одну или несколько дат и смотришь цепочку **Calls | Strike | Puts** с bid / mid / ask, IV, объёмом, OI и греками там, где источник их отдаёт. Приложение статическое: React + TypeScript + Tailwind CSS v4, сборка Parcel, деплой на GitHub Pages.
 
 ---
 
-*Примечание для агентов: Это проект, разрабатываемый с помощью Agentic AI. Агенты должны всегда начинать с чтения [AGENT.md](./AGENT.md) как основной точки входа и контракта. Держите эти README в синхронизации с `src/main.tsx`, `src/index.css`, `scripts/*` и `.github/workflows/*`. Исправляйте устаревшие комментарии.*
+*Примечание для агентов: Это проект, разрабатываемый с помощью Agentic AI. Агенты должны всегда начинать с чтения [AGENT.md](../AGENT.md) как основной точки входа и контракта. Держите эти README в синхронизации с `src/main.tsx`, `src/index.css`, `scripts/*` и `.github/workflows/*`. Исправляйте устаревшие комментарии.*
 
 ---
 
@@ -15,9 +17,9 @@
 - [AGENT.md](../AGENT.md): Основной контракт и правила.
 - [CLAUDE.md](../CLAUDE.md): Адаптер для Claude Code.
 - [.cursorrules](./.cursorrules): Правила для Cursor AI.
-- [ARENA.ru.md](./ARENA.ru.md) / [ARENA.en.md](./ARENA.en.md): Конфигурация для Arena.ai.
-- [Setup.ru.md](./Setup.ru.md) / [Setup.en.md](./Setup.en.md): Инструкция по настройке агентной среды.
-- [DEVELOPMENT.ru.md](./DEVELOPMENT.ru.md) / [DEVELOPMENT.en.md](./DEVELOPMENT.en.md): Подробный гид разработчика.
+- Адаптер Arena.ai: [русский](./ARENA.ru.md) или [английский](./ARENA.en.md).
+- Инструкция по настройке агентной среды: [русский](./Setup.ru.md) или [английский](./Setup.en.md).
+- Гид разработчика: [русский](./DEVELOPMENT.ru.md) или [английский](./DEVELOPMENT.en.md).
 
 Для работы используются **Bun** (JS/TS) и **uv** (Python). **Важно:** всегда используйте `bun` вместо `npm`.
 

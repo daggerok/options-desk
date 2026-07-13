@@ -1,26 +1,9 @@
 # ARENA.en.md — adapter for Arena.ai Agent Mode
 
-> **Main contract:** [`AGENT.md`](../AGENT.md).
+> **Languages:** English (current) · [Русский](ARENA.ru.md) · **Main contract:** [`AGENT.md`](../AGENT.md).
 
-This file contains specific instructions for Arena.ai Agent Mode.
+This file is the thin adapter for Arena.ai Agent Mode. It adds no rules of its own; it routes Arena.ai to the project's shared contracts rather than duplicating them.
 
-## Required behavior
-- Respond to the user in the language they use or follow the project language rule.
-- Use the **Spec → Verifier → Environment** methodology.
-- For JS/TS work use only **Bun** (not npm).
-- For Python work use **uv**.
-
-## Development commands
-When testing local changes use:
-```bash
-bun run stop ; bun run kill ; bun run ps ; bun run start ; sleep 3 ; bun run logs
-```
-
-## Data testing
-For updates of specific tickers:
-```bash
-TICKERS=PEP,KO MAX_FETCHES=3 NASDAQ_TIMEOUT=5 uv run --with yfinance --with requests python scripts/fetch_data.py
-```
-
-## Developer Guide
-Details in [DEVELOPMENT.en.md](./DEVELOPMENT.en.md) / [DEVELOPMENT.ru.md](./DEVELOPMENT.ru.md).
+- **Main contract, behavior, and methodology** — language rule, **Spec → Verifier → Environment**, Autopilot / Ask first / Never, provider order, and the greeks single-source-of-truth: see [`AGENT.md`](../AGENT.md).
+- **Development commands, data-testing, and pre-PR checks** — see the Developer Guide in [English](DEVELOPMENT.en.md) or [Russian](DEVELOPMENT.ru.md).
+- **Agentic-setup tutorial** (how to replicate this setup in other projects): see [English](Setup.en.md) or [Russian](Setup.ru.md).
