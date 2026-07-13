@@ -14,7 +14,7 @@ A single-page **options board**: enter a ticker, get expirations, select one or 
 
 This repository is optimized for AI-agentic development. Core agent files stay in the repository root; extended guides live in [`../docs`](../docs).
 
-- [AGENT.md](../AGENT.md): Main agent contract and rules.
+- [AGENT.md](../AGENT.md): Main agent contract and rules (EN: [AGENT.en.md](../AGENT.en.md)).
 - [CLAUDE.md](../CLAUDE.md): Adapter for Claude Code.
 - [.cursorrules](./.cursorrules): Rules for Cursor AI.
 - Arena.ai adapter: [English](./ARENA.en.md) or [Russian](./ARENA.ru.md).

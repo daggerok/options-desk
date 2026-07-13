@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> **Языки:** [English](AGENTS.en.md) · Русский (текущий) · **Главный контракт:** корневой [`AGENT.md`](../AGENT.md)
+> **Языки:** [English](AGENTS.en.md) · Русский (текущий) · **Главный контракт:** корневой [`AGENT.md`](../AGENT.md) (EN: [`AGENT.en.md`](../AGENT.en.md))
 
 Compatibility stub: агенты, которые ищут `AGENTS.md`, должны читать этот файл и затем **[`AGENT.md`](../AGENT.md)**. Claude-specific: [`CLAUDE.md`](../CLAUDE.md). How-to setup: [`Setup.ru.md`](./Setup.ru.md) / [`Setup.en.md`](./Setup.en.md).
 

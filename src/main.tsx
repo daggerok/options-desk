@@ -24,6 +24,20 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.39 - Option desk spacing, flag & i18n updates:
+ *          - Spacing: widened Strike ($) column (`minmax(4.25rem, 1.05fr)`) and
+ *            added scalable `--od-cgap: 0.25rem` (`column-gap: var(--od-cgap)`)
+ *            between grid tracks so Strike ($) and Put Bid (plus all desk columns)
+ *            stay clearly separated and scale smoothly without clashing.
+ *            Added `headerLabel` support (`OI`, `IV`, `Vol`, `Δ`, `Γ`...) and
+ *            tooltip (`title`) to column headers (`.od-labels`).
+ *          - Language flag: use US flag (`🇺🇸`) instead of GB (`🇬🇧`) for `en`.
+ *          - i18n(en/ru): updated `settings.deskColumns.openInterest` (`Open interest (OI)`
+ *            / `Открытый интерес (OI)`) and `iv` (`Implied volatility (IV)` /
+ *            `Подразумеваемая волатильность (IV)`). Translated Greek names into
+ *            standard Russian Cyrillic spelling (`Дельта Δ`, `Гамма Γ`, `Тета Θ`,
+ *            `Вега`, `Ро ρ`, `Лямбда λ`, `Ванна`, `Вомма`, `Чарм`, `Спид`, `Зомма`,
+ *            `Колор`) for Settings with short `headerLabel`s for chain table.
  * v0.9.38 - i18n(ru): translate the option-chain section headers that were
  *          left in English under Russian locale — chain.calls/puts/strike now
  *          render Коллы / Путы / Страйк (previously hard-coded "Calls/Puts/Strike"
@@ -577,7 +591,7 @@ const DEFAULT_LANGUAGE: Language = 'en';
 const LANGUAGES: Language[] = ['en', 'ru'];
 
 /** Distinct flag emoji per language for the language switcher (ru/en icons). */
-const LANG_FLAGS: Record<Language, string> = { en: '🇬🇧', ru: '🇷🇺' };
+const LANG_FLAGS: Record<Language, string> = { en: '🇺🇸', ru: '🇷🇺' };
 
 const translations: Record<Language, Record<string, string>> = {
     en: {
@@ -618,9 +632,9 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.deskColumns': 'Desk columns',
         'settings.deskColumns.calls': 'Calls',
         'settings.deskColumns.puts': 'Puts',
-        'settings.deskColumns.openInterest': 'Open interest',
+        'settings.deskColumns.openInterest': 'Open interest (OI)',
         'settings.deskColumns.volume': 'Volume',
-        'settings.deskColumns.iv': 'IV',
+        'settings.deskColumns.iv': 'Implied volatility (IV)',
         'settings.deskColumns.delta': 'Delta Δ',
         'settings.deskColumns.gamma': 'Gamma Γ',
         'settings.deskColumns.theta': 'Theta Θ',
@@ -634,6 +648,22 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.deskColumns.zomma': 'Zomma',
         'settings.deskColumns.color': 'Color',
         'settings.deskColumns.note': 'Bid / Mid / Ask and Strike stay visible. Rho is disabled by default.',
+
+        'deskColumns.header.openInterest': 'OI',
+        'deskColumns.header.volume': 'Vol',
+        'deskColumns.header.iv': 'IV',
+        'deskColumns.header.delta': 'Δ',
+        'deskColumns.header.gamma': 'Γ',
+        'deskColumns.header.theta': 'Θ',
+        'deskColumns.header.vega': 'Vega',
+        'deskColumns.header.rho': 'ρ',
+        'deskColumns.header.lambda': 'λ',
+        'deskColumns.header.vanna': 'Vanna',
+        'deskColumns.header.vomma': 'Vomma',
+        'deskColumns.header.charm': 'Charm',
+        'deskColumns.header.speed': 'Speed',
+        'deskColumns.header.zomma': 'Zomma',
+        'deskColumns.header.color': 'Color',
 
         'settings.cache': 'Cache',
         'settings.cache.records': 'Data records',
@@ -777,22 +807,38 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.deskColumns': 'Колонки доски',
         'settings.deskColumns.calls': 'Коллы',
         'settings.deskColumns.puts': 'Путы',
-        'settings.deskColumns.openInterest': 'OI',
+        'settings.deskColumns.openInterest': 'Открытый интерес (OI)',
         'settings.deskColumns.volume': 'Объём',
-        'settings.deskColumns.iv': 'IV',
-        'settings.deskColumns.delta': 'Delta Δ',
-        'settings.deskColumns.gamma': 'Gamma Γ',
-        'settings.deskColumns.theta': 'Theta Θ',
-        'settings.deskColumns.vega': 'Vega',
-        'settings.deskColumns.rho': 'Rho ρ',
-        'settings.deskColumns.lambda': 'Lambda λ',
-        'settings.deskColumns.vanna': 'Vanna',
-        'settings.deskColumns.vomma': 'Vomma',
-        'settings.deskColumns.charm': 'Charm',
-        'settings.deskColumns.speed': 'Speed',
-        'settings.deskColumns.zomma': 'Zomma',
-        'settings.deskColumns.color': 'Color',
+        'settings.deskColumns.iv': 'Подразумеваемая волатильность (IV)',
+        'settings.deskColumns.delta': 'Дельта Δ',
+        'settings.deskColumns.gamma': 'Гамма Γ',
+        'settings.deskColumns.theta': 'Тета Θ',
+        'settings.deskColumns.vega': 'Вега',
+        'settings.deskColumns.rho': 'Ро ρ',
+        'settings.deskColumns.lambda': 'Лямбда λ',
+        'settings.deskColumns.vanna': 'Ванна',
+        'settings.deskColumns.vomma': 'Вомма',
+        'settings.deskColumns.charm': 'Чарм',
+        'settings.deskColumns.speed': 'Спид',
+        'settings.deskColumns.zomma': 'Зомма',
+        'settings.deskColumns.color': 'Колор',
         'settings.deskColumns.note': 'Bid / Mid / Ask и Strike всегда видны. Rho отключён по умолчанию.',
+
+        'deskColumns.header.openInterest': 'OI',
+        'deskColumns.header.volume': 'Объём',
+        'deskColumns.header.iv': 'IV',
+        'deskColumns.header.delta': 'Δ',
+        'deskColumns.header.gamma': 'Γ',
+        'deskColumns.header.theta': 'Θ',
+        'deskColumns.header.vega': 'Вега',
+        'deskColumns.header.rho': 'ρ',
+        'deskColumns.header.lambda': 'λ',
+        'deskColumns.header.vanna': 'Ванна',
+        'deskColumns.header.vomma': 'Вомма',
+        'deskColumns.header.charm': 'Чарм',
+        'deskColumns.header.speed': 'Спид',
+        'deskColumns.header.zomma': 'Зомма',
+        'deskColumns.header.color': 'Колор',
 
         'settings.cache': 'Кэш',
         'settings.cache.records': 'Записей данных',
@@ -3301,27 +3347,28 @@ type DeskColumnKey = 'openInterest' | 'volume' | 'iv' | 'delta' | 'gamma' | 'the
 interface DeskColumnDef {
     key: DeskColumnKey;
     label: string;
+    headerLabel?: string;
     className?: string;
     render: (q?: OptionQuote) => string;
 }
 
 /** Build the currently visible call/put columns from Settings → Desk columns. */
 function deskColumns(settings: DeskColumnSettings, t: (key: string) => string): { calls: DeskColumnDef[]; puts: DeskColumnDef[] } {
-    const oi: DeskColumnDef = { key: 'openInterest', label: t('settings.deskColumns.openInterest'), render: (q) => fmtInt(q?.openInterest) };
-    const vol: DeskColumnDef = { key: 'volume', label: t('settings.deskColumns.volume'), render: (q) => fmtInt(q?.volume) };
-    const iv: DeskColumnDef = { key: 'iv', label: t('settings.deskColumns.iv'), className: 'text-slate-500', render: (q) => fmtPct(q?.iv) };
-    const delta: DeskColumnDef = { key: 'delta', label: t('settings.deskColumns.delta'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.delta) };
-    const gamma: DeskColumnDef = { key: 'gamma', label: t('settings.deskColumns.gamma'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.gamma) };
-    const theta: DeskColumnDef = { key: 'theta', label: t('settings.deskColumns.theta'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.theta) };
-    const vega: DeskColumnDef = { key: 'vega', label: t('settings.deskColumns.vega'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.vega) };
-    const rho: DeskColumnDef = { key: 'rho', label: t('settings.deskColumns.rho'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.rho) };
-    const lambda: DeskColumnDef = { key: 'lambda', label: t('settings.deskColumns.lambda'), className: 'text-fuchsia-500', render: (q) => fmtGreek(q?.lambda) };
-    const vanna: DeskColumnDef = { key: 'vanna', label: t('settings.deskColumns.vanna'), className: 'text-amber-500', render: (q) => fmtGreek(q?.vanna) };
-    const vomma: DeskColumnDef = { key: 'vomma', label: t('settings.deskColumns.vomma'), className: 'text-amber-500', render: (q) => fmtGreek(q?.vomma) };
-    const charm: DeskColumnDef = { key: 'charm', label: t('settings.deskColumns.charm'), className: 'text-amber-500', render: (q) => fmtGreek(q?.charm) };
-    const speed: DeskColumnDef = { key: 'speed', label: t('settings.deskColumns.speed'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.speed) };
-    const zomma: DeskColumnDef = { key: 'zomma', label: t('settings.deskColumns.zomma'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.zomma) };
-    const color: DeskColumnDef = { key: 'color', label: t('settings.deskColumns.color'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.color) };
+    const oi: DeskColumnDef = { key: 'openInterest', label: t('settings.deskColumns.openInterest'), headerLabel: t('deskColumns.header.openInterest'), render: (q) => fmtInt(q?.openInterest) };
+    const vol: DeskColumnDef = { key: 'volume', label: t('settings.deskColumns.volume'), headerLabel: t('deskColumns.header.volume'), render: (q) => fmtInt(q?.volume) };
+    const iv: DeskColumnDef = { key: 'iv', label: t('settings.deskColumns.iv'), headerLabel: t('deskColumns.header.iv'), className: 'text-slate-500', render: (q) => fmtPct(q?.iv) };
+    const delta: DeskColumnDef = { key: 'delta', label: t('settings.deskColumns.delta'), headerLabel: t('deskColumns.header.delta'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.delta) };
+    const gamma: DeskColumnDef = { key: 'gamma', label: t('settings.deskColumns.gamma'), headerLabel: t('deskColumns.header.gamma'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.gamma) };
+    const theta: DeskColumnDef = { key: 'theta', label: t('settings.deskColumns.theta'), headerLabel: t('deskColumns.header.theta'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.theta) };
+    const vega: DeskColumnDef = { key: 'vega', label: t('settings.deskColumns.vega'), headerLabel: t('deskColumns.header.vega'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.vega) };
+    const rho: DeskColumnDef = { key: 'rho', label: t('settings.deskColumns.rho'), headerLabel: t('deskColumns.header.rho'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.rho) };
+    const lambda: DeskColumnDef = { key: 'lambda', label: t('settings.deskColumns.lambda'), headerLabel: t('deskColumns.header.lambda'), className: 'text-fuchsia-500', render: (q) => fmtGreek(q?.lambda) };
+    const vanna: DeskColumnDef = { key: 'vanna', label: t('settings.deskColumns.vanna'), headerLabel: t('deskColumns.header.vanna'), className: 'text-amber-500', render: (q) => fmtGreek(q?.vanna) };
+    const vomma: DeskColumnDef = { key: 'vomma', label: t('settings.deskColumns.vomma'), headerLabel: t('deskColumns.header.vomma'), className: 'text-amber-500', render: (q) => fmtGreek(q?.vomma) };
+    const charm: DeskColumnDef = { key: 'charm', label: t('settings.deskColumns.charm'), headerLabel: t('deskColumns.header.charm'), className: 'text-amber-500', render: (q) => fmtGreek(q?.charm) };
+    const speed: DeskColumnDef = { key: 'speed', label: t('settings.deskColumns.speed'), headerLabel: t('deskColumns.header.speed'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.speed) };
+    const zomma: DeskColumnDef = { key: 'zomma', label: t('settings.deskColumns.zomma'), headerLabel: t('deskColumns.header.zomma'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.zomma) };
+    const color: DeskColumnDef = { key: 'color', label: t('settings.deskColumns.color'), headerLabel: t('deskColumns.header.color'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.color) };
     const callPrice: DeskColumnDef[] = [
         { key: 'bid', label: 'Bid', render: (q) => fmt(q?.bid) },
         { key: 'mid', label: 'Mid', className: 'font-medium text-emerald-600 dark:text-emerald-400', render: (q) => fmt(q?.mid) },
@@ -3357,10 +3404,10 @@ function deskColumns(settings: DeskColumnSettings, t: (key: string) => string): 
 }
 
 function gridCols(callCount: number, putCount: number): string {
-    return `repeat(${callCount}, minmax(3.25rem, 1fr)) minmax(3.5rem, 0.7fr) repeat(${putCount}, minmax(3.25rem, 1fr))`;
+    return `repeat(${callCount}, minmax(3.5rem, 1fr)) minmax(4.25rem, 1.05fr) repeat(${putCount}, minmax(3.5rem, 1fr))`;
 }
 function deskMinWidth(callCount: number, putCount: number): string {
-    return `${Math.max(46, (callCount + putCount + 1) * 3.75)}rem`;
+    return `${Math.max(48, (callCount + putCount) * 3.75 + 4.5)}rem`;
 }
 
 /** One data cell in the grid desk. */
@@ -3493,11 +3540,11 @@ const ExpirationSection: React.FC<{
                         }
                     >
                         {callColumns.map((c) => (
-                            <div key={`c${c.key}`} className="px-2 py-1 text-right font-medium">{c.label}</div>
+                            <div key={`c${c.key}`} title={c.label} className="px-2 py-1 text-right font-medium">{c.headerLabel || c.label}</div>
                         ))}
-                        <div className="od-strike-cell px-2 py-1 text-center font-medium">{t('chain.strikeSymbol')}</div>
+                        <div className="od-strike-cell px-2.5 py-1 text-center font-medium">{t('chain.strikeSymbol')}</div>
                         {putColumns.map((c) => (
-                            <div key={`p${c.key}`} className="px-2 py-1 text-right font-medium">{c.label}</div>
+                            <div key={`p${c.key}`} title={c.label} className="px-2 py-1 text-right font-medium">{c.headerLabel || c.label}</div>
                         ))}
                     </div>
                     {/* Strike rows: staggered fade-in on open; uniform fade-out on close. */}
@@ -3518,7 +3565,7 @@ const ExpirationSection: React.FC<{
                             >
                                 <QuoteCells q={calls.get(strike)} columns={callColumns} />
                                 <div className={
-                                    'od-strike-cell px-2 py-1 text-center font-semibold tabular-nums ' +
+                                    'od-strike-cell px-2.5 py-1 text-center font-semibold tabular-nums ' +
                                     (isAtm ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-900 dark:text-slate-100')
                                 }>
                                     {fmt(strike)}
