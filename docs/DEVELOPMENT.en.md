@@ -1,5 +1,7 @@
 # Development Guide — Options Desk
 
+> **Languages:** English (current) · [Русский](DEVELOPMENT.ru.md)
+
 This document describes the development, build, and test process for the project.
 
 ## Technology stack

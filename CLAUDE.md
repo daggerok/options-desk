@@ -1,5 +1,6 @@
 # CLAUDE.md — adapter для Claude Code / Claude-совместимых агентов
 
+> **Двуязычно / Bilingual:** [`docs/`](./docs) содержит `*.en.md` / `*.ru.md` руководства.
 > **Главный контракт:** [`AGENT.md`](./AGENT.md). Этот файл — короткий adapter; при конфликте побеждает `AGENT.md`.
 
 ## Обязательное поведение

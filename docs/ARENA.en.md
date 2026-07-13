@@ -1,6 +1,6 @@
 # ARENA.en.md — adapter for Arena.ai Agent Mode
 
-> **Main contract:** [`AGENT.md`](../AGENT.md).
+> **Languages:** English (current) · [Русский](ARENA.ru.md) · **Main contract:** [`AGENT.md`](../AGENT.md).
 
 This file contains specific instructions for Arena.ai Agent Mode.
 
