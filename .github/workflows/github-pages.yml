@@ -39,7 +39,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install -E
       # Используем скрипт из вашего package.json
-      - run: bun run build-github-pages
+      - run: time bun run build-github-pages
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
