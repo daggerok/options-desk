@@ -17,9 +17,9 @@
 - [AGENT.md](../AGENT.md): Основной контракт и правила.
 - [CLAUDE.md](../CLAUDE.md): Адаптер для Claude Code.
 - [.cursorrules](./.cursorrules): Правила для Cursor AI.
-- [ARENA.ru.md](./ARENA.ru.md) / [ARENA.en.md](./ARENA.en.md): Конфигурация для Arena.ai.
-- [Setup.ru.md](./Setup.ru.md) / [Setup.en.md](./Setup.en.md): Инструкция по настройке агентной среды.
-- [DEVELOPMENT.ru.md](./DEVELOPMENT.ru.md) / [DEVELOPMENT.en.md](./DEVELOPMENT.en.md): Подробный гид разработчика.
+- Адаптер Arena.ai: [русский](./ARENA.ru.md) или [английский](./ARENA.en.md).
+- Инструкция по настройке агентной среды: [русский](./Setup.ru.md) или [английский](./Setup.en.md).
+- Гид разработчика: [русский](./DEVELOPMENT.ru.md) или [английский](./DEVELOPMENT.en.md).
 
 Для работы используются **Bun** (JS/TS) и **uv** (Python). **Важно:** всегда используйте `bun` вместо `npm`.
 
