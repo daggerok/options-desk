@@ -33,8 +33,8 @@
  *          - RU headers: `Бид` / `Мид` / `Аск` (common broker shorthand);
  *            full Settings labels: `Бид (спрос)` / `Мид (середина)` /
  *            `Аск (предложение)`. EN keeps Bid / Mid / Ask.
- *          - RU OI header stays the international `OI` abbreviation, but the
- *            tooltip / Settings label already says `Открытый интерес (OI)`.
+ *          - RU open-interest header uses Cyrillic `ОИ` (not Latin `OI`);
+ *            Settings label `Открытый интерес (ОИ)` matches.
  *          - Settings note translated fully: Bid/Mid/Ask/Strike/Rho →
  *            Бид/Мид/Аск/Страйк/Ро.
  * v0.9.40 - Strike column containment fix:
@@ -838,7 +838,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.deskColumns': 'Колонки доски',
         'settings.deskColumns.calls': 'Коллы',
         'settings.deskColumns.puts': 'Путы',
-        'settings.deskColumns.openInterest': 'Открытый интерес (OI)',
+        'settings.deskColumns.openInterest': 'Открытый интерес (ОИ)',
         'settings.deskColumns.volume': 'Объём',
         'settings.deskColumns.iv': 'Подразумеваемая волатильность (IV)',
         'settings.deskColumns.delta': 'Дельта Δ',
@@ -858,7 +858,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.deskColumns.ask': 'Аск (предложение)',
         'settings.deskColumns.note': 'Бид / Мид / Аск и Страйк всегда видны. Ро отключён по умолчанию.',
 
-        'deskColumns.header.openInterest': 'OI',
+        'deskColumns.header.openInterest': 'ОИ',
         'deskColumns.header.volume': 'Объём',
         'deskColumns.header.iv': 'IV',
         'deskColumns.header.delta': 'Δ',
