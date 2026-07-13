@@ -14,7 +14,7 @@
 
 Репозиторий оптимизирован для работы с AI-агентами. Основные agent-файлы остаются в корне проекта; расширенные гайды — в [`../docs`](../docs).
 
-- [AGENT.md](../AGENT.md): Основной контракт и правила.
+- [AGENT.md](../AGENT.md): Основной контракт и правила (EN: [AGENT.en.md](../AGENT.en.md)).
 - [CLAUDE.md](../CLAUDE.md): Адаптер для Claude Code.
 - [.cursorrules](./.cursorrules): Правила для Cursor AI.
 - Адаптер Arena.ai: [русский](./ARENA.ru.md) или [английский](./ARENA.en.md).

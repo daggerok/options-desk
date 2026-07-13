@@ -23,6 +23,10 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.39 - Options chain column spacing: added `--od-cgap: 0.25rem` token and
+ *          `column-gap: var(--od-cgap)` (scalable `rem` token) to `.od-drow` and
+ *          `.od-sub` grid rows so Strike ($) and Put Bid (plus all desk columns)
+ *          have scalable horizontal separation and never clash across devices.
  * v0.9.29 - Dynamic desk columns: strike-column guide now uses `.od-strike-cell`
  *          instead of a fixed nth-child selector because the Strike column moves
  *          when users hide/show OI/Vol/IV/Greeks.
@@ -405,6 +409,7 @@ body {
 .table-container {
     --od-bar: 1.9rem;   /* height of an expiration bar (accumulating)         */
     --od-hrow: 1.75rem; /* height of the group / column-label rows           */
+    --od-cgap: 0.25rem; /* horizontal gap between desk grid columns (rem-scalable) */
 }
 
 /* Every grid row (data + sub-headers) shares the dynamic template. */
@@ -412,6 +417,7 @@ body {
 .od-sub {
     display: grid;
     grid-template-columns: var(--od-grid);
+    column-gap: var(--od-cgap);
     align-items: center;
 }
 

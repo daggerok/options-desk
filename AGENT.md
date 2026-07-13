@@ -1,6 +1,6 @@
 # AGENT.md — правила агентной разработки для Options Desk
 
-> **Двуязычно / Bilingual:** расширенные руководства в [`./docs`](./docs) (`*.en.md` / `*.ru.md`). Этот файл — канонический контракт (RU); EN-компаньоны: [`docs/README.en.md`](./docs/README.en.md), [`docs/DEVELOPMENT.en.md`](./docs/DEVELOPMENT.en.md), [`docs/ARENA.en.md`](./docs/ARENA.en.md).
+> **Двуязычно / Bilingual:** расширенные руководства в [`./docs`](./docs) (`*.en.md` / `*.ru.md`). Этот файл — канонический контракт (RU); EN-компаньоны: [`AGENT.en.md`](./AGENT.en.md), [`docs/README.en.md`](./docs/README.en.md), [`docs/DEVELOPMENT.en.md`](./docs/DEVELOPMENT.en.md), [`docs/ARENA.en.md`](./docs/ARENA.en.md).
 
 Этот файл — основной контракт для AI-агентов, которые работают с репозиторием `options-desk`.
 
@@ -26,7 +26,8 @@ Options Desk — статическое React/TypeScript приложение д
 
 Agent docs:
 
-- `AGENT.md` — этот файл (главный контракт).
+- `AGENT.md` — этот файл (главный контракт, RU).
+- `AGENT.en.md` — полный английский перевод `AGENT.md`.
 - `CLAUDE.md` — короткий adapter для Claude Code.
 - `docs/ARENA.ru.md` / `docs/ARENA.en.md` — конфигурация для Arena.ai Agent Mode.
 - `docs/AGENTS.ru.md` / `docs/AGENTS.en.md` — compatibility stub.

@@ -10,6 +10,7 @@ A single-page **options board** with English / Russian interface: enter a ticker
 
 | Document / Документ | English | Русский |
 |---|---|---|
+| Main agent contract (`AGENT.md`) | [AGENT.en.md](AGENT.en.md) | [AGENT.md](AGENT.md) |
 | Overview & usage | [README](docs/README.en.md) | [README](docs/README.ru.md) |
 | Developer guide | [DEVELOPMENT](docs/DEVELOPMENT.en.md) | [DEVELOPMENT](docs/DEVELOPMENT.ru.md) |
 | Agentic-setup how-to | [Setup](docs/Setup.en.md) | [Setup](docs/Setup.ru.md) |
