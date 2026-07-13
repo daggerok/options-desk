@@ -24,6 +24,14 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.37 - i18n consolidation & fixes (PR #21):
+ *          - Inlined src/i18n.tsx into this file (single-file continuity);
+ *            src/ now holds only main.tsx, index.html, index.css, favicon.ico.
+ *          - Fixed literal {{expirations}} / {{load}} in the empty-state hints:
+ *            the two templated sentences are now fragment keys with the button
+ *            label rendered as a styled inline span (no unsubstituted placeholders).
+ *          - Language switcher now shows distinct ru/en flag icons (🇬🇧/🇷🇺)
+ *            instead of a single shared 🌐 globe for both languages.
  * v0.9.36 - Rename primary action button label Get dates → Expirations
  *          (loading: Loading…). Internal getDates() name unchanged.
  * v0.9.35 - After confirming a ticker (suggestion click, or Enter in the
@@ -549,9 +557,386 @@
  */
 
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain (see ENVIRONMENT above)
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
+
+// ============================================================================
+// I18N — English / Russian translations. Inlined for single-file continuity
+// (formerly src/i18n.tsx). All app TypeScript lives in this file.
+// ============================================================================
+
+type Language = 'en' | 'ru';
+const DEFAULT_LANGUAGE: Language = 'en';
+const LANGUAGES: Language[] = ['en', 'ru'];
+
+/** Distinct flag emoji per language for the language switcher (ru/en icons). */
+const LANG_FLAGS: Record<Language, string> = { en: '🇬🇧', ru: '🇷🇺' };
+
+const translations: Record<Language, Record<string, string>> = {
+    en: {
+        'app.brand': 'Option Desk',
+        'app.title': 'Options Desk',
+
+        'topBar.api': 'API',
+        'topBar.settings': 'Settings',
+        'topBar.language': 'Language',
+
+        'language.en': 'English',
+        'language.ru': 'Русский',
+        'language.icon': '🌐',
+
+        'theme.light': 'Light',
+        'theme.system': 'System',
+        'theme.dark': 'Dark',
+
+        'settings.title': 'Settings',
+        'settings.provider': 'Data provider',
+        'settings.providerHint': 'Also available in the heading for quick access.',
+        'settings.theme': 'Theme',
+        'settings.themeHint': 'Also available in the heading for quick access.',
+        'settings.language': 'Language',
+        'settings.languageHint': 'Also available in the heading for quick access.',
+        'settings.apiKey': 'API key',
+        'settings.apiSecret': 'API secret',
+        'settings.getKey': 'Get a free key',
+        'settings.keyHint': 'Stored only in your browser (localStorage).',
+        'settings.proxyBase': 'Proxy base URL',
+        'settings.proxyBaseHint': 'Run bun ./scripts/yahoo-proxy.ts locally, or deploy scripts/cloudflare-worker.js.',
+        'settings.proxyBasePlaceholder': 'http://localhost:8787 or https://name.you.workers.dev',
+        'settings.corsProxy': 'CORS proxy',
+        'settings.corsProxyHint': 'Public proxies can be flaky — switch if one fails, or use your own Worker.',
+        'settings.workerUrl': 'Worker URL',
+        'settings.workerUrlPlaceholder': 'https://name.you.workers.dev',
+
+        'settings.deskColumns': 'Desk columns',
+        'settings.deskColumns.calls': 'Calls',
+        'settings.deskColumns.puts': 'Puts',
+        'settings.deskColumns.openInterest': 'Open interest',
+        'settings.deskColumns.volume': 'Volume',
+        'settings.deskColumns.iv': 'IV',
+        'settings.deskColumns.delta': 'Delta Δ',
+        'settings.deskColumns.gamma': 'Gamma Γ',
+        'settings.deskColumns.theta': 'Theta Θ',
+        'settings.deskColumns.vega': 'Vega',
+        'settings.deskColumns.rho': 'Rho ρ',
+        'settings.deskColumns.lambda': 'Lambda λ',
+        'settings.deskColumns.vanna': 'Vanna',
+        'settings.deskColumns.vomma': 'Vomma',
+        'settings.deskColumns.charm': 'Charm',
+        'settings.deskColumns.speed': 'Speed',
+        'settings.deskColumns.zomma': 'Zomma',
+        'settings.deskColumns.color': 'Color',
+        'settings.deskColumns.note': 'Bid / Mid / Ask and Strike stay visible. Rho is disabled by default.',
+
+        'settings.cache': 'Cache',
+        'settings.cache.records': 'Data records',
+        'settings.cache.dataSize': 'Data size',
+        'settings.cache.settingsSize': 'Settings size',
+        'settings.cache.oldest': 'Oldest record',
+        'settings.cache.newest': 'Newest record',
+        'settings.cache.clearData': 'Clear data',
+        'settings.cache.clearDataHint': 'Downloaded query results only',
+        'settings.cache.clearSettings': 'Clear settings',
+        'settings.cache.clearSettingsHint': 'Provider / theme / language / keys / proxy / columns',
+        'settings.cache.clearAll': 'Clear everything',
+        'settings.cache.clearAllHint': 'Data + settings (full reset)',
+        'settings.cache.confirm': 'Confirm?',
+        'settings.cache.confirmHelp': 'Click “Confirm?” again to proceed, or click away to cancel.',
+
+        'setupBadge.noSetup': 'No setup',
+        'setupBadge.freeKey': 'Free key',
+        'setupBadge.keySet': 'Key set',
+        'setupBadge.needsProxy': 'Needs proxy',
+
+        'providerDescription.static':
+            'Local static cache — same-origin data/{TICKER}.json (GitHub Action + yfinance + CBOE/BS greeks). ' +
+            'No proxy, no keys. Best default on GitHub Pages. Only cached tickers are listed.',
+        'providerDescription.yahoo':
+            'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/yahoo-proxy.ts or Cloudflare Worker. ' +
+            'Lazy per-expiration. No provider greeks; client Black-Scholes fills them when IV is present.',
+        'providerDescription.nasdaq':
+            'NASDAQ option chain via proxy (/api/nasdaq) — full chain one call (bid/ask/last/volume/OI). ' +
+            'No IV/greeks in feed (higher-order stay empty). Needs Proxy base URL.',
+        'providerDescription.cboe':
+            'CBOE delayed options via proxy (/api/cboe) — equities & indices, greeks/IV/OI + spot. ' +
+            'Default on localhost when proxy is available. Needs Proxy base URL.',
+
+        'onboarding.title': 'One quick step: add your free {{provider}} {{keys}}',
+        'onboarding.description': '{{hint}}',
+        'onboarding.getKey': 'Get a free key',
+        'onboarding.save': 'Save {{keys}} & load',
+        'onboarding.saved': 'Credentials already saved — just search a ticker above.',
+        'onboarding.keys': 'keys',
+        'onboarding.key': 'key',
+        'onboarding.previewDemo': 'or get {{symbol}}’s dates now (no key needed)',
+        'onboarding.previewCache': 'or switch to CACHE (AAPL static data)',
+
+        'controls.tickerPlaceholder': 'Ticker or company (e.g. AAPL, Tesla, SPX)',
+        'controls.expirations': 'Expirations',
+        'controls.loading': 'Loading…',
+        'controls.load': 'Load',
+        'controls.loadCount': 'Load ({{count}})',
+        'controls.all': 'All',
+        'controls.none': 'None',
+        'controls.cancel': 'Cancel',
+        'controls.searching': 'Searching tickers…',
+
+        'chain.expirations': 'expiration',
+        'chain.expirationsPlural': 'expirations',
+        'chain.collapseAll': 'Collapse all',
+        'chain.expandAll': 'Expand all',
+        'chain.calls': 'Calls',
+        'chain.puts': 'Puts',
+        'chain.strike': 'Strike',
+        'chain.strikeSymbol': '$',
+        'chain.strikes': '{{count}} strikes',
+
+        'spot.label': 'Spot',
+        'spot.estimated': '(est.)',
+        'spot.delayed': '· delayed · {{provider}}',
+
+        'loading.expirations': 'Fetching expirations…',
+        'loading.chain': 'Loading chain…',
+
+        'notice.cancelled': 'Request cancelled.',
+        'notice.noOptions': '“{{symbol}}” is a valid ticker, but the latest local index marks it as (no options).',
+        'notice.noContracts': 'No contracts returned for the selected expiration(s).',
+        'notice.enterTicker': 'Enter a ticker and press',
+        'notice.toBegin': 'to begin.',
+        'notice.pickExp': 'Pick one or more expirations and press',
+        'notice.toFetch': 'to fetch the chain.',
+
+        'error.enterTicker': 'Enter a ticker symbol.',
+        'error.noContracts': 'No option contracts found for “{{symbol}}”.',
+        'error.providerBulk': 'Provider misconfigured (bulk without fetchAll).',
+        'error.providerLazy': 'Provider misconfigured (lazy without fetchMeta).',
+        'error.friendly.networkProxy':
+            'Could not reach the proxy. To fix this:\n\n' +
+            '1. Clone the repo: git clone https://github.com/daggerok/options-desk.git\n' +
+            '2. Install dependencies: bun install -E\n' +
+            '3. Run the proxy: bun ./scripts/yahoo-proxy.ts\n' +
+            '4. Set Proxy base URL in Settings to http://localhost:8787\n\n' +
+            'Or deploy scripts/cloudflare-worker.js and set the Worker URL instead.\n\n' +
+            'See docs/README.en.md for detailed instructions.',
+        'error.friendly.networkCors':
+            'Network/CORS error reaching the proxy. Try a different CORS proxy in Settings, or use CACHE (static data).',
+        'error.friendly.networkGeneric':
+            'Network error — could not reach the data provider. Check your connection and try again.',
+        'error.friendly.unexpectedJson':
+            'The provider returned an unexpected (non-JSON) response — often a proxy error page. Switch the proxy or provider in Settings.',
+        'error.friendly.generic': 'Something went wrong while loading option data.',
+
+        'retry': 'Retry',
+        'expired': 'expired',
+        'noOptions': '(no options)',
+        'tickerFromIndex': 'Ticker from local index',
+        'validTickerFromIndex': 'Valid ticker from local index',
+    },
+    ru: {
+        'app.brand': 'Option Desk',
+        'app.title': 'Options Desk',
+
+        'topBar.api': 'API',
+        'topBar.settings': 'Настройки',
+        'topBar.language': 'Язык',
+
+        'language.en': 'English',
+        'language.ru': 'Русский',
+        'language.icon': '🌐',
+
+        'theme.light': 'Светлая',
+        'theme.system': 'Системная',
+        'theme.dark': 'Тёмная',
+
+        'settings.title': 'Настройки',
+        'settings.provider': 'Провайдер данных',
+        'settings.providerHint': 'Также доступен в шапке для быстрого доступа.',
+        'settings.theme': 'Тема',
+        'settings.themeHint': 'Также доступна в шапке для быстрого доступа.',
+        'settings.language': 'Язык',
+        'settings.languageHint': 'Также доступен в шапке для быстрого доступа.',
+        'settings.apiKey': 'API ключ',
+        'settings.apiSecret': 'API секрет',
+        'settings.getKey': 'Получить бесплатный ключ',
+        'settings.keyHint': 'Хранится только в браузере (localStorage).',
+        'settings.proxyBase': 'Базовый URL прокси',
+        'settings.proxyBaseHint': 'Запусти bun ./scripts/yahoo-proxy.ts локально или задеплой scripts/cloudflare-worker.js.',
+        'settings.proxyBasePlaceholder': 'http://localhost:8787 или https://name.you.workers.dev',
+        'settings.corsProxy': 'CORS прокси',
+        'settings.corsProxyHint': 'Публичные прокси могут быть нестабильны — переключайся при сбоях или используй свой Worker.',
+        'settings.workerUrl': 'URL Worker',
+        'settings.workerUrlPlaceholder': 'https://name.you.workers.dev',
+
+        'settings.deskColumns': 'Колонки доски',
+        'settings.deskColumns.calls': 'Calls',
+        'settings.deskColumns.puts': 'Puts',
+        'settings.deskColumns.openInterest': 'OI',
+        'settings.deskColumns.volume': 'Объём',
+        'settings.deskColumns.iv': 'IV',
+        'settings.deskColumns.delta': 'Delta Δ',
+        'settings.deskColumns.gamma': 'Gamma Γ',
+        'settings.deskColumns.theta': 'Theta Θ',
+        'settings.deskColumns.vega': 'Vega',
+        'settings.deskColumns.rho': 'Rho ρ',
+        'settings.deskColumns.lambda': 'Lambda λ',
+        'settings.deskColumns.vanna': 'Vanna',
+        'settings.deskColumns.vomma': 'Vomma',
+        'settings.deskColumns.charm': 'Charm',
+        'settings.deskColumns.speed': 'Speed',
+        'settings.deskColumns.zomma': 'Zomma',
+        'settings.deskColumns.color': 'Color',
+        'settings.deskColumns.note': 'Bid / Mid / Ask и Strike всегда видны. Rho отключён по умолчанию.',
+
+        'settings.cache': 'Кэш',
+        'settings.cache.records': 'Записей данных',
+        'settings.cache.dataSize': 'Размер данных',
+        'settings.cache.settingsSize': 'Размер настроек',
+        'settings.cache.oldest': 'Самая старая запись',
+        'settings.cache.newest': 'Самая новая запись',
+        'settings.cache.clearData': 'Очистить данные',
+        'settings.cache.clearDataHint': 'Только загруженные результаты запросов',
+        'settings.cache.clearSettings': 'Очистить настройки',
+        'settings.cache.clearSettingsHint': 'Провайдер / тема / язык / ключи / прокси / колонки',
+        'settings.cache.clearAll': 'Очистить всё',
+        'settings.cache.clearAllHint': 'Данные + настройки (полный сброс)',
+        'settings.cache.confirm': 'Подтвердить?',
+        'settings.cache.confirmHelp': 'Нажми «Подтвердить?» ещё раз, чтобы продолжить, или клни вне кнопки для отмены.',
+
+        'setupBadge.noSetup': 'Без настройки',
+        'setupBadge.freeKey': 'Бесплатный ключ',
+        'setupBadge.keySet': 'Ключ задан',
+        'setupBadge.needsProxy': 'Нужен прокси',
+
+        'providerDescription.static':
+            'Локальный статический кэш — same-origin data/{TICKER}.json (GitHub Action + yfinance + CBOE/BS греки). ' +
+            'Без прокси и ключей. Лучший default для GitHub Pages. Показываются только закэшированные тикеры.',
+        'providerDescription.yahoo':
+            'Yahoo Finance через прокси (/api/options) — crumb/cookie обрабатывают scripts/yahoo-proxy.ts или Cloudflare Worker. ' +
+            'Lazy по expiration. Нет провайдерских греков; клиентский Black-Scholes считает их при наличии IV.',
+        'providerDescription.nasdaq':
+            'Цепочка NASDAQ через прокси (/api/nasdaq) — полная цепочка за один запрос (bid/ask/last/volume/OI). ' +
+            'Нет IV/греков в фиде (higher-order остаются пустыми). Нужен Proxy base URL.',
+        'providerDescription.cboe':
+            'CBOE delayed options через прокси (/api/cboe) — акции и индексы, греки/IV/OI + spot. ' +
+            'Default на localhost, если прокси доступен. Нужен Proxy base URL.',
+
+        'onboarding.title': 'Один простой шаг: добавь бесплатный {{keys}} для {{provider}}',
+        'onboarding.description': '{{hint}}',
+        'onboarding.getKey': 'Получить бесплатный ключ',
+        'onboarding.save': 'Сохранить {{keys}} и загрузить',
+        'onboarding.saved': 'Ключи уже сохранены — просто введи тикер выше.',
+        'onboarding.keys': 'ключи',
+        'onboarding.key': 'ключ',
+        'onboarding.previewDemo': 'или получить даты для {{symbol}} прямо сейчас (без ключа)',
+        'onboarding.previewCache': 'или переключиться на CACHE (статичные данные AAPL)',
+
+        'controls.tickerPlaceholder': 'Тикер или компания (например, AAPL, Tesla, SPX)',
+        'controls.expirations': 'Экспирации',
+        'controls.loading': 'Загрузка…',
+        'controls.load': 'Загрузить',
+        'controls.loadCount': 'Загрузить ({{count}})',
+        'controls.all': 'Все',
+        'controls.none': 'Нет',
+        'controls.cancel': 'Отмена',
+        'controls.searching': 'Ищем тикеры…',
+
+        'chain.expirations': 'экспирация',
+        'chain.expirationsPlural': 'экспираций',
+        'chain.collapseAll': 'Свернуть все',
+        'chain.expandAll': 'Развернуть все',
+        'chain.calls': 'Calls',
+        'chain.puts': 'Puts',
+        'chain.strike': 'Strike',
+        'chain.strikeSymbol': '$',
+        'chain.strikes': '{{count}} страйков',
+
+        'spot.label': 'Спот',
+        'spot.estimated': '(оценка)',
+        'spot.delayed': '· с задержкой · {{provider}}',
+
+        'loading.expirations': 'Загружаем экспирации…',
+        'loading.chain': 'Загружаем цепочку…',
+
+        'notice.cancelled': 'Запрос отменён.',
+        'notice.noOptions': '«{{symbol}}» — валидный тикер, но последний локальный индекс помечает его как (no options).',
+        'notice.noContracts': 'По выбранным экспирациям не вернулось контрактов.',
+        'notice.enterTicker': 'Введи тикер и нажми',
+        'notice.toBegin': 'для начала.',
+        'notice.pickExp': 'Выбери одну или несколько экспираций и нажми',
+        'notice.toFetch': 'и цепочка загрузится.',
+
+        'error.enterTicker': 'Введи тикер.',
+        'error.noContracts': 'Для «{{symbol}}» не найдено опционных контрактов.',
+        'error.providerBulk': 'Провайдер настроен неверно (bulk без fetchAll).',
+        'error.providerLazy': 'Провайдер настроен неверно (lazy без fetchMeta).',
+        'error.friendly.networkProxy':
+            'Не удалось достучаться до прокси. Чтобы исправить:\n\n' +
+            '1. Клонируй репозиторий: git clone https://github.com/daggerok/options-desk.git\n' +
+            '2. Установи зависимости: bun install -E\n' +
+            '3. Запусти прокси: bun ./scripts/yahoo-proxy.ts\n' +
+            '4. Укажи Proxy base URL в настройках: http://localhost:8787\n\n' +
+            'Или задеплой scripts/cloudflare-worker.js и укажи URL Worker.\n\n' +
+            'Подробности — в docs/README.en.md.',
+        'error.friendly.networkCors':
+            'Ошибка сети/CORS при обращении к прокси. Попробуй другой CORS-прокси в настройках или используй CACHE (статичные данные).',
+        'error.friendly.networkGeneric':
+            'Сетевая ошибка — не удалось достучаться до провайдера данных. Проверь соединение и попробуй снова.',
+        'error.friendly.unexpectedJson':
+            'Провайдер вернул неожиданный (не-JSON) ответ — часто это страница ошибки прокси. Переключи прокси или провайдера в настройках.',
+        'error.friendly.generic': 'Что-то пошло не так при загрузке данных об опционах.',
+
+        'retry': 'Повторить',
+        'expired': 'истёк',
+        'noOptions': '(no options)',
+        'tickerFromIndex': 'Тикер из локального индекса',
+        'validTickerFromIndex': 'Валидный тикер из локального индекса',
+    },
+};
+
+function translate(key: string, lang: Language, params?: Record<string, string | number>): string {
+    const dict = translations[lang] ?? translations[DEFAULT_LANGUAGE];
+    let text = dict[key] ?? translations[DEFAULT_LANGUAGE][key] ?? key;
+    if (params) {
+        Object.entries(params).forEach(([k, v]) => {
+            text = text.split(`{{${k}}}`).join(String(v));
+        });
+    }
+    return text;
+}
+
+function providerDescription(providerId: string, lang: Language): string {
+    return translate(`providerDescription.${providerId}`, lang);
+}
+
+interface I18nContextValue {
+    lang: Language;
+    t: (key: string, params?: Record<string, string | number>) => string;
+    setLang: (lang: Language) => void;
+}
+
+const I18nContext = createContext<I18nContextValue | undefined>(undefined);
+
+const I18nProvider: React.FC<{ initial: Language; children: React.ReactNode }> = ({ initial, children }) => {
+    const [lang, setLang] = useState<Language>(LANGUAGES.includes(initial) ? initial : DEFAULT_LANGUAGE);
+    useEffect(() => {
+        document.documentElement.lang = lang;
+        document.documentElement.dir = 'ltr';
+    }, [lang]);
+
+    const t = useCallback(
+        (key: string, params?: Record<string, string | number>) => translate(key, lang, params),
+        [lang],
+    );
+
+    return <I18nContext.Provider value={{ lang, t, setLang }}>{children}</I18nContext.Provider>;
+};
+
+function useI18n(): I18nContextValue {
+    const ctx = useContext(I18nContext);
+    if (!ctx) throw new Error('useI18n must be used inside I18nProvider');
+    return ctx;
+}
 
 // ============================================================================
 // DEBUG SYSTEM
@@ -1171,23 +1556,23 @@ function enrichChainResult(result: ChainResult): ChainResult {
  * Keeps the UI human-readable instead of leaking stack traces or JSON parse
  * errors like "Unexpected token '<'".
  */
-function friendlyError(e: unknown, provider: DataProvider): string {
+function friendlyError(e: unknown, provider: DataProvider, lang: Language): string {
     const msg = (e instanceof Error ? e.message : String(e)) || '';
     if (/^[A-Z].*[.?!]$/.test(msg) && msg.length < 240 && !msg.includes('Unexpected token')) {
         return msg;
     }
     if (msg.includes('Failed to fetch') || msg.toLowerCase().includes('networkerror')) {
         if (provider.needsProxyBase) {
-            return 'Could not reach the proxy. To fix this:\n\n1. Clone the repo: git clone https://github.com/daggerok/options-desk.git\n2. Install dependencies: bun install -E\n3. Run the proxy: bun ./scripts/yahoo-proxy.ts\n4. Set Proxy base URL in Settings to http://localhost:8787\n\nOr deploy scripts/cloudflare-worker.js and set the Worker URL instead.\n\nSee README.en.md for detailed instructions.';
+            return translate('error.friendly.networkProxy', lang);
         }
         return provider.needsProxy
-            ? 'Network/CORS error reaching the proxy. Try a different CORS proxy in Settings, or use CACHE (static data).'
-            : 'Network error — could not reach the data provider. Check your connection and try again.';
+            ? translate('error.friendly.networkCors', lang)
+            : translate('error.friendly.networkGeneric', lang);
     }
     if (msg.includes('Unexpected token') || msg.toLowerCase().includes('json')) {
-        return 'The provider returned an unexpected (non-JSON) response — often a proxy error page. Switch the proxy or provider in Settings.';
+        return translate('error.friendly.unexpectedJson', lang);
     }
-    return msg || 'Something went wrong while loading option data.';
+    return msg || translate('error.friendly.generic', lang);
 }
 
 // ============================================================================
@@ -2117,6 +2502,7 @@ interface DeskColumnSettings {
 
 interface Settings {
     providerId: string;
+    language: Language;
     theme: ThemeMode;
     proxyTemplate: string;
     /** Base URL of the request-handling proxy (Yahoo/worker). */
@@ -2137,6 +2523,7 @@ const SETTINGS_KEY = 'options-desk.settings.v5';
 const DEFAULT_SETTINGS: Settings = {
     // Host-aware default selection; dropdown order stays CACHE, CBOE, NASDAQ, YAHOO.
     providerId: defaultProviderId(),
+    language: DEFAULT_LANGUAGE,
     theme: 'system',
     proxyTemplate: PROXY_PRESETS[0].template,
     proxyBase: 'http://localhost:8787',    // local Bun Yahoo proxy default
@@ -2165,6 +2552,7 @@ function loadSettings(): Settings {
         const merged: Settings = {
             ...DEFAULT_SETTINGS,
             ...parsed,
+            language: (parsed.language && LANGUAGES.includes(parsed.language) ? parsed.language : DEFAULT_LANGUAGE) as Language,
             tokens: { ...DEFAULT_SETTINGS.tokens, ...(parsed.tokens || {}) },
             secrets: { ...DEFAULT_SETTINGS.secrets, ...(parsed.secrets || {}) },
             deskColumns: {
@@ -2291,11 +2679,12 @@ const Icon = {
 
 /** Small pill that communicates how much setup a provider needs. */
 const SetupBadge: React.FC<{ provider: DataProvider; hasKey: boolean }> = ({ provider, hasKey }) => {
+    const { t } = useI18n();
     let text = '';
     let cls = '';
-    if (provider.setup === 'none') { text = 'No setup'; cls = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400'; }
-    else if (provider.setup === 'key') { text = hasKey ? 'Key set' : 'Free key'; cls = hasKey ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400'; }
-    else { text = 'Needs proxy'; cls = 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'; }
+    if (provider.setup === 'none') { text = t('setupBadge.noSetup'); cls = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400'; }
+    else if (provider.setup === 'key') { text = hasKey ? t('setupBadge.keySet') : t('setupBadge.freeKey'); cls = hasKey ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400'; }
+    else { text = t('setupBadge.needsProxy'); cls = 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'; }
     return <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${cls}`}>{text}</span>;
 };
 
@@ -2303,11 +2692,12 @@ const SetupBadge: React.FC<{ provider: DataProvider; hasKey: boolean }> = ({ pro
  * Compact theme picker: shows only the current theme icon. Clicking it toggles a
  * small animated menu with the other themes; Escape/click-away closes it.
  */
-const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (t: ThemeMode) => void }> = ({ value, onChange }) => {
+const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (theme: ThemeMode) => void }> = ({ value, onChange }) => {
+    const { t } = useI18n();
     const options: { id: ThemeMode; icon: React.FC<{ className?: string }>; title: string }[] = [
-        { id: 'light', icon: Icon.Sun, title: 'Light' },
-        { id: 'system', icon: Icon.Monitor, title: 'System' },
-        { id: 'dark', icon: Icon.Moon, title: 'Dark' },
+        { id: 'light', icon: Icon.Sun, title: t('theme.light') },
+        { id: 'system', icon: Icon.Monitor, title: t('theme.system') },
+        { id: 'dark', icon: Icon.Moon, title: t('theme.dark') },
     ];
     const [open, setOpen] = useState(false);
     const rootRef = useRef<HTMLDivElement | null>(null);
@@ -2373,6 +2763,76 @@ const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (t: ThemeMode) => void
     );
 };
 
+/**
+ * Compact language switcher: shows a globe icon + current language code.
+ * Clicking it toggles a small animated menu; Escape/click-away closes it.
+ */
+const LanguageSwitch: React.FC<{ value: Language; onChange: (l: Language) => void }> = ({ value, onChange }) => {
+    const { t } = useI18n();
+    const [open, setOpen] = useState(false);
+    const rootRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        if (!open) return undefined;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+        const onPointer = (e: MouseEvent) => {
+            if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        window.addEventListener('keydown', onKey);
+        window.addEventListener('mousedown', onPointer);
+        return () => {
+            window.removeEventListener('keydown', onKey);
+            window.removeEventListener('mousedown', onPointer);
+        };
+    }, [open]);
+
+    return (
+        <div ref={rootRef} className="relative">
+            <button
+                type="button"
+                title={t('topBar.language')}
+                aria-label={t('topBar.language')}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                onClick={() => setOpen((v) => !v)}
+                className={
+                    'flex h-8 items-center gap-1 rounded-lg border px-1.5 transition-all duration-150 ' +
+                    (open
+                        ? 'scale-105 border-indigo-500 bg-indigo-50 text-indigo-600 shadow-sm dark:bg-indigo-950/40 dark:text-indigo-400'
+                        : 'border-slate-300 dark:border-slate-700 text-slate-500 hover:-translate-y-px hover:text-slate-800 dark:hover:text-slate-200')
+                }
+            >
+                <span className="text-base leading-none" aria-hidden="true">{LANG_FLAGS[value]}</span>
+                <span className="text-xs font-semibold uppercase">{value}</span>
+            </button>
+            {open && (
+                <div
+                    role="menu"
+                    className="absolute right-0 top-10 z-50 w-36 origin-top-right animate-fade-in rounded-xl border border-slate-200 bg-white p-1 shadow-xl ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10"
+                >
+                    {LANGUAGES.map((l) => (
+                        <button
+                            key={l}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { onChange(l); setOpen(false); }}
+                            className={
+                                'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-all duration-150 ' +
+                                (l === value
+                                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300'
+                                    : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-slate-200 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300')
+                            }
+                        >
+                            <span className="text-base leading-none" aria-hidden="true">{LANG_FLAGS[l]}</span>
+                            <span>{t(`language.${l}`)}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ============================================================================
 // SETTINGS PANEL (popover opened by the gear button)
 // ============================================================================
@@ -2389,6 +2849,7 @@ const SettingsPanel: React.FC<{
     onClearAll: () => void;
     onClose: () => void;
 }> = ({ settings, provider, onChange, onSetToken, onSetSecret, onClearData, onClearSettings, onClearAll, onClose }) => {
+    const { t, lang } = useI18n();
     const currentToken = settings.tokens[provider.id] || '';
     const currentSecret = settings.secrets[provider.id] || '';
     // Cache stats — recompute on any cache mutation (LIVE, no manual refresh):
@@ -2409,12 +2870,12 @@ const SettingsPanel: React.FC<{
             <div
                 className="themed-scroll absolute right-0 top-11 z-50 max-h-[80vh] w-80 origin-top-right animate-fade-in overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-xl"
                 role="dialog"
-                aria-label="Settings"
+                aria-label={t('settings.title')}
             >
-                <h2 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">Settings</h2>
+                <h2 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">{t('settings.title')}</h2>
 
                 <p className="mb-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                    {provider.description}
+                    {providerDescription(provider.id, lang)}
                 </p>
 
                 {/* API key (and optional secret) — for token-capable providers. */}
@@ -2422,19 +2883,19 @@ const SettingsPanel: React.FC<{
                     <div className="mb-3">
                         <div className="mb-1 flex items-center justify-between">
                             <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                                {provider.keyLabel || 'API key'}
+                                {provider.keyLabel || t('settings.apiKey')}
                             </span>
                             {provider.keyUrl && (
                                 <a href={provider.keyUrl} target="_blank" rel="noopener noreferrer"
                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
-                                    Get a free key <Icon.External className="h-3 w-3" />
+                                    {t('settings.getKey')} <Icon.External className="h-3 w-3" />
                                 </a>
                             )}
                         </div>
                         <input
                             type="password"
                             value={currentToken}
-                            placeholder={`Paste ${provider.keyLabel || (provider.label.split(' ')[0] + ' key')}`}
+                            placeholder={provider.keyLabel || t('settings.apiKey')}
                             onChange={(e) => onSetToken(provider.id, e.target.value.trim())}
                             className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
                         />
@@ -2442,19 +2903,19 @@ const SettingsPanel: React.FC<{
                         {provider.supportsSecret && (
                             <>
                                 <span className="mb-1 mt-2 block text-xs font-medium text-slate-600 dark:text-slate-300">
-                                    {provider.secretLabel || 'API secret'}
+                                    {provider.secretLabel || t('settings.apiSecret')}
                                 </span>
                                 <input
                                     type="password"
                                     value={currentSecret}
-                                    placeholder={`Paste ${provider.secretLabel || 'API secret'}`}
+                                    placeholder={provider.secretLabel || t('settings.apiSecret')}
                                     onChange={(e) => onSetSecret(provider.id, e.target.value.trim())}
                                     className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
                                 />
                             </>
                         )}
                         <span className="mt-1 block text-[11px] text-slate-400">
-                            {provider.keyHint || 'Stored only in your browser (localStorage).'}
+                            {provider.keyHint || t('settings.keyHint')}
                         </span>
                     </div>
                 )}
@@ -2462,16 +2923,16 @@ const SettingsPanel: React.FC<{
                 {/* Proxy base URL — for request-handling proxies (Yahoo/worker). */}
                 {provider.needsProxyBase && (
                     <label className="mb-3 block">
-                        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Proxy base URL</span>
+                        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.proxyBase')}</span>
                         <input
                             type="text"
                             value={settings.proxyBase}
-                            placeholder="http://localhost:8787 or https://name.you.workers.dev"
+                            placeholder={t('settings.proxyBasePlaceholder')}
                             onChange={(e) => onChange({ proxyBase: e.target.value.trim() })}
                             className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                         <span className="mt-1 block text-[11px] text-slate-400">
-                            Run <code>bun run scripts/yahoo-proxy.ts</code> locally, or deploy scripts/cloudflare-worker.js.
+                            {t('settings.proxyBaseHint')}
                         </span>
                     </label>
                 )}
@@ -2480,7 +2941,7 @@ const SettingsPanel: React.FC<{
                 {provider.needsProxy && (
                     <>
                         <label className="mb-2 block">
-                            <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">CORS proxy</span>
+                            <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.corsProxy')}</span>
                             <select
                                 value={settings.proxyTemplate}
                                 onChange={(e) => onChange({ proxyTemplate: e.target.value })}
@@ -2491,16 +2952,16 @@ const SettingsPanel: React.FC<{
                                 ))}
                             </select>
                             <span className="mt-1 block text-[11px] text-slate-400">
-                                Public proxies can be flaky — switch if one fails, or use your own Worker.
+                                {t('settings.corsProxyHint')}
                             </span>
                         </label>
                         {settings.proxyTemplate.includes('{worker}') && (
                             <label className="mb-1 block">
-                                <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Worker URL</span>
+                                <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.workerUrl')}</span>
                                 <input
                                     type="text"
                                     value={settings.workerUrl}
-                                    placeholder="https://name.you.workers.dev"
+                                    placeholder={t('settings.workerUrlPlaceholder')}
                                     onChange={(e) => onChange({ workerUrl: e.target.value.trim() })}
                                     className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
                                 />
@@ -2511,31 +2972,31 @@ const SettingsPanel: React.FC<{
 
                 {/* ---- Desk columns: per-side, per-column toggles -------- */}
                 <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-3">
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Desk columns</h3>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('settings.deskColumns')}</h3>
                     <div className="grid grid-cols-2 gap-3 text-xs">
                         {(['calls', 'puts'] as const).map((side) => (
                             <div key={side}>
                                 <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
-                                    {side === 'calls' ? 'Calls' : 'Puts'}
+                                    {t(`settings.deskColumns.${side}`)}
                                 </div>
                                 <div className="space-y-1">
                                     {([
-                                        { id: 'openInterest', label: 'Open interest' },
-                                        { id: 'volume', label: 'Volume' },
-                                        { id: 'iv', label: 'IV' },
-                                        { id: 'delta', label: 'Delta Δ' },
-                                        { id: 'gamma', label: 'Gamma Γ' },
-                                        { id: 'theta', label: 'Theta Θ' },
-                                        { id: 'vega', label: 'Vega' },
-                                        { id: 'rho', label: 'Rho ρ' },
+                                        { id: 'openInterest', label: t('settings.deskColumns.openInterest') },
+                                        { id: 'volume', label: t('settings.deskColumns.volume') },
+                                        { id: 'iv', label: t('settings.deskColumns.iv') },
+                                        { id: 'delta', label: t('settings.deskColumns.delta') },
+                                        { id: 'gamma', label: t('settings.deskColumns.gamma') },
+                                        { id: 'theta', label: t('settings.deskColumns.theta') },
+                                        { id: 'vega', label: t('settings.deskColumns.vega') },
+                                        { id: 'rho', label: t('settings.deskColumns.rho') },
                                         // higher-order greeks
-                                        { id: 'lambda', label: 'Lambda λ' },
-                                        { id: 'vanna', label: 'Vanna' },
-                                        { id: 'vomma', label: 'Vomma' },
-                                        { id: 'charm', label: 'Charm' },
-                                        { id: 'speed', label: 'Speed' },
-                                        { id: 'zomma', label: 'Zomma' },
-                                        { id: 'color', label: 'Color' },
+                                        { id: 'lambda', label: t('settings.deskColumns.lambda') },
+                                        { id: 'vanna', label: t('settings.deskColumns.vanna') },
+                                        { id: 'vomma', label: t('settings.deskColumns.vomma') },
+                                        { id: 'charm', label: t('settings.deskColumns.charm') },
+                                        { id: 'speed', label: t('settings.deskColumns.speed') },
+                                        { id: 'zomma', label: t('settings.deskColumns.zomma') },
+                                        { id: 'color', label: t('settings.deskColumns.color') },
                                     ] as const).map((c) => (
                                         <label key={c.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 hover:border-indigo-300 dark:border-slate-700 dark:text-slate-300 dark:hover:border-indigo-700">
                                             <input
@@ -2551,21 +3012,21 @@ const SettingsPanel: React.FC<{
                             </div>
                         ))}
                     </div>
-                    <p className="mt-2 text-[11px] text-slate-400">Bid / Mid / Ask and Strike stay visible. Rho is disabled by default.</p>
+                    <p className="mt-2 text-[11px] text-slate-400">{t('settings.deskColumns.note')}</p>
                 </div>
 
                 {/* ---- Cache: stats + clear actions --------------------------- */}
                 <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-3">
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Cache</h3>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('settings.cache')}</h3>
 
                     {/* Stats */}
                     <div className="mb-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2 text-[11px] text-slate-500 dark:text-slate-400">
                         <div className="flex items-center justify-between">
-                            <span>Data records</span>
+                            <span>{t('settings.cache.records')}</span>
                             <span className="font-semibold text-slate-700 dark:text-slate-200">{stats.entries}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                            <span>Data size</span>
+                            <span>{t('settings.cache.dataSize')}</span>
                             <span className="font-semibold text-slate-700 dark:text-slate-200">{fmtBytes(stats.bytes)} / {fmtBytes(stats.maxBytes)} ({pct}%)</span>
                         </div>
                         {/* Usage bar */}
@@ -2573,24 +3034,24 @@ const SettingsPanel: React.FC<{
                             <div className={'h-full rounded-full ' + (pct > 85 ? 'bg-rose-500' : pct > 60 ? 'bg-amber-500' : 'bg-emerald-500')} style={{ width: `${pct}%` }} />
                         </div>
                         <div className="flex items-center justify-between">
-                            <span>Settings size</span>
+                            <span>{t('settings.cache.settingsSize')}</span>
                             <span className="font-semibold text-slate-700 dark:text-slate-200">{fmtBytes(stats.settingsBytes)}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                            <span>Oldest record</span>
+                            <span>{t('settings.cache.oldest')}</span>
                             <span className="font-medium text-slate-600 dark:text-slate-300">{fmtTs(stats.oldest)}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                            <span>Newest record</span>
+                            <span>{t('settings.cache.newest')}</span>
                             <span className="font-medium text-slate-600 dark:text-slate-300">{fmtTs(stats.newest)}</span>
                         </div>
                     </div>
 
                     {/* Clear actions — each needs a second click to confirm. */}
                     {([
-                        { id: 'data', label: 'Clear data', hint: 'Downloaded query results only', run: onClearData },
-                        { id: 'settings', label: 'Clear settings', hint: 'Provider / theme / keys / proxy', run: onClearSettings },
-                        { id: 'all', label: 'Clear everything', hint: 'Data + settings (full reset)', run: onClearAll },
+                        { id: 'data', label: t('settings.cache.clearData'), hint: t('settings.cache.clearDataHint'), run: onClearData },
+                        { id: 'settings', label: t('settings.cache.clearSettings'), hint: t('settings.cache.clearSettingsHint'), run: onClearSettings },
+                        { id: 'all', label: t('settings.cache.clearAll'), hint: t('settings.cache.clearAllHint'), run: onClearAll },
                     ] as const).map((a) => (
                         <div key={a.id} className="mb-1.5 flex items-center justify-between gap-2">
                             <div className="min-w-0">
@@ -2611,11 +3072,37 @@ const SettingsPanel: React.FC<{
                                         : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-rose-400 hover:text-rose-600 dark:hover:text-rose-400')
                                 }
                             >
-                                {armed === a.id ? 'Confirm?' : a.label}
+                                {armed === a.id ? t('settings.cache.confirm') : a.label}
                             </button>
                         </div>
                     ))}
-                    {armed && <p className="mt-1 text-[10px] text-rose-500">Click “Confirm?” again to proceed, or click away to cancel.</p>}
+                    {armed && <p className="mt-1 text-[10px] text-rose-500">{t('settings.cache.confirmHelp')}</p>}
+                </div>
+
+                {/* ---- Heading fast-access controls (must live at the end of the settings menu) ---- */}
+                <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-3 space-y-3">
+                    <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('topBar.settings')}</h3>
+                    <label className="block">
+                        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.provider')}</span>
+                        <select
+                            value={settings.providerId}
+                            onChange={(e) => onChange({ providerId: e.target.value })}
+                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                            {PROVIDERS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
+                        </select>
+                        <span className="mt-1 block text-[11px] text-slate-400">{t('settings.providerHint')}</span>
+                    </label>
+                    <div>
+                        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.theme')}</span>
+                        <ThemeSwitch value={settings.theme} onChange={(theme) => onChange({ theme })} />
+                        <span className="mt-1 block text-[11px] text-slate-400">{t('settings.themeHint')}</span>
+                    </div>
+                    <div>
+                        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.language')}</span>
+                        <LanguageSwitch value={settings.language} onChange={(l) => onChange({ language: l })} />
+                        <span className="mt-1 block text-[11px] text-slate-400">{t('settings.languageHint')}</span>
+                    </div>
                 </div>
             </div>
         </>
@@ -2641,6 +3128,7 @@ const TopBar: React.FC<{
     onClearAll: () => void;
 }> = ({ settings, provider, onChange, onSetToken, onSetSecret, onClearData, onClearSettings, onClearAll }) => {
     const [openSettings, setOpenSettings] = useState(false);
+    const { t } = useI18n();
     // "Key set" badge requires the secret too, when the provider needs both.
     const hasKey = !!(settings.tokens[provider.id]) &&
         (!provider.supportsSecret || !!(settings.secrets[provider.id]));
@@ -2649,16 +3137,16 @@ const TopBar: React.FC<{
         <header className="sticky top-0 z-50 flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 px-4 py-2.5 backdrop-blur">
             <div className="flex items-center gap-2">
                 <span className="grid h-7 w-7 place-items-center rounded-md bg-indigo-600 text-sm font-black text-white">O</span>
-                <span className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Option Desk</span>
+                <span className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">{t('app.brand')}</span>
             </div>
 
             <div className="flex items-center gap-2">
                 <div className="hidden items-center gap-1.5 sm:flex">
-                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">API</span>
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('topBar.api')}</span>
                     <select
                         value={settings.providerId}
                         onChange={(e) => onChange({ providerId: e.target.value })}
-                        title="Data provider"
+                        title={t('settings.provider')}
                         className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                         {PROVIDERS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
@@ -2666,14 +3154,16 @@ const TopBar: React.FC<{
                     <SetupBadge provider={provider} hasKey={hasKey} />
                 </div>
 
-                <ThemeSwitch value={settings.theme} onChange={(t) => onChange({ theme: t })} />
+                <ThemeSwitch value={settings.theme} onChange={(theme) => onChange({ theme })} />
+
+                <LanguageSwitch value={settings.language} onChange={(l) => onChange({ language: l })} />
 
                 <div className="relative">
                     <button
                         type="button"
                         onClick={() => setOpenSettings((v) => !v)}
-                        aria-label="Settings"
-                        title="Settings"
+                        aria-label={t('topBar.settings')}
+                        title={t('topBar.settings')}
                         className={
                             'flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ' +
                             (openSettings
@@ -2710,10 +3200,11 @@ const KeyOnboarding: React.FC<{
     provider: DataProvider;
     tokenValue: string;
     secretValue: string;
-    onSave: (token: string, secret: string) => void;
+    onSave: (apiToken: string, apiSecret: string) => void;
     onPreview: () => void;
     previewLabel: string;
 }> = ({ provider, tokenValue, secretValue, onSave, onPreview, previewLabel }) => {
+    const { t, lang } = useI18n();
     const [keyDraft, setKeyDraft] = useState('');
     const [secretDraft, setSecretDraft] = useState('');
     // Ready when the key (and, if required, the secret) are filled in.
@@ -2725,16 +3216,16 @@ const KeyOnboarding: React.FC<{
                 <Icon.Key className="h-5 w-5" />
             </div>
             <h2 className="mb-1 text-base font-semibold text-slate-900 dark:text-slate-50">
-                One quick step: add your free {provider.label.split(' ')[0]} {provider.supportsSecret ? 'keys' : 'key'}
+                {t('onboarding.title', { provider: provider.label.split(' ')[0], keys: provider.supportsSecret ? t('onboarding.keys') : t('onboarding.key') })}
             </h2>
             <p className="mx-auto mb-4 max-w-md text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-                {provider.keyHint || provider.description}
+                {provider.keyHint || providerDescription(provider.id, lang)}
             </p>
 
             {provider.keyUrl && (
                 <a href={provider.keyUrl} target="_blank" rel="noopener noreferrer"
                    className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
-                    Get a free key <Icon.External className="h-4 w-4" />
+                    {t('onboarding.getKey')} <Icon.External className="h-4 w-4" />
                 </a>
             )}
 
@@ -2742,7 +3233,7 @@ const KeyOnboarding: React.FC<{
                 <input
                     type="password"
                     value={keyDraft}
-                    placeholder={provider.keyLabel || 'Paste your key here'}
+                    placeholder={provider.keyLabel || t('settings.apiKey')}
                     onChange={(e) => setKeyDraft(e.target.value.trim())}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !provider.supportsSecret) save(); }}
                     className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
@@ -2751,7 +3242,7 @@ const KeyOnboarding: React.FC<{
                     <input
                         type="password"
                         value={secretDraft}
-                        placeholder={provider.secretLabel || 'Paste your secret here'}
+                        placeholder={provider.secretLabel || t('settings.apiSecret')}
                         onChange={(e) => setSecretDraft(e.target.value.trim())}
                         onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
                         className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
@@ -2763,7 +3254,7 @@ const KeyOnboarding: React.FC<{
                     onClick={save}
                     className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
                 >
-                    Save {provider.supportsSecret ? 'keys' : 'key'} & load
+                    {t('onboarding.save', { keys: provider.supportsSecret ? t('onboarding.keys') : t('onboarding.key') })}
                 </button>
             </div>
 
@@ -2775,7 +3266,7 @@ const KeyOnboarding: React.FC<{
                 {previewLabel}
             </button>
             {tokenValue && (!provider.supportsSecret || secretValue) && (
-                <p className="mt-3 text-[11px] text-emerald-600 dark:text-emerald-400">Credentials already saved — just search a ticker above.</p>
+                <p className="mt-3 text-[11px] text-emerald-600 dark:text-emerald-400">{t('onboarding.saved')}</p>
             )}
         </div>
     );
@@ -2809,22 +3300,22 @@ interface DeskColumnDef {
 }
 
 /** Build the currently visible call/put columns from Settings → Desk columns. */
-function deskColumns(settings: DeskColumnSettings): { calls: DeskColumnDef[]; puts: DeskColumnDef[] } {
-    const oi: DeskColumnDef = { key: 'openInterest', label: 'OI', render: (q) => fmtInt(q?.openInterest) };
-    const vol: DeskColumnDef = { key: 'volume', label: 'Vol', render: (q) => fmtInt(q?.volume) };
-    const iv: DeskColumnDef = { key: 'iv', label: 'IV', className: 'text-slate-500', render: (q) => fmtPct(q?.iv) };
-    const delta: DeskColumnDef = { key: 'delta', label: 'Δ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.delta) };
-    const gamma: DeskColumnDef = { key: 'gamma', label: 'Γ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.gamma) };
-    const theta: DeskColumnDef = { key: 'theta', label: 'Θ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.theta) };
-    const vega: DeskColumnDef = { key: 'vega', label: 'Vega', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.vega) };
-    const rho: DeskColumnDef = { key: 'rho', label: 'ρ', className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.rho) };
-    const lambda: DeskColumnDef = { key: 'lambda', label: 'λ', className: 'text-fuchsia-500', render: (q) => fmtGreek(q?.lambda) };
-    const vanna: DeskColumnDef = { key: 'vanna', label: 'Vanna', className: 'text-amber-500', render: (q) => fmtGreek(q?.vanna) };
-    const vomma: DeskColumnDef = { key: 'vomma', label: 'Vomma', className: 'text-amber-500', render: (q) => fmtGreek(q?.vomma) };
-    const charm: DeskColumnDef = { key: 'charm', label: 'Charm', className: 'text-amber-500', render: (q) => fmtGreek(q?.charm) };
-    const speed: DeskColumnDef = { key: 'speed', label: 'Speed', className: 'text-cyan-500', render: (q) => fmtGreek(q?.speed) };
-    const zomma: DeskColumnDef = { key: 'zomma', label: 'Zomma', className: 'text-cyan-500', render: (q) => fmtGreek(q?.zomma) };
-    const color: DeskColumnDef = { key: 'color', label: 'Color', className: 'text-cyan-500', render: (q) => fmtGreek(q?.color) };
+function deskColumns(settings: DeskColumnSettings, t: (key: string) => string): { calls: DeskColumnDef[]; puts: DeskColumnDef[] } {
+    const oi: DeskColumnDef = { key: 'openInterest', label: t('settings.deskColumns.openInterest'), render: (q) => fmtInt(q?.openInterest) };
+    const vol: DeskColumnDef = { key: 'volume', label: t('settings.deskColumns.volume'), render: (q) => fmtInt(q?.volume) };
+    const iv: DeskColumnDef = { key: 'iv', label: t('settings.deskColumns.iv'), className: 'text-slate-500', render: (q) => fmtPct(q?.iv) };
+    const delta: DeskColumnDef = { key: 'delta', label: t('settings.deskColumns.delta'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.delta) };
+    const gamma: DeskColumnDef = { key: 'gamma', label: t('settings.deskColumns.gamma'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.gamma) };
+    const theta: DeskColumnDef = { key: 'theta', label: t('settings.deskColumns.theta'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.theta) };
+    const vega: DeskColumnDef = { key: 'vega', label: t('settings.deskColumns.vega'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.vega) };
+    const rho: DeskColumnDef = { key: 'rho', label: t('settings.deskColumns.rho'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.rho) };
+    const lambda: DeskColumnDef = { key: 'lambda', label: t('settings.deskColumns.lambda'), className: 'text-fuchsia-500', render: (q) => fmtGreek(q?.lambda) };
+    const vanna: DeskColumnDef = { key: 'vanna', label: t('settings.deskColumns.vanna'), className: 'text-amber-500', render: (q) => fmtGreek(q?.vanna) };
+    const vomma: DeskColumnDef = { key: 'vomma', label: t('settings.deskColumns.vomma'), className: 'text-amber-500', render: (q) => fmtGreek(q?.vomma) };
+    const charm: DeskColumnDef = { key: 'charm', label: t('settings.deskColumns.charm'), className: 'text-amber-500', render: (q) => fmtGreek(q?.charm) };
+    const speed: DeskColumnDef = { key: 'speed', label: t('settings.deskColumns.speed'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.speed) };
+    const zomma: DeskColumnDef = { key: 'zomma', label: t('settings.deskColumns.zomma'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.zomma) };
+    const color: DeskColumnDef = { key: 'color', label: t('settings.deskColumns.color'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.color) };
     const callPrice: DeskColumnDef[] = [
         { key: 'bid', label: 'Bid', render: (q) => fmt(q?.bid) },
         { key: 'mid', label: 'Mid', className: 'font-medium text-emerald-600 dark:text-emerald-400', render: (q) => fmt(q?.mid) },
@@ -2917,6 +3408,7 @@ const ExpirationSection: React.FC<{
      *  scroll it to the vertical center on load / expand (center-strike view). */
     atmRef: (el: HTMLDivElement | null) => void;
 }> = ({ section, index, spot, callColumns, putColumns, collapsed, active, onToggle, innerRef, atmRef }) => {
+    const { t } = useI18n();
     const { expiration, calls, puts, strikes } = section;
     const atmStrike = useMemo(() => {
         if (spot == null || strikes.length === 0) return null;
@@ -2969,7 +3461,7 @@ const ExpirationSection: React.FC<{
                      className={'h-3 w-3 transition-transform ' + (collapsed ? '-rotate-90' : '')}>
                     <path d="m6 9 6 6 6-6" />
                 </svg>
-                <span className="tabular-nums">{expiration}&nbsp; {strikes.length} strikes</span>
+                <span className="tabular-nums">{expiration}&nbsp; {t('chain.strikes', { count: strikes.length })}</span>
             </button>
 
             {rendered && (
@@ -2982,9 +3474,9 @@ const ExpirationSection: React.FC<{
                             bodyAnim + ' ' + (active ? 'sticky' : '')
                         }
                     >
-                        <div className="od-calls px-2 py-1 text-center font-semibold text-emerald-700 dark:text-emerald-400" style={{ gridColumn: `span ${callColumns.length}` }}>Calls</div>
-                        <div className="od-strike-cell px-2 py-1 text-center font-semibold">Strike</div>
-                        <div className="od-puts px-2 py-1 text-center font-semibold text-rose-700 dark:text-rose-400" style={{ gridColumn: `span ${putColumns.length}` }}>Puts</div>
+                        <div className="od-calls px-2 py-1 text-center font-semibold text-emerald-700 dark:text-emerald-400" style={{ gridColumn: `span ${callColumns.length}` }}>{t('chain.calls')}</div>
+                        <div className="od-strike-cell px-2 py-1 text-center font-semibold">{t('chain.strike')}</div>
+                        <div className="od-puts px-2 py-1 text-center font-semibold text-rose-700 dark:text-rose-400" style={{ gridColumn: `span ${putColumns.length}` }}>{t('chain.puts')}</div>
                     </div>
                     {/* Column-label row (sticky only when active). */}
                     <div
@@ -2997,7 +3489,7 @@ const ExpirationSection: React.FC<{
                         {callColumns.map((c) => (
                             <div key={`c${c.key}`} className="px-2 py-1 text-right font-medium">{c.label}</div>
                         ))}
-                        <div className="od-strike-cell px-2 py-1 text-center font-medium">$</div>
+                        <div className="od-strike-cell px-2 py-1 text-center font-medium">{t('chain.strikeSymbol')}</div>
                         {putColumns.map((c) => (
                             <div key={`p${c.key}`} className="px-2 py-1 text-right font-medium">{c.label}</div>
                         ))}
@@ -3042,7 +3534,8 @@ const ExpirationSection: React.FC<{
  * the in-view section active so its sub-headers stay pinned below the pile.
  */
 const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: number | null; columns: DeskColumnSettings }> = ({ symbol, sections, spot, columns }) => {
-    const visibleColumns = useMemo(() => deskColumns(columns), [columns]);
+    const { t } = useI18n();
+    const visibleColumns = useMemo(() => deskColumns(columns, t), [columns, t]);
     const odGrid = useMemo(() => gridCols(visibleColumns.calls.length, visibleColumns.puts.length), [visibleColumns]);
     const odMinWidth = useMemo(() => deskMinWidth(visibleColumns.calls.length, visibleColumns.puts.length), [visibleColumns]);
 
@@ -3249,7 +3742,7 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
             {/* Controls ABOVE the desk (full width): count LEFT, toggle RIGHT. */}
             <div className="mb-2 flex w-full items-center justify-between">
                 <span className="text-xs text-slate-400">
-                    {sections.length} expiration{sections.length === 1 ? '' : 's'}
+                    {sections.length} {sections.length === 1 ? t('chain.expirations') : t('chain.expirationsPlural')}
                 </span>
                 <button
                     type="button"
@@ -3261,7 +3754,7 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
                          className={'h-3 w-3 transition-transform ' + (allCollapsed ? '-rotate-90' : '')}>
                         <path d="m6 9 6 6 6-6" />
                     </svg>
-                    {allCollapsed ? 'Expand all' : 'Collapse all'}
+                    {allCollapsed ? t('chain.expandAll') : t('chain.collapseAll')}
                 </button>
             </div>
 
@@ -3297,6 +3790,7 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
 // ============================================================================
 
 const App: React.FC = () => {
+    const { t: tr, lang } = useI18n();
     // ---- Settings state (persisted) ----------------------------------------
     const [settings, setSettings] = useState<Settings>(() => loadSettings());
     const patchSettings = useCallback((patch: Partial<Settings>) => {
@@ -3323,6 +3817,10 @@ const App: React.FC = () => {
     }, []);
 
     useThemeController(settings.theme);
+
+    // Sync the i18n context with persisted language changes (and vice versa).
+    const { setLang } = useI18n();
+    useEffect(() => { setLang(settings.language); }, [settings.language, setLang]);
 
     const provider = useMemo(
         () => PROVIDERS.find((p) => p.id === settings.providerId) ?? PROVIDERS[0],
@@ -3420,7 +3918,7 @@ const App: React.FC = () => {
         setError('');
         setNotice('');
         if (!sym) {
-            setError('Enter a ticker symbol.');
+            setError(tr('error.enterTicker'));
             setErrorNonce((n) => n + 1);
             return;
         }
@@ -3436,16 +3934,16 @@ const App: React.FC = () => {
             if (credsOverride?.secret != null) ctx.secret = credsOverride.secret;
             const m = await loadMeta(provider, sym, ctx);
             if (ac.signal.aborted) return;
-            if (m.expirations.length === 0) throw new Error(`No option contracts found for "${sym}".`);
+            if (m.expirations.length === 0) throw new Error(tr('error.noContracts', { symbol: sym }));
             setMeta(m);
             // Pre-select the nearest expiration by default (user can add more).
             setSelectedExps([m.expirations[0]]);
             patchSettings({ lastTicker: m.symbol });
             dbg('getDates ok', { expirations: m.expirations.length });
         } catch (e: unknown) {
-            if (isAbortError(e)) { setNotice('Request cancelled.'); return; }
+            if (isAbortError(e)) { setNotice(tr('notice.cancelled')); return; }
             setMeta(null);
-            setError(friendlyError(e, provider));
+            setError(friendlyError(e, provider, lang));
             setErrorNonce((n) => n + 1);
             dbg('getDates error', e);
         } finally {
@@ -3476,12 +3974,12 @@ const App: React.FC = () => {
             setExpData(collected);
             setChainSymbol(meta.symbol);
             const total = Object.values(collected).reduce((n, q) => n + q.length, 0);
-            if (total === 0) setNotice('No contracts returned for the selected expiration(s).');
+            if (total === 0) setNotice(tr('notice.noContracts'));
             dbg('loadChain ok', { expirations: ordered.length, total });
         } catch (e: unknown) {
-            if (isAbortError(e)) { setNotice('Request cancelled.'); return; }
+            if (isAbortError(e)) { setNotice(tr('notice.cancelled')); return; }
             setExpData({});
-            setError(friendlyError(e, provider));
+            setError(friendlyError(e, provider, lang));
             setErrorNonce((n) => n + 1);
             dbg('loadChain error', e);
         } finally {
@@ -3511,7 +4009,7 @@ const App: React.FC = () => {
         setTickerSuggestionsOpen(false);
         setActiveTickerSuggestion(-1);
         if (!s.hasOptions) {
-            setNotice(`"${s.symbol}" is a valid ticker, but the latest local index marks it as (no options).`);
+            setNotice(tr('notice.noOptions', { symbol: s.symbol }));
         } else {
             setNotice('');
         }
@@ -3590,8 +4088,8 @@ const App: React.FC = () => {
         }
     }, [provider, getDates, patchSettings]);
     const previewLabel = provider.demoSymbol
-        ? `or get ${provider.demoSymbol}’s dates now (no key needed)`
-        : 'or switch to CACHE (AAPL static data)';
+        ? tr('onboarding.previewDemo', { symbol: provider.demoSymbol })
+        : tr('onboarding.previewCache');
 
     const showTickerSuggestions = tickerSuggestionsOpen && (tickerSuggestionsLoading || tickerSuggestions.length > 0);
 
@@ -3646,7 +4144,7 @@ const App: React.FC = () => {
                                 }}
                                 onBlur={() => window.setTimeout(() => setTickerSuggestionsOpen(false), 120)}
                                 onKeyDown={onTickerKeyDown}
-                                placeholder="Ticker or company (e.g. AAPL, Tesla, SPX)"
+                                placeholder={tr('controls.tickerPlaceholder')}
                                 spellCheck={false}
                                 autoCapitalize="characters"
                                 role="combobox"
@@ -3657,7 +4155,7 @@ const App: React.FC = () => {
                             {showTickerSuggestions && (
                                 <div className="absolute left-0 top-full z-50 mt-2 max-h-72 w-80 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-xl ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10">
                                     {tickerSuggestionsLoading && tickerSuggestions.length === 0 ? (
-                                        <div className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">Searching tickers…</div>
+                                        <div className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{tr('controls.searching')}</div>
                                     ) : tickerSuggestions.map((s, i) => (
                                         <button
                                             key={`${s.source}:${s.symbol}:${i}`}
@@ -3671,11 +4169,11 @@ const App: React.FC = () => {
                                         >
                                             <span className="mt-0.5 min-w-16 font-semibold text-slate-900 dark:text-slate-50">
                                                 {s.symbol}
-                                                {!s.hasOptions && <span className="ml-1 font-medium text-amber-600 dark:text-amber-400">(no options)</span>}
+                                                {!s.hasOptions && <span className="ml-1 font-medium text-amber-600 dark:text-amber-400">{tr('noOptions')}</span>}
                                             </span>
                                             <span className="min-w-0 flex-1">
                                                 <span className="block truncate text-slate-600 dark:text-slate-300">
-                                                    {s.name || (s.hasOptions ? 'Ticker from local index' : 'Valid ticker from local index')}
+                                                    {s.name || (s.hasOptions ? tr('tickerFromIndex') : tr('validTickerFromIndex'))}
                                                 </span>
                                                 <span className="block truncate text-[11px] text-slate-400 dark:text-slate-500">
                                                     {s.exchange ? `${s.exchange} · ${s.source}` : s.source}
@@ -3684,7 +4182,7 @@ const App: React.FC = () => {
                                         </button>
                                     ))}
                                     {tickerSuggestionsLoading && tickerSuggestions.length > 0 && (
-                                        <div className="border-t border-slate-100 px-3 py-1 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">Refreshing…</div>
+                                        <div className="border-t border-slate-100 px-3 py-1 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">{tr('controls.loading')}</div>
                                     )}
                                 </div>
                             )}
@@ -3695,7 +4193,7 @@ const App: React.FC = () => {
                             disabled={metaLoading}
                             className="rounded-md bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50 focus:ring-2 focus:ring-slate-400 focus:ring-offset-1 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:focus:ring-offset-slate-900"
                         >
-                            {metaLoading ? 'Loading…' : 'Expirations'}
+                            {metaLoading ? tr('controls.loading') : tr('controls.expirations')}
                         </button>
                     </form>
 
@@ -3709,7 +4207,7 @@ const App: React.FC = () => {
                             onSubmit={(e) => { e.preventDefault(); loadChain(); }}
                             className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5"
                         >
-                            <span className="text-xs text-slate-400">Expirations</span>
+                            <span className="text-xs text-slate-400">{tr('controls.expirations')}</span>
                             <div className="themed-scroll flex max-w-[46vw] items-center gap-1 overflow-x-auto">
                                 {meta.expirations.map((exp) => {
                                     const on = selectedExps.includes(exp);
@@ -3735,9 +4233,9 @@ const App: React.FC = () => {
                                 type="button"
                                 onClick={() => setSelectedExps(selectedExps.length === meta.expirations.length ? [] : [...meta.expirations])}
                                 className="shrink-0 rounded-md border border-slate-300 dark:border-slate-700 px-2 py-0.5 text-[11px] font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                                title="Select all / none"
+                                title={tr('controls.all') + ' / ' + tr('controls.none')}
                             >
-                                {selectedExps.length === meta.expirations.length ? 'None' : 'All'}
+                                {selectedExps.length === meta.expirations.length ? tr('controls.none') : tr('controls.all')}
                             </button>
                             <button
                                 ref={loadBtnRef}
@@ -3745,7 +4243,7 @@ const App: React.FC = () => {
                                 disabled={expLoading || selectedExps.length === 0}
                                 className="shrink-0 rounded-md bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900"
                             >
-                                {expLoading ? 'Loading…' : `Load${selectedExps.length > 1 ? ` (${selectedExps.length})` : ''}`}
+                                {expLoading ? tr('controls.loading') : (selectedExps.length > 1 ? tr('controls.loadCount', { count: selectedExps.length }) : tr('controls.load'))}
                             </button>
                         </form>
                     )}
@@ -3757,7 +4255,7 @@ const App: React.FC = () => {
                             onClick={cancelAll}
                             className="inline-flex items-center gap-1 rounded-lg border border-rose-300 dark:border-rose-700 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
                         >
-                            <Icon.X className="h-3.5 w-3.5" /> Cancel
+                            <Icon.X className="h-3.5 w-3.5" /> {tr('controls.cancel')}
                         </button>
                     )}
 
@@ -3767,17 +4265,17 @@ const App: React.FC = () => {
                             <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{chainSymbol}</span>
                             {spot != null && (
                                 <span className="text-sm text-slate-500 dark:text-slate-400">
-                                    Spot <span className="font-semibold text-slate-800 dark:text-slate-200">${fmt(spot)}</span>
-                                    {spotIsEstimated && <span className="ml-1 text-[11px] text-amber-500">(est.)</span>}
+                                    {tr('spot.label')} <span className="font-semibold text-slate-800 dark:text-slate-200">${fmt(spot)}</span>
+                                    {spotIsEstimated && <span className="ml-1 text-[11px] text-amber-500">{tr('spot.estimated')}</span>}
                                 </span>
                             )}
-                            <span className="text-xs text-slate-400">· delayed · {provider.label.split(' ')[0]}</span>
+                            <span className="text-xs text-slate-400">{tr('spot.delayed', { provider: provider.label.split(' ')[0] })}</span>
                         </div>
                     )}
 
                     {anyLoading && (
                         <span className="animate-pulse-soft text-xs font-medium text-indigo-500">
-                            {metaLoading ? 'Fetching expirations…' : 'Loading chain…'}
+                            {metaLoading ? tr('loading.expirations') : tr('loading.chain')}
                         </span>
                     )}
                 </div>
@@ -3798,7 +4296,7 @@ const App: React.FC = () => {
                             onClick={() => (meta ? loadChain() : getDates(tickerInput))}
                             className="shrink-0 rounded-md border border-rose-300 dark:border-rose-700 px-2 py-0.5 text-xs font-semibold hover:bg-rose-100 dark:hover:bg-rose-900/40"
                         >
-                            Retry
+                            {tr('retry')}
                         </button>
                     </div>
                 )}
@@ -3810,12 +4308,12 @@ const App: React.FC = () => {
                             provider={provider}
                             tokenValue={settings.tokens[provider.id] || ''}
                             secretValue={settings.secrets[provider.id] || ''}
-                            onSave={(t, s) => {
-                                setToken(provider.id, t);
-                                if (provider.supportsSecret) setSecret(provider.id, s);
+                            onSave={(apiToken, apiSecret) => {
+                                setToken(provider.id, apiToken);
+                                if (provider.supportsSecret) setSecret(provider.id, apiSecret);
                                 // Pass creds directly to avoid a stale-closure race
                                 // (settings state hasn't committed yet).
-                                getDates(tickerInput || 'AAPL', { token: t, secret: s });
+                                getDates(tickerInput || 'AAPL', { token: apiToken, secret: apiSecret });
                             }}
                             onPreview={onboardingPreview}
                             previewLabel={previewLabel}
@@ -3829,11 +4327,11 @@ const App: React.FC = () => {
                         <ChainTable symbol={chainSymbol} sections={sections} spot={spot} columns={settings.deskColumns} />
                     ) : meta && !expLoading && !chainSymbol ? (
                         <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
-                            Pick one or more expirations and press <span className="mx-1 font-semibold text-indigo-500">Load</span> to fetch the chain.
+                            {tr('notice.pickExp')} <span className="mx-1 font-semibold text-indigo-500">{tr('controls.load')}</span> {tr('notice.toFetch')}
                         </div>
                     ) : (!meta && !metaLoading && !error) ? (
                         <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
-                            Enter a ticker and press <span className="mx-1 font-semibold text-slate-600 dark:text-slate-300">Expirations</span> to begin.
+                            {tr('notice.enterTicker')} <span className="mx-1 font-semibold text-slate-600 dark:text-slate-300">{tr('controls.expirations')}</span> {tr('notice.toBegin')}
                         </div>
                     ) : null
                 )}
@@ -3847,5 +4345,5 @@ const App: React.FC = () => {
 // ============================================================================
 
 const rootElement = document.getElementById('root');
-if (rootElement) createRoot(rootElement).render(<React.StrictMode><App /></React.StrictMode>);
+if (rootElement) createRoot(rootElement).render(<React.StrictMode><I18nProvider initial={DEFAULT_LANGUAGE}><App /></I18nProvider></React.StrictMode>);
 else console.error('Failed to find root element.');

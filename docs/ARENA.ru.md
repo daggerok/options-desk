@@ -1,6 +1,6 @@
 # ARENA.md — адаптер для Arena.ai Agent Mode
 
-> **Главный контракт:** [`AGENT.md`](./AGENT.md).
+> **Главный контракт:** [`AGENT.md`](../AGENT.md).
 
 Этот файл содержит специфичные инструкции для Arena.ai Agent Mode.
 
@@ -23,4 +23,4 @@ TICKERS=PEP,KO MAX_FETCHES=3 NASDAQ_TIMEOUT=5 uv run --with yfinance --with requ
 ```
 
 ## Developer Guide
-Подробности в [DEVELOPMENT.md](./DEVELOPMENT.md).
+Подробности в [DEVELOPMENT.ru.md](./DEVELOPMENT.ru.md) / [DEVELOPMENT.en.md](./DEVELOPMENT.en.md).

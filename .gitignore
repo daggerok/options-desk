@@ -37,3 +37,4 @@ dist
 .DS_Store
 workspace-*
 SCRATCHPAD.md
+package-lock.json

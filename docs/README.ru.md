@@ -10,13 +10,14 @@
 
 ## Agentic Setup (Агентная разработка)
 
-Репозиторий оптимизирован для работы с AI-агентами:
-- [AGENT.md](./AGENT.md): Основной контракт и правила.
-- [CLAUDE.md](./CLAUDE.md): Адаптер для Claude Code.
+Репозиторий оптимизирован для работы с AI-агентами. Основные agent-файлы остаются в корне проекта; расширенные гайды — в [`../docs`](../docs).
+
+- [AGENT.md](../AGENT.md): Основной контракт и правила.
+- [CLAUDE.md](../CLAUDE.md): Адаптер для Claude Code.
 - [.cursorrules](./.cursorrules): Правила для Cursor AI.
-- [ARENA.md](./ARENA.md): Конфигурация для Arena.ai.
-- [Setup.md](./Setup.md): Инструкция по настройке агентной среды.
-- [DEVELOPMENT.md](./DEVELOPMENT.md): Подробный гид разработчика.
+- [ARENA.ru.md](./ARENA.ru.md) / [ARENA.en.md](./ARENA.en.md): Конфигурация для Arena.ai.
+- [Setup.ru.md](./Setup.ru.md) / [Setup.en.md](./Setup.en.md): Инструкция по настройке агентной среды.
+- [DEVELOPMENT.ru.md](./DEVELOPMENT.ru.md) / [DEVELOPMENT.en.md](./DEVELOPMENT.en.md): Подробный гид разработчика.
 
 Для работы используются **Bun** (JS/TS) и **uv** (Python). **Важно:** всегда используйте `bun` вместо `npm`.
 
@@ -46,8 +47,9 @@
 - **Несколько экспираций:** можно выбрать одну, несколько или все. Цепочки показываются стопкой от ранней к поздней со sticky-заголовками.
 - **Удобная доска:** подсветка ATM, sticky Calls/Strike/Puts, greeks-колонки включены по умолчанию, настройки колонок для каждой стороны (Calls/Puts) отдельно, missing data показывается пустой ячейкой, скроллбары в теме, сворачивание/разворачивание, автопрокрутка к текущему страйку после загрузки/разворачивания.
 - **Theme UX:** компактная иконка текущей темы с animated dropdown для остальных тем.
+- **Интернационализация (i18n):** интерфейс на английском и русском языках с переключателем языка в шапке и в настройках.
 - **Бейджи настройки:** No setup / Free key / Needs proxy и подсказки, если нужен токен.
-- **Локальное состояние:** провайдер, тема, токены, URL прокси, последний тикер и кэш запросов хранятся только в `localStorage`.
+- **Локальное состояние:** провайдер, тема, язык, токены, URL прокси, последний тикер, колонки доски и кэш запросов хранятся только в `localStorage`.
 
 ## Быстрый старт
 
@@ -194,7 +196,7 @@ bun ./scripts/yahoo-proxy.ts
 src/
   index.html                  # Parcel entry shell
   index.css                   # Tailwind v4, тема, scrollbars/CSS для доски
-  main.tsx                    # React app, providers, UI, кэш/состояние
+  main.tsx                    # React app, providers, UI, кэш/состояние, i18n
 data/
   index.json                  # { files, count, generated, names, no_options }
   AAPL.json, SPY.json, ...    # один cache-файл цепочки на тикер, с greeks metadata после refresh
@@ -208,9 +210,15 @@ scripts/
   github-pages.yml            # деплой Pages
 package.json                  # Bun/Parcel scripts
 pyproject.toml                # Python deps для fetch_data.py
-README.md                     # TOC с ссылками на README.en.md и README.ru.md
-README.en.md                  # Английская документация
-README.ru.md                  # Русская документация (этот файл)
+README.md                     # TOC со ссылками на docs/README.en.md и docs/README.ru.md
+docs/
+  README.en.md                # Английская документация
+  README.ru.md                # Русская документация (этот файл)
+  Setup.en.md / Setup.ru.md   # Учебник по agentic setup
+  DEVELOPMENT.en.md / .ru.md  # Гайд разработчика
+  AGENTS.en.md / .ru.md       # Compatibility checklist
+  ARENA.en.md / .ru.md        # Адаптер Arena.ai
+  .cursorrules                # Правила Cursor AI
 ```
 
 ## Приватность и ключи

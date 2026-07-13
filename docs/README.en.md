@@ -10,13 +10,14 @@ A single-page **options board**: enter a ticker, get expirations, select one or 
 
 ## Agentic Setup
 
-This repository is optimized for AI-agentic development. It includes:
-- [AGENT.md](./AGENT.md): Main agent contract and rules.
-- [CLAUDE.md](./CLAUDE.md): Adapter for Claude Code.
+This repository is optimized for AI-agentic development. Core agent files stay in the repository root; extended guides live in [`../docs`](../docs).
+
+- [AGENT.md](../AGENT.md): Main agent contract and rules.
+- [CLAUDE.md](../CLAUDE.md): Adapter for Claude Code.
 - [.cursorrules](./.cursorrules): Rules for Cursor AI.
-- [ARENA.md](./ARENA.md): Specific rules for Arena.ai.
-- [Setup.md](./Setup.md): Tutorial on setting up agentic workflows.
-- [DEVELOPMENT.md](./DEVELOPMENT.md): Detailed developer guide.
+- [ARENA.en.md](./ARENA.en.md) / [ARENA.ru.md](./ARENA.ru.md): Specific rules for Arena.ai.
+- [Setup.en.md](./Setup.en.md) / [Setup.ru.md](./Setup.ru.md): Tutorial on setting up agentic workflows.
+- [DEVELOPMENT.en.md](./DEVELOPMENT.en.md) / [DEVELOPMENT.ru.md](./DEVELOPMENT.ru.md): Detailed developer guide.
 
 We use **Bun** for JavaScript/TypeScript and **uv** for Python. **Important:** Always use `bun` instead of `npm`.
 
@@ -46,8 +47,9 @@ We use **Bun** for JavaScript/TypeScript and **uv** for Python. **Important:** A
 - **Multiple expirations:** select one, many, or all expirations. Chains render stacked earliest-to-latest with sticky/piled expiration headers.
 - **Desk UX:** ATM row highlight, sticky Calls/Strike/Puts headers, greeks columns enabled by default, user-selectable per-side/per-column desk settings, empty cells for missing data, themed scrollbars, collapse/expand controls, and automatic centering on the current strike after load/expand.
 - **Theme UX:** compact current-theme icon with an animated dropdown for the other themes.
+- **Internationalization (i18n):** English and Russian UI with a language switcher in the header and in Settings.
 - **Provider setup badges:** No setup / Free key / Needs proxy, plus onboarding when a token is required.
-- **Local browser state:** provider, theme, tokens, proxy URL, last ticker, and query cache are stored only in `localStorage`.
+- **Local browser state:** provider, theme, language, tokens, proxy URL, last ticker, desk columns, and query cache are stored only in `localStorage`.
 
 ## Quick start
 
@@ -196,7 +198,7 @@ These files are optional infrastructure outside the core app source:
 src/
   index.html                  # Parcel entry shell
   index.css                   # Tailwind v4, theme tokens, scrollbar/table-desk CSS
-  main.tsx                    # React app, providers, UI, cache/state logic
+  main.tsx                    # React app, providers, UI, cache/state logic, i18n
 data/
   index.json                  # { files, count, generated, names, no_options }
   AAPL.json, SPY.json, ...    # one option-chain cache file per ticker, with greeks metadata when refreshed
@@ -210,9 +212,15 @@ scripts/
   github-pages.yml            # Pages deployment
 package.json                  # Bun/Parcel scripts
 pyproject.toml                # Python deps for fetch_data.py
-README.md                     # TOC pointing to README.en.md and README.ru.md
-README.en.md                  # English documentation (this file)
-README.ru.md                  # Russian documentation
+README.md                     # TOC pointing to docs/README.en.md and docs/README.ru.md
+docs/
+  README.en.md                # English documentation (this file)
+  README.ru.md                # Russian documentation
+  Setup.en.md / Setup.ru.md   # Agentic setup tutorial
+  DEVELOPMENT.en.md / .ru.md  # Developer guide
+  AGENTS.en.md / .ru.md       # Compatibility checklist
+  ARENA.en.md / .ru.md        # Arena.ai adapter
+  .cursorrules                # Cursor AI rules
 ```
 
 ## Privacy & keys
