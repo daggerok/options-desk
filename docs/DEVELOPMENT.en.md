@@ -35,12 +35,12 @@ We use `uv` to manage the Python environment.
 
 1. **Run the full cache update cycle:**
    ```bash
-   uv run --with yfinance --with requests python scripts/fetch_data.py
+   uv run --with yfinance --with requests python scripts/options-data.py
    ```
 
 2. **Spot-check specific tickers:**
    ```bash
-   TICKERS=AAPL,MSFT MAX_FETCHES=2 uv run --with yfinance --with requests python scripts/fetch_data.py
+   TICKERS=AAPL,MSFT MAX_FETCHES=2 uv run --with yfinance --with requests python scripts/options-data.py
    ```
 
 ## Greeks architecture
@@ -51,6 +51,6 @@ We use `uv` to manage the Python environment.
 ## Pre-PR checks
 Before submitting changes, make sure that:
 1. The project builds: `bun run build`.
-2. Python scripts compile: `uv run python -m py_compile scripts/fetch_data.py`.
-3. The Cloudflare Worker is valid: `node --check scripts/cloudflare-worker.js`.
+2. Python scripts compile: `uv run python -m py_compile scripts/options-data.py`.
+3. The Cloudflare Worker is valid: `node --check scripts/options-cloudflare-proxy.js`.
 4. There are no secrets or leftover debug logs in the code.

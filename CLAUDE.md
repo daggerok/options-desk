@@ -16,14 +16,14 @@
 - Stack: React + TypeScript + Tailwind v4 + Parcel/Bun.
 - Providers (UI): **CACHE, CBOE, NASDAQ, YAHOO** — fixed order.
 - Defaults: localhost/LAN → **CBOE**; GitHub Pages → **CACHE** (`defaultProviderId` in `src/main.tsx`).
-- Proxy: `scripts/yahoo-proxy.ts` / `scripts/cloudflare-worker.js` (`/api/cboe`, `/api/nasdaq`, `/api/options`, `/api/search`).
-- CACHE files: `data/*.json` + `data/index.json` via `scripts/fetch_data.py`.
+- Proxy: `scripts/options-local-proxy.ts` / `scripts/options-cloudflare-proxy.js` (`/api/cboe`, `/api/nasdaq`, `/api/options`, `/api/search`).
+- CACHE files: `data/options/*.json` + `data/options/index.json` via `scripts/options-data.py`.
 
 ## Anti-duplication (критично)
 
 | Место | Greeks |
 |-------|--------|
-| `fetch_data.py` | Cboe delayed **1st-order only** |
+| `options-data.py` | Cboe delayed **1st-order only** |
 | `src/main.tsx` | **Единственный** Black-Scholes + λ + 2nd/3rd |
 
 **Никогда** не возвращать `_black_scholes_greeks` (и аналоги) в Python. Higher-order / model fallback — только `blackScholesGreeks` / `enrichQuotesWithModelGreeks`.
@@ -40,12 +40,12 @@
 
 ```bash
 bun run build
-uv run python -m py_compile scripts/fetch_data.py
-node --check scripts/cloudflare-worker.js
+uv run python -m py_compile scripts/options-data.py
+node --check scripts/options-cloudflare-proxy.js
 git diff --check
 ```
 
-Fetcher smoke (без mass commit): `TICKERS=AAPL MAX_FETCHES=1 REQUEST_SLEEP=0 uv run python scripts/fetch_data.py`.
+Fetcher smoke (без mass commit): `TICKERS=AAPL MAX_FETCHES=1 REQUEST_SLEEP=0 uv run python scripts/options-data.py`.
 
 ## Файлы
 

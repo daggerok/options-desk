@@ -43,7 +43,7 @@
 
 Пример хорошего вопроса:
 
-> “Model greeks (λ / 2nd / 3rd) только в UI, а fetch_data.py — лишь Cboe 1st-order?”
+> “Model greeks (λ / 2nd / 3rd) только в UI, а options-data.py — лишь Cboe 1st-order?”
 
 Плохой подход:
 
@@ -57,15 +57,15 @@
 
 ```bash
 bun run build
-uv run python -m py_compile scripts/fetch_data.py
-node --check scripts/cloudflare-worker.js
+uv run python -m py_compile scripts/options-data.py
+node --check scripts/options-cloudflare-proxy.js
 git diff --check
 ```
 
 Для data-fetcher задач:
 
 ```bash
-TICKERS=XSW MAX_FETCHES=1 REQUEST_SLEEP=0 uv run python scripts/fetch_data.py
+TICKERS=XSW MAX_FETCHES=1 REQUEST_SLEEP=0 uv run python scripts/options-data.py
 ```
 
 Но массовый data refresh нельзя коммитить без явной просьбы.
@@ -241,7 +241,7 @@ grep -RInE 'TODO|FIXME|old|deprecated|Vite|webpack|no_options|provider|proxy' .
 В существующем проекте агент должен спрашивать перед:
 
 - изменением `.github/workflows/*`;
-- массовым изменением `data/*.json`;
+- массовым изменением `data/options/*.json`;
 - изменением public schema;
 - удалением исторических changelog sections;
 - сменой default provider/theme/UX;
@@ -299,7 +299,7 @@ grep -RInE 'TODO|FIXME|old|deprecated|Vite|webpack|no_options|provider|proxy' .
 - static React/TypeScript + Parcel/Bun;
 - **ровно 4 провайдера**, fixed dropdown order `CACHE, CBOE, NASDAQ, YAHOO`;
 - default selection only: localhost → CBOE, GitHub Pages → CACHE;
-- yfinance + Cboe **1st-order** в `fetch_data.py` для CACHE;
+- yfinance + Cboe **1st-order** в `options-data.py` для CACHE;
 - **single source of truth** для model/higher-order greeks — `src/main.tsx` (не дублировать в Python);
 - companion proxy (Bun / Cloudflare Worker) для CBOE/NASDAQ/YAHOO;
 - GitHub Pages deploy + scheduled data refresh workflow;
@@ -308,6 +308,6 @@ grep -RInE 'TODO|FIXME|old|deprecated|Vite|webpack|no_options|provider|proxy' .
 
 Пример хорошего checkpoint-вопроса для этого repo:
 
-> «Higher-order greeks считать только в UI, а в fetch_data.py оставить Cboe 1st-order — верно?»
+> «Higher-order greeks считать только в UI, а в options-data.py оставить Cboe 1st-order — верно?»
 
 Главная идея: agent docs — рабочий контракт, а не ритуальные файлы. При смене архитектуры (провайдеры, greeks ownership) **сначала** обновляют `AGENT.md` / `CLAUDE.md` / `AGENTS.md`, потом код — или в том же PR, но docs не оставляют stale.

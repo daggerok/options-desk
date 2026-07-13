@@ -11,9 +11,9 @@ Short checklist:
 3. New tasks start from the latest `origin/master`, work through a PR.
 4. Providers are **only** `CACHE, CBOE, NASDAQ, YAHOO` (fixed order).
 5. Default selection: localhost → **CBOE**, GitHub Pages → **CACHE** (do not change list order).
-6. **Model / higher-order greeks — UI only** (`src/main.tsx`). `fetch_data.py` = Cboe 1st-order only. Do not duplicate BS in Python.
+6. **Model / higher-order greeks — UI only** (`src/main.tsx`). `options-data.py` = Cboe 1st-order only. Do not duplicate BS in Python.
 7. Do not commit `dist/`, `node_modules/`, `.parcel-cache`, `package-lock.json`, `.venv`, `__pycache__`.
 8. Do not change workflows without permission + a token with `workflow` scope.
 9. Do not scan the whole `data/` directory (thousands of files).
-10. Before PR: `bun run build`, `uv run python -m py_compile scripts/fetch_data.py`, `node --check scripts/cloudflare-worker.js`.
+10. Before PR: `bun run build`, `uv run python -m py_compile scripts/options-data.py`, `node --check scripts/options-cloudflare-proxy.js`.
 11. Stale comments / docs — fix them, do not carry them forward.

@@ -35,12 +35,12 @@
 
 1. **Запуск полного цикла обновления кэша:**
    ```bash
-   uv run --with yfinance --with requests python scripts/fetch_data.py
+   uv run --with yfinance --with requests python scripts/options-data.py
    ```
 
 2. **Точечное тестирование тикеров:**
    ```bash
-   TICKERS=AAPL,MSFT MAX_FETCHES=2 uv run --with yfinance --with requests python scripts/fetch_data.py
+   TICKERS=AAPL,MSFT MAX_FETCHES=2 uv run --with yfinance --with requests python scripts/options-data.py
    ```
 
 ## Архитектура greeks
@@ -51,6 +51,6 @@
 ## Проверка перед PR
 Перед отправкой изменений убедитесь, что:
 1. Проект собирается: `bun run build`.
-2. Python скрипты компилируются: `uv run python -m py_compile scripts/fetch_data.py`.
-3. Cloudflare Worker валиден: `node --check scripts/cloudflare-worker.js`.
+2. Python скрипты компилируются: `uv run python -m py_compile scripts/options-data.py`.
+3. Cloudflare Worker валиден: `node --check scripts/options-cloudflare-proxy.js`.
 4. В коде нет секретов и лишних отладочных логов.

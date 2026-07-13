@@ -24,6 +24,45 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.43 - Static index without timestamp churn:
+ *          - data/options/index.json `files` is a sorted ticker list (no per-ticker
+ *            updated ISO map) and `generated` is dropped. loadStaticTickerManifest
+ *            still accepts the legacy map shape. Freshness lives on file mtime /
+ *            in-file `updated`, so no-op fetch runs no longer rewrite the index.
+ * v0.9.42 - Shared color palettes (merge-ready with fundamentals):
+ *          - Settings gain a Color palette control with two product skins:
+ *            Emerald Ledger (`fundamentals`) and Indigo Desk (`options-desk`).
+ *          - Default remains Indigo Desk (this app's native look). Emerald is
+ *            the native fundamentals palette so a future merge already has both
+ *            UIs prepared and consistent. Persisted as `settings.colorTheme`.
+ *          - `useThemeController` sets `data-palette` on <html>; accent classes
+ *            (buttons, focus rings, brand chip, Theme/Language switches) and
+ *            index.css surface tokens follow the selected palette.
+ * v0.9.41 - i18n(ru): translate Bid / Mid / Ask (and OI tooltip) on the desk:
+ *          - Price columns were hard-coded as English `"Bid"` / `"Mid"` / `"Ask"`
+ *            in `deskColumns()` so the chain header stayed Latin under RU locale
+ *            while every other label (Коллы, Путы, Страйк, Объём, Вега…) was
+ *            already translated. Wired them through `t(...)` with new keys
+ *            `settings.deskColumns.bid|mid|ask` + short `deskColumns.header.*`.
+ *          - RU headers: `Бид` / `Мид` / `Аск` (common broker shorthand);
+ *            full Settings labels: `Бид (спрос)` / `Мид (середина)` /
+ *            `Аск (предложение)`. EN keeps Bid / Mid / Ask.
+ *          - RU open-interest header uses Cyrillic `ОИ` (not Latin `OI`);
+ *            Settings label `Открытый интерес (ОИ)` matches.
+ *          - Settings note translated fully: Bid/Mid/Ask/Strike/Rho →
+ *            Бид/Мид/Аск/Страйк/Ро.
+ * v0.9.40 - Strike column containment fix:
+ *          - Strike ($) track was too narrow for high-priced underlyings
+ *            (e.g. MPWR ~$1,344 → strikes like `1,480.00`). With default
+ *            OI/Vol/IV/Greeks + Bid/Mid/Ask on both sides, the center track
+ *            compressed so strike text spilled past its cell into Put Bid.
+ *          - Widened Strike track to `minmax(5.75rem, 1.15fr)`, bumped the
+ *            desk min-width strike allowance (4.5 → 6.25 rem), tightened strike
+ *            cell padding (`px-1.5`), and added CSS containment on
+ *            `.od-strike-cell` (`min-width: 0`, `overflow: hidden`,
+ *            `text-overflow: ellipsis`, `white-space: nowrap`) so the value
+ *            stays INSIDE the Strike column at every viewport width. Full value
+ *            remains available via the cell `title` tooltip if clipped.
  * v0.9.39 - Option desk spacing, flag & i18n updates:
  *          - Spacing: widened Strike ($) column (`minmax(4.25rem, 1.05fr)`) and
  *            added scalable `--od-cgap: 0.25rem` (`column-gap: var(--od-cgap)`)
@@ -60,7 +99,7 @@
  * v0.9.34 - Ticker input selects all text on focus/click so typing a new
  *          symbol replaces the previous ticker without manual clear.
  * v0.9.33 - Single source of truth for model greeks (UI only):
- *          - scripts/fetch_data.py no longer runs Black-Scholes / higher-order
+ *          - scripts/options-data.py no longer runs Black-Scholes / higher-order
  *            math; it only attaches Cboe delayed 1st-order when available.
  *          - λ + 2nd/3rd-order + full BS fallback remain exclusively in this
  *            file (blackScholesGreeks / enrichQuotesWithModelGreeks) so live
@@ -72,7 +111,7 @@
  *          - Settings migration: unknown/removed providerId resets to host default.
  * v0.9.31 - Client-side Black-Scholes greeks enrichment for live providers:
  *          - Higher-order greeks (λ, vanna, vomma, charm, speed, zomma, color)
- *            used to exist only on Static cache because scripts/fetch_data.py
+ *            used to exist only on Static cache because scripts/options-data.py
  *            pre-computed them at build time. Live providers (CBOE/Yahoo/
  *            NASDAQ) now get the same model enrichment in the browser after
  *            fetch, using spot + IV + strike + side + expiration.
@@ -98,12 +137,12 @@
  * v0.9.28 - Static-cache greeks metadata:
  *          - OptionQuote now carries optional `greeksSource` and
  *            `greeksMissingReason` fields, and ChainMeta/ChainResult can carry a
- *            top-level `greeks` enrichment summary from data/{TICKER}.json.
+ *            top-level `greeks` enrichment summary from data/options/{TICKER}.json.
  *          - Static-cache parsing preserves these fields so future greeks-based
  *            analytics can distinguish provider-supplied Cboe delayed greeks
  *            from Black-Scholes model estimates.
  * v0.9.27 - Local-index company names in ticker suggestions:
- *          - data/index.json may now include `names: { TICKER: companyName }`.
+ *          - data/options/index.json may now include `names: { TICKER: companyName }`.
  *            The local fallback suggestion source reads that map, displays the
  *            company/fund/index name instead of the generic "Ticker from local
  *            index", and also searches names so typing "apple" can suggest AAPL.
@@ -119,8 +158,8 @@
  *            NASDAQ and CBOE call the companion proxy's new unified
  *            /api/search?provider=<id>&q=... endpoint; DoltHub uses SQL against
  *            option_chain at DOLT_LATEST_DATE. Providers without such an endpoint
- *            fall back to data/index.json.
- *          - data/index.json fallback now reads BOTH `files` (cached tickers with
+ *            fall back to data/options/index.json.
+ *          - data/options/index.json fallback now reads BOTH `files` (cached tickers with
  *            options) and `no_options` (valid tickers where the latest scan found
  *            no listed options). no_options rows are visibly labeled
  *            "(no options)" in the suggestion menu and Static fetches now produce
@@ -198,7 +237,7 @@
  * v0.9.20 - Static cache: replace the vague "Bad static data" with ACTIONABLE
  *          diagnostics. The old code did `await res.json().catch(() => null)`,
  *          which swallowed the real cause. Root cause in the wild: a dev/preview
- *          or SPA host serving index.html (200 HTML) for a missing data/*.json
+ *          or SPA host serving index.html (200 HTML) for a missing data/options/*.json
  *          instead of a 404 — so res.json() throws and the message was useless
  *          (and the ticker <select> also went blank because index.json failed
  *          the same way). New fetchStaticJson() reads the body as TEXT first and
@@ -253,11 +292,11 @@
  *            `atmRef` on ExpirationSection registers the ATM row; ChainTable's
  *            centerStrike() accounts for the sticky expiration-bar pile so the
  *            strike lands in the visible center, not under the pinned headers.
- *          - Static-cache provider reads the NEW data/index.json shape:
+ *          - Static-cache provider reads the NEW data/options/index.json shape:
  *            `{ files: { TICKER: updatedISO }, count, generated }` (per-ticker
  *            timestamps). listTickers() now derives the list from sorted keys of
  *            `files`. No backward-compat with the old `{ tickers, updated }`.
- *            (INFRA fetch_data.py v4: coverage-first (all MISSING tickers, resume
+ *            (INFRA options-data.py v4: coverage-first (all MISSING tickers, resume
  *            down the cap-ranked list) then rotating REFRESH of the OLDEST files,
  *            so every ticker gets cached before we re-loop — and we never re-loop
  *            only the top-cap names. index.json rebuilt from each file's own
@@ -272,7 +311,7 @@
  *          (--od-grid). All prior features preserved: stacking pile, active
  *          highlight (click + scroll), collapse/expand animation, strike-count,
  *          center Strike guide, full-width + adaptive height.
- *          (INFRA, fetch_data.py v3: working-day freshness — skip today's data
+ *          (INFRA, options-data.py v3: working-day freshness — skip today's data
  *          and last-trading-day data on weekends/holidays, re-fetch older files
  *          on trading days; universe deepened to the full US Micro+ cap tiers.)
  * v0.9.14 - Sticky sub-headers STILL see-through on scroll -> forced fix: the
@@ -514,14 +553,14 @@
  *            visible Cancel appears while loading, so you can bail and switch
  *            provider/ticker. Aborts are shown as a calm notice, not an error.
  *          - NEW PROVIDER "Static cache (data.json)" [BULK, no setup]: reads the
- *            site's OWN ./data/{TICKER}.json (produced by the GitHub Action +
- *            scripts/fetch_data.py, yfinance). 100% CORS-free on GitHub Pages,
- *            no keys. Ships with a ticker picker sourced from ./data/index.json.
+ *            site's OWN ./data/options/{TICKER}.json (produced by the GitHub Action +
+ *            scripts/options-data.py, yfinance). 100% CORS-free on GitHub Pages,
+ *            no keys. Ships with a ticker picker sourced from ./data/options/index.json.
  *          - NEW PROVIDER "Yahoo (via proxy)" [LAZY, needs proxy base]: calls a
  *            small proxy that handles Yahoo's crumb/cookie flow — either the
- *            local Bun server (scripts/yahoo-proxy.ts, default
+ *            local Bun server (scripts/options-local-proxy.ts, default
  *            http://localhost:8787) or a deployed Cloudflare Worker
- *            (scripts/cloudflare-worker.js). Endpoint:
+ *            (scripts/options-cloudflare-proxy.js). Endpoint:
  *            GET {base}/api/options?symbol=X[&date=YYYY-MM-DD].
  *          - Settings gained a "Proxy base URL" field (for Yahoo/worker) and the
  *            existing CBOE CORS-proxy dropdown now also accepts a custom Worker
@@ -548,14 +587,14 @@
  * ---------------------------------------------------------------------------
  *
  * COMPANION INFRASTRUCTURE (optional; outside the 3 app source files):
- *   - scripts/fetch_data.py           yfinance -> data/*.json + data/index.json
+ *   - scripts/options-data.py           yfinance -> data/options/*.json + data/options/index.json
  *   - .github/workflows/update-data.yml   schedules the fetch + commits JSON
- *   - scripts/yahoo-proxy.ts          local Bun proxy (Yahoo/NASDAQ/CBOE/search)
- *   - scripts/cloudflare-worker.js    deployable proxy (Yahoo/NASDAQ/CBOE/search/raw)
+ *   - scripts/options-local-proxy.ts          local Bun proxy (Yahoo/NASDAQ/CBOE/search)
+ *   - scripts/options-cloudflare-proxy.js    deployable proxy (Yahoo/NASDAQ/CBOE/search/raw)
  *
  * WHY THESE API CHOICES (research summary, keep for future agents):
  *   - Dropdown order is fixed: CACHE, CBOE, NASDAQ, YAHOO.
- *   - CACHE (static): same-origin data/*.json -> zero CORS/keys.
+ *   - CACHE (static): same-origin data/options/*.json -> zero CORS/keys.
  *     DEFAULT selection on hosted/static deploys (GitHub Pages).
  *   - CBOE (via proxy): richest no-key delayed data (greeks/IV/OI/spot).
  *     DEFAULT selection on localhost/LAN when proxy is expected.
@@ -615,6 +654,10 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.providerHint': 'Also available in the heading for quick access.',
         'settings.theme': 'Theme',
         'settings.themeHint': 'Also available in the heading for quick access.',
+        'settings.colorTheme': 'Color palette',
+        'settings.colorThemeHint': 'Shared with Fundamentals for a consistent merge-ready UI.',
+        'colorTheme.fundamentals': 'Emerald Ledger',
+        'colorTheme.options-desk': 'Indigo Desk',
         'settings.language': 'Language',
         'settings.languageHint': 'Also available in the heading for quick access.',
         'settings.apiKey': 'API key',
@@ -622,7 +665,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.getKey': 'Get a free key',
         'settings.keyHint': 'Stored only in your browser (localStorage).',
         'settings.proxyBase': 'Proxy base URL',
-        'settings.proxyBaseHint': 'Run bun ./scripts/yahoo-proxy.ts locally, or deploy scripts/cloudflare-worker.js.',
+        'settings.proxyBaseHint': 'Run bun ./scripts/options-local-proxy.ts locally, or deploy scripts/options-cloudflare-proxy.js.',
         'settings.proxyBasePlaceholder': 'http://localhost:8787 or https://name.you.workers.dev',
         'settings.corsProxy': 'CORS proxy',
         'settings.corsProxyHint': 'Public proxies can be flaky — switch if one fails, or use your own Worker.',
@@ -647,6 +690,9 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.deskColumns.speed': 'Speed',
         'settings.deskColumns.zomma': 'Zomma',
         'settings.deskColumns.color': 'Color',
+        'settings.deskColumns.bid': 'Bid',
+        'settings.deskColumns.mid': 'Mid',
+        'settings.deskColumns.ask': 'Ask',
         'settings.deskColumns.note': 'Bid / Mid / Ask and Strike stay visible. Rho is disabled by default.',
 
         'deskColumns.header.openInterest': 'OI',
@@ -664,6 +710,9 @@ const translations: Record<Language, Record<string, string>> = {
         'deskColumns.header.speed': 'Speed',
         'deskColumns.header.zomma': 'Zomma',
         'deskColumns.header.color': 'Color',
+        'deskColumns.header.bid': 'Bid',
+        'deskColumns.header.mid': 'Mid',
+        'deskColumns.header.ask': 'Ask',
 
         'settings.cache': 'Cache',
         'settings.cache.records': 'Data records',
@@ -674,7 +723,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.cache.clearData': 'Clear data',
         'settings.cache.clearDataHint': 'Downloaded query results only',
         'settings.cache.clearSettings': 'Clear settings',
-        'settings.cache.clearSettingsHint': 'Provider / theme / language / keys / proxy / columns',
+        'settings.cache.clearSettingsHint': 'Provider / theme / color palette / language / keys / proxy / columns',
         'settings.cache.clearAll': 'Clear everything',
         'settings.cache.clearAllHint': 'Data + settings (full reset)',
         'settings.cache.confirm': 'Confirm?',
@@ -686,10 +735,10 @@ const translations: Record<Language, Record<string, string>> = {
         'setupBadge.needsProxy': 'Needs proxy',
 
         'providerDescription.static':
-            'Local static cache — same-origin data/{TICKER}.json (GitHub Action + yfinance + CBOE/BS greeks). ' +
+            'Local static cache — same-origin data/options/{TICKER}.json (GitHub Action + yfinance + CBOE/BS greeks). ' +
             'No proxy, no keys. Best default on GitHub Pages. Only cached tickers are listed.',
         'providerDescription.yahoo':
-            'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/yahoo-proxy.ts or Cloudflare Worker. ' +
+            'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/options-local-proxy.ts or Cloudflare Worker. ' +
             'Lazy per-expiration. No provider greeks; client Black-Scholes fills them when IV is present.',
         'providerDescription.nasdaq':
             'NASDAQ option chain via proxy (/api/nasdaq) — full chain one call (bid/ask/last/volume/OI). ' +
@@ -751,9 +800,9 @@ const translations: Record<Language, Record<string, string>> = {
             'Could not reach the proxy. To fix this:\n\n' +
             '1. Clone the repo: git clone https://github.com/daggerok/options-desk.git\n' +
             '2. Install dependencies: bun install -E\n' +
-            '3. Run the proxy: bun ./scripts/yahoo-proxy.ts\n' +
+            '3. Run the proxy: bun ./scripts/options-local-proxy.ts\n' +
             '4. Set Proxy base URL in Settings to http://localhost:8787\n\n' +
-            'Or deploy scripts/cloudflare-worker.js and set the Worker URL instead.\n\n' +
+            'Or deploy scripts/options-cloudflare-proxy.js and set the Worker URL instead.\n\n' +
             'See docs/README.en.md for detailed instructions.',
         'error.friendly.networkCors':
             'Network/CORS error reaching the proxy. Try a different CORS proxy in Settings, or use CACHE (static data).',
@@ -790,6 +839,10 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.providerHint': 'Также доступен в шапке для быстрого доступа.',
         'settings.theme': 'Тема',
         'settings.themeHint': 'Также доступна в шапке для быстрого доступа.',
+        'settings.colorTheme': 'Цветовая палитра',
+        'settings.colorThemeHint': 'Общая с Fundamentals — единый UI при будущем слиянии.',
+        'colorTheme.fundamentals': 'Изумрудный Ledger',
+        'colorTheme.options-desk': 'Индиго Desk',
         'settings.language': 'Язык',
         'settings.languageHint': 'Также доступен в шапке для быстрого доступа.',
         'settings.apiKey': 'API ключ',
@@ -797,7 +850,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.getKey': 'Получить бесплатный ключ',
         'settings.keyHint': 'Хранится только в браузере (localStorage).',
         'settings.proxyBase': 'Базовый URL прокси',
-        'settings.proxyBaseHint': 'Запусти bun ./scripts/yahoo-proxy.ts локально или задеплой scripts/cloudflare-worker.js.',
+        'settings.proxyBaseHint': 'Запусти bun ./scripts/options-local-proxy.ts локально или задеплой scripts/options-cloudflare-proxy.js.',
         'settings.proxyBasePlaceholder': 'http://localhost:8787 или https://name.you.workers.dev',
         'settings.corsProxy': 'CORS прокси',
         'settings.corsProxyHint': 'Публичные прокси могут быть нестабильны — переключайся при сбоях или используй свой Worker.',
@@ -807,7 +860,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.deskColumns': 'Колонки доски',
         'settings.deskColumns.calls': 'Коллы',
         'settings.deskColumns.puts': 'Путы',
-        'settings.deskColumns.openInterest': 'Открытый интерес (OI)',
+        'settings.deskColumns.openInterest': 'Открытый интерес (ОИ)',
         'settings.deskColumns.volume': 'Объём',
         'settings.deskColumns.iv': 'Подразумеваемая волатильность (IV)',
         'settings.deskColumns.delta': 'Дельта Δ',
@@ -822,9 +875,12 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.deskColumns.speed': 'Спид',
         'settings.deskColumns.zomma': 'Зомма',
         'settings.deskColumns.color': 'Колор',
-        'settings.deskColumns.note': 'Bid / Mid / Ask и Strike всегда видны. Rho отключён по умолчанию.',
+        'settings.deskColumns.bid': 'Бид (спрос)',
+        'settings.deskColumns.mid': 'Мид (середина)',
+        'settings.deskColumns.ask': 'Аск (предложение)',
+        'settings.deskColumns.note': 'Бид / Мид / Аск и Страйк всегда видны. Ро отключён по умолчанию.',
 
-        'deskColumns.header.openInterest': 'OI',
+        'deskColumns.header.openInterest': 'ОИ',
         'deskColumns.header.volume': 'Объём',
         'deskColumns.header.iv': 'IV',
         'deskColumns.header.delta': 'Δ',
@@ -839,6 +895,9 @@ const translations: Record<Language, Record<string, string>> = {
         'deskColumns.header.speed': 'Спид',
         'deskColumns.header.zomma': 'Зомма',
         'deskColumns.header.color': 'Колор',
+        'deskColumns.header.bid': 'Бид',
+        'deskColumns.header.mid': 'Мид',
+        'deskColumns.header.ask': 'Аск',
 
         'settings.cache': 'Кэш',
         'settings.cache.records': 'Записей данных',
@@ -849,7 +908,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.cache.clearData': 'Очистить данные',
         'settings.cache.clearDataHint': 'Только загруженные результаты запросов',
         'settings.cache.clearSettings': 'Очистить настройки',
-        'settings.cache.clearSettingsHint': 'Провайдер / тема / язык / ключи / прокси / колонки',
+        'settings.cache.clearSettingsHint': 'Провайдер / тема / палитра / язык / ключи / прокси / колонки',
         'settings.cache.clearAll': 'Очистить всё',
         'settings.cache.clearAllHint': 'Данные + настройки (полный сброс)',
         'settings.cache.confirm': 'Подтвердить?',
@@ -861,10 +920,10 @@ const translations: Record<Language, Record<string, string>> = {
         'setupBadge.needsProxy': 'Нужен прокси',
 
         'providerDescription.static':
-            'Локальный статический кэш — same-origin data/{TICKER}.json (GitHub Action + yfinance + CBOE/BS греки). ' +
+            'Локальный статический кэш — same-origin data/options/{TICKER}.json (GitHub Action + yfinance + CBOE/BS греки). ' +
             'Без прокси и ключей. Лучший default для GitHub Pages. Показываются только закэшированные тикеры.',
         'providerDescription.yahoo':
-            'Yahoo Finance через прокси (/api/options) — crumb/cookie обрабатывают scripts/yahoo-proxy.ts или Cloudflare Worker. ' +
+            'Yahoo Finance через прокси (/api/options) — crumb/cookie обрабатывают scripts/options-local-proxy.ts или Cloudflare Worker. ' +
             'Lazy по expiration. Нет провайдерских греков; клиентский Black-Scholes считает их при наличии IV.',
         'providerDescription.nasdaq':
             'Цепочка NASDAQ через прокси (/api/nasdaq) — полная цепочка за один запрос (bid/ask/last/volume/OI). ' +
@@ -926,9 +985,9 @@ const translations: Record<Language, Record<string, string>> = {
             'Не удалось достучаться до прокси. Чтобы исправить:\n\n' +
             '1. Клонируй репозиторий: git clone https://github.com/daggerok/options-desk.git\n' +
             '2. Установи зависимости: bun install -E\n' +
-            '3. Запусти прокси: bun ./scripts/yahoo-proxy.ts\n' +
+            '3. Запусти прокси: bun ./scripts/options-local-proxy.ts\n' +
             '4. Укажи Proxy base URL в настройках: http://localhost:8787\n\n' +
-            'Или задеплой scripts/cloudflare-worker.js и укажи URL Worker.\n\n' +
+            'Или задеплой scripts/options-cloudflare-proxy.js и укажи URL Worker.\n\n' +
             'Подробности — в docs/README.en.md.',
         'error.friendly.networkCors':
             'Ошибка сети/CORS при обращении к прокси. Попробуй другой CORS-прокси в настройках или используй CACHE (статичные данные).',
@@ -1032,7 +1091,7 @@ function isAbortError(e: unknown): boolean {
  *  Legacy static files may still carry `marketdata` / `dolthub` tags. */
 type GreeksSource = 'cboe' | 'black-scholes' | 'marketdata' | 'dolthub' | null;
 
-/** Top-level greeks enrichment summary written by scripts/fetch_data.py. */
+/** Top-level greeks enrichment summary written by scripts/options-data.py. */
 interface GreeksSummary {
     enabled?: boolean;
     primarySource?: string | null;
@@ -1185,7 +1244,7 @@ interface DataProvider {
      * Optional provider-native ticker suggestions / symbol search.
      * Providers that expose their own search endpoint (Yahoo/NASDAQ/CBOE proxy,
      * DoltHub SQL) implement this. Providers without one fall back to the local
-     * data/index.json manifest, including tickers known to have no options.
+     * data/options/index.json manifest, including tickers known to have no options.
      */
     suggestTickers?: (query: string, ctx: ProviderContext) => Promise<TickerSuggestion[]>;
 }
@@ -1200,7 +1259,7 @@ interface TickerSuggestion {
     exchange?: string;
     /** Human label for the source of this suggestion (Provider / Local index). */
     source: string;
-    /** False only when data/index.json explicitly says the ticker exists but has no listed options. */
+    /** False only when data/options/index.json explicitly says the ticker exists but has no listed options. */
     hasOptions: boolean;
 }
 
@@ -1323,7 +1382,7 @@ function estimateSpot(quotes: OptionQuote[], expiration: string): number | null 
 // ---------------------------------------------------------------------------
 // Client-side Black-Scholes greeks — SINGLE SOURCE OF TRUTH for model math
 // ---------------------------------------------------------------------------
-// scripts/fetch_data.py may attach provider Cboe 1st-order only. All model work
+// scripts/options-data.py may attach provider Cboe 1st-order only. All model work
 // (missing 1st-order + λ + 2nd/3rd-order) happens here after every provider
 // fetch, including CACHE. Do not reintroduce BS in Python — that duplicates this.
 // Conventions: theta per calendar day; vega/rho per 1 vol-point / 1pp rate.
@@ -1350,7 +1409,7 @@ function normCdf(x: number): number {
     return 0.5 * (1 + erf(x / Math.SQRT2));
 }
 
-/** Years to expiration (calendar), +1 day floor — same rule as fetch_data.py. */
+/** Years to expiration (calendar), +1 day floor — same rule as options-data.py. */
 function yearsToExpiration(expiration: string, now: Date = new Date()): number | null {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(expiration || ''));
     if (!m) return null;
@@ -1637,7 +1696,7 @@ function friendlyError(e: unknown, provider: DataProvider, lang: Language): stri
  * Why this exists: the naive `await res.json()` throws an opaque SyntaxError when
  * the server returns something that ISN'T JSON — and the #1 real-world cause of
  * "Bad static data" is a dev/preview or SPA host that serves the app's own
- * index.html (a 200 HTML page) for a missing `data/*.json` path instead of a
+ * index.html (a 200 HTML page) for a missing `data/options/*.json` path instead of a
  * 404. Reading the body as TEXT first lets us detect that case (and truncated /
  * malformed files) and raise an ACTIONABLE message telling the user exactly what
  * to fix, rather than a vague failure.
@@ -1658,7 +1717,7 @@ async function fetchStaticJson(url: string, signal?: AbortSignal, label?: string
     if (res.status === 404) {
         throw new Error(
             `"${name}" is not in the static cache (data/${name}.json → 404). ` +
-            `Pick a cached ticker from the list, or run scripts/fetch_data.py to add it.`,
+            `Pick a cached ticker from the list, or run scripts/options-data.py to add it.`,
         );
     }
     if (!res.ok) {
@@ -1679,21 +1738,20 @@ async function fetchStaticJson(url: string, signal?: AbortSignal, label?: string
     } catch {
         throw new Error(
             `Static file ${url} is not valid JSON (it may be truncated or contain ` +
-            `NaN/Infinity). Re-run scripts/fetch_data.py to rebuild it.`,
+            `NaN/Infinity). Re-run scripts/options-data.py to rebuild it.`,
         );
     }
 }
 
-/** Local manifest shape normalized from data/index.json for ticker suggestions. */
+/** Local manifest shape normalized from data/options/index.json for ticker suggestions. */
 interface StaticTickerManifest {
     options: string[];
     noOptions: string[];
-    /** Optional TICKER -> company / fund / index name, stored in data/index.json. */
+    /** Optional TICKER -> company / fund / index name, stored in data/options/index.json. */
     names: Record<string, string>;
-    generated?: string;
 }
 
-/** In-memory copy of data/index.json so typing in the ticker box stays instant. */
+/** In-memory copy of data/options/index.json so typing in the ticker box stays instant. */
 let staticTickerManifestCache: StaticTickerManifest | null = null;
 
 /** Normalize any provider/search symbol into the uppercase value the app submits. */
@@ -1707,15 +1765,19 @@ function looksLikeTicker(sym: string): boolean {
 }
 
 /**
- * Read data/index.json and normalize BOTH known-with-options (`files`) and
+ * Read data/options/index.json and normalize BOTH known-with-options (`files`) and
  * known-without-options (`no_options`). The latter is deliberately preserved for
  * suggestions so a user can see "XYZ (no options)" while typing and understand
  * that the ticker is valid but the latest cache scan found no listed contracts.
  */
 async function loadStaticTickerManifest(ctx: ProviderContext): Promise<StaticTickerManifest> {
     if (staticTickerManifestCache) return staticTickerManifestCache;
-    const j: any = await fetchStaticJson('data/index.json', ctx.signal);
-    const files = j?.files && typeof j.files === 'object' ? j.files : {};
+    const j: any = await fetchStaticJson('data/options/index.json', ctx.signal);
+    // v13: `files` is a sorted ticker list. Legacy v4–v12 used { TICKER: updatedISO }.
+    const rawFiles = j?.files;
+    const fileSymbols: string[] = Array.isArray(rawFiles)
+        ? rawFiles.map(normalizeTickerSymbol)
+        : (rawFiles && typeof rawFiles === 'object' ? Object.keys(rawFiles).map(normalizeTickerSymbol) : []);
     const noRaw = j?.no_options;
     const noOptions = Array.isArray(noRaw)
         ? noRaw.map(normalizeTickerSymbol)
@@ -1728,10 +1790,9 @@ async function loadStaticTickerManifest(ctx: ProviderContext): Promise<StaticTic
         if (key && value) names[key] = value;
     });
     staticTickerManifestCache = {
-        options: Object.keys(files).map(normalizeTickerSymbol).filter(Boolean).sort(),
+        options: fileSymbols.filter(Boolean).sort(),
         noOptions: noOptions.filter(Boolean).sort(),
         names,
-        generated: typeof j?.generated === 'string' ? j.generated : undefined,
     };
     return staticTickerManifestCache;
 }
@@ -1768,7 +1829,7 @@ function staticTickerSuggestionsFromManifest(query: string, manifest: StaticTick
         .map(({ _rank, ...s }) => s);
 }
 
-/** Convenience wrapper for fallback suggestions from data/index.json. */
+/** Convenience wrapper for fallback suggestions from data/options/index.json. */
 async function staticTickerSuggestions(query: string, ctx: ProviderContext, limit = 24): Promise<TickerSuggestion[]> {
     const manifest = await loadStaticTickerManifest(ctx);
     return staticTickerSuggestionsFromManifest(query, manifest, limit);
@@ -1790,7 +1851,7 @@ function dedupeTickerSuggestions(items: TickerSuggestion[], limit = 24): TickerS
 /**
  * Provider-native suggestion request with local-index fallback. If a provider has
  * no dedicated search/list endpoint, or its proxy is unavailable, the UI still
- * suggests tickers from data/index.json and labels `no_options` entries.
+ * suggests tickers from data/options/index.json and labels `no_options` entries.
  */
 async function suggestTickers(provider: DataProvider, query: string, ctx: ProviderContext, limit = 24): Promise<TickerSuggestion[]> {
     if (provider.suggestTickers) {
@@ -1808,22 +1869,22 @@ async function suggestTickers(provider: DataProvider, query: string, ctx: Provid
 /**
  * Static cache provider (BULK, no setup — best for GitHub Pages).
  * Reads the site's OWN files (same-origin => zero CORS, zero keys):
- *   ./data/index.json     -> { files: { "<TICKER>": "<updated ISO>", ... },
- *                              count, generated, names?, no_options? }
+ *   ./data/options/index.json     -> { files: ["<TICKER>", ...],
+ *                              count, names?, no_options? }
  *                            (v0.9.16: the manifest now records EACH ticker's own
  *                            `updated` timestamp instead of a single global
  *                            `updated` that churned on every run. The ticker list
  *                            is the sorted keys of `files`. No legacy shape kept.
  *                            `names` powers local company-name suggestions;
  *                            `no_options` is surfaced as "(no options)".)
- *   ./data/{TICKER}.json  -> ChainResult-like payload (see scripts/fetch_data.py)
+ *   ./data/options/{TICKER}.json  -> ChainResult-like payload (see scripts/options-data.py)
  * Data is refreshed by the GitHub Action. Greeks may be null (yfinance source).
  */
 const staticProvider: DataProvider = {
     id: 'static',
     label: 'CACHE',
     description:
-        'Local static cache — same-origin data/{TICKER}.json (GitHub Action + yfinance + CBOE/BS greeks). ' +
+        'Local static cache — same-origin data/options/{TICKER}.json (GitHub Action + yfinance + CBOE/BS greeks). ' +
         'No proxy, no keys. Best default on GitHub Pages. Only cached tickers are listed.',
     mode: 'bulk',
     setup: 'none',
@@ -1835,8 +1896,7 @@ const staticProvider: DataProvider = {
         try {
             // Reuse the robust JSON fetch so a mis-served index.json (e.g. SPA
             // HTML fallback) fails cleanly to an empty list instead of throwing.
-            // v0.9.16 shape: { files: { TICKER: updatedISO } }. The ticker list is
-            // the sorted keys of `files`.
+            // v0.9.43 shape: { files: [TICKER, ...] } (legacy map keys still OK).
             const manifest = await loadStaticTickerManifest(ctx);
             return manifest.options;
         } catch { return []; }
@@ -1850,16 +1910,16 @@ const staticProvider: DataProvider = {
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
         const manifest = await loadStaticTickerManifest(ctx).catch(() => null);
         if (manifest?.noOptions.includes(raw)) {
-            throw new Error(`"${raw}" is a valid ticker, but data/index.json marks it as (no options) in the latest static-cache scan.`);
+            throw new Error(`"${raw}" is a valid ticker, but data/options/index.json marks it as (no options) in the latest static-cache scan.`);
         }
         // fetchStaticJson reads the body as TEXT first, so we can tell apart the
         // real failure modes (404, HTML SPA fallback, malformed JSON) and report
         // an ACTIONABLE message instead of a vague "Bad static data".
-        const j: any = await fetchStaticJson(`data/${encodeURIComponent(raw)}.json`, ctx.signal, raw);
+        const j: any = await fetchStaticJson(`data/options/${encodeURIComponent(raw)}.json`, ctx.signal, raw);
         if (!j || !Array.isArray(j.quotes)) {
             throw new Error(
                 `Static file data/${raw}.json loaded but has no "quotes" array. ` +
-                `The file may be truncated or in an old format — re-run scripts/fetch_data.py to rebuild it.`,
+                `The file may be truncated or in an old format — re-run scripts/options-data.py to rebuild it.`,
             );
         }
         const quotes: OptionQuote[] = j.quotes.map((q: any) => ({
@@ -1903,7 +1963,7 @@ const staticProvider: DataProvider = {
  * Query the companion proxy's unified suggestion endpoint. The local Bun proxy
  * and Cloudflare Worker both expose /api/search?provider=<id>&q=<text>, returning
  * normalized `{ suggestions: TickerSuggestion[] }`. If the proxy is unavailable,
- * callers fall back to data/index.json via suggestTickers().
+ * callers fall back to data/options/index.json via suggestTickers().
  */
 async function proxyTickerSuggestions(providerId: 'yahoo' | 'nasdaq' | 'cboe', query: string, ctx: ProviderContext): Promise<TickerSuggestion[]> {
     const q = query.trim();
@@ -1926,7 +1986,7 @@ async function proxyTickerSuggestions(providerId: 'yahoo' | 'nasdaq' | 'cboe', q
 
 /**
  * Yahoo (via proxy) provider (LAZY, needs a proxy base URL).
- * The proxy (scripts/yahoo-proxy.ts locally, or scripts/cloudflare-worker.js
+ * The proxy (scripts/options-local-proxy.ts locally, or scripts/options-cloudflare-proxy.js
  * deployed) handles Yahoo's crumb/cookie flow and re-exposes CORS:*.
  * Endpoint: GET {base}/api/options?symbol=X[&date=YYYY-MM-DD]
  *   -> Yahoo optionChain JSON: result[0].expirationDates (unix), quote price,
@@ -1936,7 +1996,7 @@ const yahooProvider: DataProvider = {
     id: 'yahoo',
     label: 'YAHOO',
     description:
-        'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/yahoo-proxy.ts or Cloudflare Worker. ' +
+        'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/options-local-proxy.ts or Cloudflare Worker. ' +
         'Lazy per-expiration. No provider greeks; client Black-Scholes fills them when IV is present.',
     mode: 'lazy',
     setup: 'proxy',
@@ -2056,7 +2116,7 @@ const nasdaqProvider: DataProvider = {
             ? `${base}/api/nasdaq?symbol=${encodeURIComponent(raw)}`
             : proxied(direct, ctx.proxyTemplate);
         if (!base && (!ctx.proxyTemplate || ctx.proxyTemplate === '{url}')) {
-            throw new Error('NASDAQ needs a proxy. Set the Proxy base URL in Settings (run scripts/yahoo-proxy.ts, default http://localhost:8787), or pick a CORS proxy.');
+            throw new Error('NASDAQ needs a proxy. Set the Proxy base URL in Settings (run scripts/options-local-proxy.ts, default http://localhost:8787), or pick a CORS proxy.');
         }
         dbg('nasdaq fetchAll', { raw, url });
 
@@ -2110,7 +2170,7 @@ const nasdaqProvider: DataProvider = {
  * Cash indices are prefixed with "_" (_SPX, _VIX...). CBOE's CDN sends NO CORS
  * header, so the browser CANNOT call it directly — it must be relayed. Two ways:
  *   1) A request-handling proxy base (RECOMMENDED): the local Bun server
- *      (scripts/yahoo-proxy.ts also serves /api/cboe) or the Cloudflare Worker.
+ *      (scripts/options-local-proxy.ts also serves /api/cboe) or the Cloudflare Worker.
  *      Set "Proxy base URL" in Settings; we call {base}/api/cboe?symbol=XXX.
  *   2) A generic CORS proxy template ({url}) as a fallback (public ones flaky).
  */
@@ -2144,7 +2204,7 @@ const cboeProvider: DataProvider = {
             ? `${base}/api/cboe?symbol=${encodeURIComponent(cboeSym)}`
             : proxied(target, ctx.proxyTemplate);
         if (!base && (!ctx.proxyTemplate || ctx.proxyTemplate === '{url}')) {
-            throw new Error('CBOE needs a proxy. Set the Proxy base URL in Settings (run scripts/yahoo-proxy.ts, default http://localhost:8787), or pick a CORS proxy.');
+            throw new Error('CBOE needs a proxy. Set the Proxy base URL in Settings (run scripts/options-local-proxy.ts, default http://localhost:8787), or pick a CORS proxy.');
         }
 
         const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
@@ -2180,7 +2240,7 @@ const cboeProvider: DataProvider = {
 
 /**
  * Provider registry — only four sources, fixed dropdown order everywhere:
- *   CACHE  = same-origin static data/*.json (no proxy)
+ *   CACHE  = same-origin static data/options/*.json (no proxy)
  *   CBOE   = delayed options via proxy /api/cboe
  *   NASDAQ = full chain via proxy /api/nasdaq
  *   YAHOO  = option chain via proxy /api/options (lazy)
@@ -2528,6 +2588,21 @@ async function loadExpiration(provider: DataProvider, symbol: string, expiration
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
+/**
+ * Shared color palettes across daggerok apps (fundamentals + options-desk).
+ * Each product keeps its native default; the other palette is selectable so a
+ * future merge ships with both UIs already consistent.
+ *  - options-desk  → Indigo Desk     (indigo accents, slate-900 dark surface)  [default here]
+ *  - fundamentals  → Emerald Ledger (emerald accents, slate-950 dark surface)
+ */
+type ColorThemeId = 'fundamentals' | 'options-desk';
+const COLOR_THEME_IDS: ColorThemeId[] = ['fundamentals', 'options-desk'];
+const DEFAULT_COLOR_THEME: ColorThemeId = 'options-desk';
+
+function normalizeColorTheme(v: unknown): ColorThemeId {
+    return v === 'fundamentals' ? 'fundamentals' : DEFAULT_COLOR_THEME;
+}
+
 interface SideColumnSettings {
     openInterest: boolean;
     volume: boolean;
@@ -2556,6 +2631,8 @@ interface Settings {
     providerId: string;
     language: Language;
     theme: ThemeMode;
+    /** Shared product color palette (Emerald Ledger / Indigo Desk). */
+    colorTheme: ColorThemeId;
     proxyTemplate: string;
     /** Base URL of the request-handling proxy (Yahoo/worker). */
     proxyBase: string;
@@ -2577,6 +2654,7 @@ const DEFAULT_SETTINGS: Settings = {
     providerId: defaultProviderId(),
     language: DEFAULT_LANGUAGE,
     theme: 'system',
+    colorTheme: DEFAULT_COLOR_THEME,
     proxyTemplate: PROXY_PRESETS[0].template,
     proxyBase: 'http://localhost:8787',    // local Bun Yahoo proxy default
     workerUrl: '',
@@ -2605,6 +2683,7 @@ function loadSettings(): Settings {
             ...DEFAULT_SETTINGS,
             ...parsed,
             language: (parsed.language && LANGUAGES.includes(parsed.language) ? parsed.language : DEFAULT_LANGUAGE) as Language,
+            colorTheme: normalizeColorTheme(parsed.colorTheme),
             tokens: { ...DEFAULT_SETTINGS.tokens, ...(parsed.tokens || {}) },
             secrets: { ...DEFAULT_SETTINGS.secrets, ...(parsed.secrets || {}) },
             deskColumns: {
@@ -2651,14 +2730,15 @@ function ctxFor(settings: Settings, provider: DataProvider, signal?: AbortSignal
  * For 'system', it subscribes to the OS color-scheme media query and updates
  * live if the user flips their system theme while the app is open.
  */
-function useThemeController(theme: ThemeMode): void {
+function useThemeController(theme: ThemeMode, colorTheme: ColorThemeId = DEFAULT_COLOR_THEME): void {
     useEffect(() => {
         const root = document.documentElement;
         const mql = window.matchMedia('(prefers-color-scheme: dark)');
         const apply = () => {
             const isDark = theme === 'dark' || (theme === 'system' && mql.matches);
             root.classList.toggle('dark', isDark);
-            dbg('theme applied', { theme, isDark });
+            root.dataset.palette = colorTheme;
+            dbg('theme applied', { theme, colorTheme, isDark });
         };
         apply();
         if (theme === 'system') {
@@ -2666,7 +2746,7 @@ function useThemeController(theme: ThemeMode): void {
             return () => mql.removeEventListener('change', apply);
         }
         return undefined;
-    }, [theme]);
+    }, [theme, colorTheme]);
 }
 
 // ============================================================================
@@ -2744,8 +2824,72 @@ const SetupBadge: React.FC<{ provider: DataProvider; hasKey: boolean }> = ({ pro
  * Compact theme picker: shows only the current theme icon. Clicking it toggles a
  * small animated menu with the other themes; Escape/click-away closes it.
  */
-const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (theme: ThemeMode) => void }> = ({ value, onChange }) => {
+
+/** Resolve accent Tailwind classes for the selected shared color palette. */
+function accentOf(colorTheme: ColorThemeId) {
+    const isFund = colorTheme === 'fundamentals';
+    return {
+        brand: isFund ? 'bg-emerald-600' : 'bg-indigo-600',
+        brandSoft: isFund
+            ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400'
+            : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400',
+        btn: isFund ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700',
+        focusRing: isFund ? 'focus:ring-emerald-500' : 'focus:ring-indigo-500',
+        focusRingOffset: isFund
+            ? 'focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900'
+            : 'focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900',
+        open: isFund
+            ? 'scale-105 border-emerald-500 bg-emerald-50 text-emerald-600 shadow-sm dark:bg-emerald-950/40 dark:text-emerald-400'
+            : 'scale-105 border-indigo-500 bg-indigo-50 text-indigo-600 shadow-sm dark:bg-indigo-950/40 dark:text-indigo-400',
+        menuHover: isFund
+            ? 'hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-300'
+            : 'hover:bg-indigo-50 hover:text-indigo-700 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300',
+        menuActive: isFund
+            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+            : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300',
+        link: isFund
+            ? 'text-emerald-600 hover:underline dark:text-emerald-400'
+            : 'text-indigo-600 hover:underline dark:text-indigo-400',
+        borderHover: isFund
+            ? 'hover:border-emerald-300 dark:hover:border-emerald-700'
+            : 'hover:border-indigo-300 dark:hover:border-indigo-700',
+        accentInput: isFund ? 'accent-emerald-600' : 'accent-indigo-600',
+        openBorder: isFund
+            ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
+            : 'border-indigo-500 text-indigo-600 dark:text-indigo-400',
+        chipActive: isFund
+            ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
+            : 'border-indigo-500 bg-indigo-600 text-white shadow-sm',
+        chipIdle: 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 ' +
+            (isFund ? 'hover:border-emerald-400 hover:-translate-y-px' : 'hover:border-indigo-400 hover:-translate-y-px'),
+        greek: isFund
+            ? 'text-emerald-600 dark:text-emerald-300'
+            : 'text-indigo-600 dark:text-indigo-300',
+        mid: isFund
+            ? 'font-medium text-teal-600 dark:text-teal-400'
+            : 'font-medium text-emerald-600 dark:text-emerald-400',
+        pulse: isFund ? 'text-emerald-500' : 'text-indigo-500',
+        headerBg: isFund
+            ? 'bg-white/80 dark:bg-slate-950/80'
+            : 'bg-white/80 dark:bg-slate-900/80',
+        suggestHover: isFund
+            ? 'hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+            : 'hover:bg-indigo-50 dark:hover:bg-indigo-950/40',
+        suggestActive: isFund
+            ? 'bg-emerald-50 dark:bg-emerald-950/40'
+            : 'bg-indigo-50 dark:bg-indigo-950/40',
+        atm: isFund
+            ? 'text-emerald-700 dark:text-emerald-300'
+            : 'text-indigo-700 dark:text-indigo-300',
+        expHover: isFund
+            ? 'hover:border-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-400'
+            : 'hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400',
+    } as const;
+}
+
+const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (theme: ThemeMode) => void; colorTheme?: ColorThemeId }> = ({ value, onChange, colorTheme = DEFAULT_COLOR_THEME }) => {
     const { t } = useI18n();
+    const ax = accentOf(colorTheme);
     const options: { id: ThemeMode; icon: React.FC<{ className?: string }>; title: string }[] = [
         { id: 'light', icon: Icon.Sun, title: t('theme.light') },
         { id: 'system', icon: Icon.Monitor, title: t('theme.system') },
@@ -2783,7 +2927,7 @@ const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (theme: ThemeMode) => 
                 className={
                     'flex h-8 w-8 items-center justify-center rounded-lg border transition-all duration-150 ' +
                     (open
-                        ? 'scale-105 border-indigo-500 bg-indigo-50 text-indigo-600 shadow-sm dark:bg-indigo-950/40 dark:text-indigo-400'
+                        ? ax.open
                         : 'border-slate-300 dark:border-slate-700 text-slate-500 hover:-translate-y-px hover:text-slate-800 dark:hover:text-slate-200')
                 }
             >
@@ -2802,7 +2946,7 @@ const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (theme: ThemeMode) => 
                                 type="button"
                                 role="menuitem"
                                 onClick={() => { onChange(o.id); setOpen(false); }}
-                                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 transition-all duration-150 hover:bg-indigo-50 hover:text-indigo-700 dark:text-slate-200 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300"
+                                className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 transition-all duration-150 dark:text-slate-200 ${ax.menuHover}`}
                             >
                                 <IconCmp className="h-4 w-4" />
                                 <span>{o.title}</span>
@@ -2815,12 +2959,85 @@ const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (theme: ThemeMode) => 
     );
 };
 
+
+/**
+ * Compact color-palette switcher (Emerald Ledger / Indigo Desk).
+ * Shared with fundamentals so both apps can preview each other's skin.
+ */
+const ColorThemeSwitch: React.FC<{ value: ColorThemeId; onChange: (c: ColorThemeId) => void }> = ({ value, onChange }) => {
+    const { t } = useI18n();
+    const ax = accentOf(value);
+    const options: { id: ColorThemeId; swatch: string; title: string }[] = [
+        { id: 'options-desk', swatch: 'bg-indigo-500', title: t('colorTheme.options-desk') },
+        { id: 'fundamentals', swatch: 'bg-emerald-500', title: t('colorTheme.fundamentals') },
+    ];
+    const [open, setOpen] = useState(false);
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const current = options.find((o) => o.id === value) ?? options[0];
+    const choices = options.filter((o) => o.id !== value);
+
+    useEffect(() => {
+        if (!open) return undefined;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+        const onPointer = (e: MouseEvent) => {
+            if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        window.addEventListener('keydown', onKey);
+        window.addEventListener('mousedown', onPointer);
+        return () => {
+            window.removeEventListener('keydown', onKey);
+            window.removeEventListener('mousedown', onPointer);
+        };
+    }, [open]);
+
+    return (
+        <div ref={rootRef} className="relative">
+            <button
+                type="button"
+                title={current.title}
+                aria-label={current.title}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                onClick={() => setOpen((v) => !v)}
+                className={
+                    'flex h-8 w-8 items-center justify-center rounded-lg border transition-all duration-150 ' +
+                    (open
+                        ? ax.open
+                        : 'border-slate-300 dark:border-slate-700 text-slate-500 hover:-translate-y-px hover:text-slate-800 dark:hover:text-slate-200')
+                }
+            >
+                <span className={`h-3.5 w-3.5 rounded-full ${current.swatch} ring-2 ring-white dark:ring-slate-900`} />
+            </button>
+            {open && (
+                <div
+                    role="menu"
+                    className="absolute right-0 top-10 z-50 w-44 origin-top-right animate-fade-in rounded-xl border border-slate-200 bg-white p-1 shadow-xl ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10"
+                >
+                    {choices.map((o) => (
+                        <button
+                            key={o.id}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { onChange(o.id); setOpen(false); }}
+                            className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 transition-all duration-150 dark:text-slate-200 ${ax.menuHover}`}
+                        >
+                            <span className={`h-3.5 w-3.5 rounded-full ${o.swatch}`} />
+                            <span>{o.title}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 /**
  * Compact language switcher: shows a globe icon + current language code.
  * Clicking it toggles a small animated menu; Escape/click-away closes it.
  */
-const LanguageSwitch: React.FC<{ value: Language; onChange: (l: Language) => void }> = ({ value, onChange }) => {
+const LanguageSwitch: React.FC<{ value: Language; onChange: (l: Language) => void; colorTheme?: ColorThemeId }> = ({ value, onChange, colorTheme = DEFAULT_COLOR_THEME }) => {
     const { t } = useI18n();
+    const ax = accentOf(colorTheme);
     const [open, setOpen] = useState(false);
     const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -2850,7 +3067,7 @@ const LanguageSwitch: React.FC<{ value: Language; onChange: (l: Language) => voi
                 className={
                     'flex h-8 items-center gap-1 rounded-lg border px-1.5 transition-all duration-150 ' +
                     (open
-                        ? 'scale-105 border-indigo-500 bg-indigo-50 text-indigo-600 shadow-sm dark:bg-indigo-950/40 dark:text-indigo-400'
+                        ? ax.open
                         : 'border-slate-300 dark:border-slate-700 text-slate-500 hover:-translate-y-px hover:text-slate-800 dark:hover:text-slate-200')
                 }
             >
@@ -2871,8 +3088,8 @@ const LanguageSwitch: React.FC<{ value: Language; onChange: (l: Language) => voi
                             className={
                                 'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-all duration-150 ' +
                                 (l === value
-                                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300'
-                                    : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-slate-200 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300')
+                                    ? ax.menuActive
+                                    : 'text-slate-700 dark:text-slate-200 ' + ax.menuHover)
                             }
                         >
                             <span className="text-base leading-none" aria-hidden="true">{LANG_FLAGS[l]}</span>
@@ -2902,6 +3119,7 @@ const SettingsPanel: React.FC<{
     onClose: () => void;
 }> = ({ settings, provider, onChange, onSetToken, onSetSecret, onClearData, onClearSettings, onClearAll, onClose }) => {
     const { t, lang } = useI18n();
+    const ax = accentOf(settings.colorTheme);
     const currentToken = settings.tokens[provider.id] || '';
     const currentSecret = settings.secrets[provider.id] || '';
     // Cache stats — recompute on any cache mutation (LIVE, no manual refresh):
@@ -2939,7 +3157,7 @@ const SettingsPanel: React.FC<{
                             </span>
                             {provider.keyUrl && (
                                 <a href={provider.keyUrl} target="_blank" rel="noopener noreferrer"
-                                   className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+                                   className={`inline-flex items-center gap-1 text-[11px] font-semibold ${ax.link}`}>
                                     {t('settings.getKey')} <Icon.External className="h-3 w-3" />
                                 </a>
                             )}
@@ -2949,7 +3167,7 @@ const SettingsPanel: React.FC<{
                             value={currentToken}
                             placeholder={provider.keyLabel || t('settings.apiKey')}
                             onChange={(e) => onSetToken(provider.id, e.target.value.trim())}
-                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                            className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                         />
                         {/* Secret field — only for KEY+SECRET providers (e.g. Alpaca). */}
                         {provider.supportsSecret && (
@@ -2962,7 +3180,7 @@ const SettingsPanel: React.FC<{
                                     value={currentSecret}
                                     placeholder={provider.secretLabel || t('settings.apiSecret')}
                                     onChange={(e) => onSetSecret(provider.id, e.target.value.trim())}
-                                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                                    className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                                 />
                             </>
                         )}
@@ -2981,7 +3199,7 @@ const SettingsPanel: React.FC<{
                             value={settings.proxyBase}
                             placeholder={t('settings.proxyBasePlaceholder')}
                             onChange={(e) => onChange({ proxyBase: e.target.value.trim() })}
-                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                            className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                         />
                         <span className="mt-1 block text-[11px] text-slate-400">
                             {t('settings.proxyBaseHint')}
@@ -2997,7 +3215,7 @@ const SettingsPanel: React.FC<{
                             <select
                                 value={settings.proxyTemplate}
                                 onChange={(e) => onChange({ proxyTemplate: e.target.value })}
-                                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                                className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                             >
                                 {PROXY_PRESETS.map((p) => (
                                     <option key={p.template} value={p.template}>{p.label}</option>
@@ -3015,7 +3233,7 @@ const SettingsPanel: React.FC<{
                                     value={settings.workerUrl}
                                     placeholder={t('settings.workerUrlPlaceholder')}
                                     onChange={(e) => onChange({ workerUrl: e.target.value.trim() })}
-                                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                                    className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                                 />
                             </label>
                         )}
@@ -3050,12 +3268,12 @@ const SettingsPanel: React.FC<{
                                         { id: 'zomma', label: t('settings.deskColumns.zomma') },
                                         { id: 'color', label: t('settings.deskColumns.color') },
                                     ] as const).map((c) => (
-                                        <label key={c.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 hover:border-indigo-300 dark:border-slate-700 dark:text-slate-300 dark:hover:border-indigo-700">
+                                        <label key={c.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 dark:border-slate-700 dark:text-slate-300">
                                             <input
                                                 type="checkbox"
                                                 checked={(settings.deskColumns as any)[side][c.id]}
                                                 onChange={(e) => onChange({ deskColumns: { ...settings.deskColumns, [side]: { ...(settings.deskColumns as any)[side], [c.id]: e.target.checked } } })}
-                                                className="h-3.5 w-3.5 accent-indigo-600"
+                                                className={`h-3.5 w-3.5 ${ax.accentInput}`}
                                             />
                                             <span>{c.label}</span>
                                         </label>
@@ -3139,7 +3357,7 @@ const SettingsPanel: React.FC<{
                         <select
                             value={settings.providerId}
                             onChange={(e) => onChange({ providerId: e.target.value })}
-                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                            className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                         >
                             {PROVIDERS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
                         </select>
@@ -3147,12 +3365,17 @@ const SettingsPanel: React.FC<{
                     </label>
                     <div>
                         <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.theme')}</span>
-                        <ThemeSwitch value={settings.theme} onChange={(theme) => onChange({ theme })} />
+                        <ThemeSwitch value={settings.theme} onChange={(theme) => onChange({ theme })} colorTheme={settings.colorTheme} />
                         <span className="mt-1 block text-[11px] text-slate-400">{t('settings.themeHint')}</span>
                     </div>
                     <div>
+                        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.colorTheme')}</span>
+                        <ColorThemeSwitch value={settings.colorTheme} onChange={(colorTheme) => onChange({ colorTheme })} />
+                        <span className="mt-1 block text-[11px] text-slate-400">{t('settings.colorThemeHint')}</span>
+                    </div>
+                    <div>
                         <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.language')}</span>
-                        <LanguageSwitch value={settings.language} onChange={(l) => onChange({ language: l })} />
+                        <LanguageSwitch value={settings.language} onChange={(l) => onChange({ language: l })} colorTheme={settings.colorTheme} />
                         <span className="mt-1 block text-[11px] text-slate-400">{t('settings.languageHint')}</span>
                     </div>
                 </div>
@@ -3184,11 +3407,12 @@ const TopBar: React.FC<{
     // "Key set" badge requires the secret too, when the provider needs both.
     const hasKey = !!(settings.tokens[provider.id]) &&
         (!provider.supportsSecret || !!(settings.secrets[provider.id]));
+    const ax = accentOf(settings.colorTheme);
 
     return (
-        <header className="sticky top-0 z-50 flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 px-4 py-2.5 backdrop-blur">
+        <header className={`sticky top-0 z-50 flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 ${ax.headerBg} px-4 py-2.5 backdrop-blur`}>
             <div className="flex items-center gap-2">
-                <span className="grid h-7 w-7 place-items-center rounded-md bg-indigo-600 text-sm font-black text-white">O</span>
+                <span className={`grid h-7 w-7 place-items-center rounded-md ${ax.brand} text-sm font-black text-white`}>O</span>
                 <span className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">{t('app.brand')}</span>
             </div>
 
@@ -3199,16 +3423,18 @@ const TopBar: React.FC<{
                         value={settings.providerId}
                         onChange={(e) => onChange({ providerId: e.target.value })}
                         title={t('settings.provider')}
-                        className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                        className={`rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                     >
                         {PROVIDERS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
                     </select>
                     <SetupBadge provider={provider} hasKey={hasKey} />
                 </div>
 
-                <ThemeSwitch value={settings.theme} onChange={(theme) => onChange({ theme })} />
+                <ThemeSwitch value={settings.theme} onChange={(theme) => onChange({ theme })} colorTheme={settings.colorTheme} />
 
-                <LanguageSwitch value={settings.language} onChange={(l) => onChange({ language: l })} />
+                <ColorThemeSwitch value={settings.colorTheme} onChange={(colorTheme) => onChange({ colorTheme })} />
+
+                <LanguageSwitch value={settings.language} onChange={(l) => onChange({ language: l })} colorTheme={settings.colorTheme} />
 
                 <div className="relative">
                     <button
@@ -3219,7 +3445,7 @@ const TopBar: React.FC<{
                         className={
                             'flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ' +
                             (openSettings
-                                ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                                ? ax.openBorder
                                 : 'border-slate-300 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')
                         }
                     >
@@ -3255,8 +3481,10 @@ const KeyOnboarding: React.FC<{
     onSave: (apiToken: string, apiSecret: string) => void;
     onPreview: () => void;
     previewLabel: string;
-}> = ({ provider, tokenValue, secretValue, onSave, onPreview, previewLabel }) => {
+    colorTheme?: ColorThemeId;
+}> = ({ provider, tokenValue, secretValue, onSave, onPreview, previewLabel, colorTheme = DEFAULT_COLOR_THEME }) => {
     const { t, lang } = useI18n();
+    const ax = accentOf(colorTheme);
     const [keyDraft, setKeyDraft] = useState('');
     const [secretDraft, setSecretDraft] = useState('');
     // Ready when the key (and, if required, the secret) are filled in.
@@ -3264,7 +3492,7 @@ const KeyOnboarding: React.FC<{
     const save = () => { if (ready) onSave(keyDraft, secretDraft); };
     return (
         <div className="mx-auto max-w-lg animate-fade-in rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 text-center shadow-sm">
-            <div className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
+            <div className={`mx-auto mb-3 grid h-11 w-11 place-items-center rounded-full ${ax.brandSoft}`}>
                 <Icon.Key className="h-5 w-5" />
             </div>
             <h2 className="mb-1 text-base font-semibold text-slate-900 dark:text-slate-50">
@@ -3276,7 +3504,7 @@ const KeyOnboarding: React.FC<{
 
             {provider.keyUrl && (
                 <a href={provider.keyUrl} target="_blank" rel="noopener noreferrer"
-                   className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+                   className={`mb-3 inline-flex items-center gap-1.5 rounded-lg ${ax.btn} px-4 py-2 text-sm font-semibold text-white`}>
                     {t('onboarding.getKey')} <Icon.External className="h-4 w-4" />
                 </a>
             )}
@@ -3288,7 +3516,7 @@ const KeyOnboarding: React.FC<{
                     placeholder={provider.keyLabel || t('settings.apiKey')}
                     onChange={(e) => setKeyDraft(e.target.value.trim())}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !provider.supportsSecret) save(); }}
-                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                    className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                 />
                 {provider.supportsSecret && (
                     <input
@@ -3297,7 +3525,7 @@ const KeyOnboarding: React.FC<{
                         placeholder={provider.secretLabel || t('settings.apiSecret')}
                         onChange={(e) => setSecretDraft(e.target.value.trim())}
                         onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
-                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                        className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                     />
                 )}
                 <button
@@ -3313,7 +3541,7 @@ const KeyOnboarding: React.FC<{
             <button
                 type="button"
                 onClick={onPreview}
-                className="mt-4 text-xs font-medium text-slate-500 underline-offset-2 hover:text-indigo-600 hover:underline dark:text-slate-400"
+                className={`mt-4 text-xs font-medium text-slate-500 underline-offset-2 hover:underline dark:text-slate-400 ${ax.link}`}
             >
                 {previewLabel}
             </button>
@@ -3353,15 +3581,16 @@ interface DeskColumnDef {
 }
 
 /** Build the currently visible call/put columns from Settings → Desk columns. */
-function deskColumns(settings: DeskColumnSettings, t: (key: string) => string): { calls: DeskColumnDef[]; puts: DeskColumnDef[] } {
+function deskColumns(settings: DeskColumnSettings, t: (key: string) => string, colorTheme: ColorThemeId = DEFAULT_COLOR_THEME): { calls: DeskColumnDef[]; puts: DeskColumnDef[] } {
+    const ax = accentOf(colorTheme);
     const oi: DeskColumnDef = { key: 'openInterest', label: t('settings.deskColumns.openInterest'), headerLabel: t('deskColumns.header.openInterest'), render: (q) => fmtInt(q?.openInterest) };
     const vol: DeskColumnDef = { key: 'volume', label: t('settings.deskColumns.volume'), headerLabel: t('deskColumns.header.volume'), render: (q) => fmtInt(q?.volume) };
     const iv: DeskColumnDef = { key: 'iv', label: t('settings.deskColumns.iv'), headerLabel: t('deskColumns.header.iv'), className: 'text-slate-500', render: (q) => fmtPct(q?.iv) };
-    const delta: DeskColumnDef = { key: 'delta', label: t('settings.deskColumns.delta'), headerLabel: t('deskColumns.header.delta'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.delta) };
-    const gamma: DeskColumnDef = { key: 'gamma', label: t('settings.deskColumns.gamma'), headerLabel: t('deskColumns.header.gamma'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.gamma) };
-    const theta: DeskColumnDef = { key: 'theta', label: t('settings.deskColumns.theta'), headerLabel: t('deskColumns.header.theta'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.theta) };
-    const vega: DeskColumnDef = { key: 'vega', label: t('settings.deskColumns.vega'), headerLabel: t('deskColumns.header.vega'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.vega) };
-    const rho: DeskColumnDef = { key: 'rho', label: t('settings.deskColumns.rho'), headerLabel: t('deskColumns.header.rho'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.rho) };
+    const delta: DeskColumnDef = { key: 'delta', label: t('settings.deskColumns.delta'), headerLabel: t('deskColumns.header.delta'), className: ax.greek, render: (q) => fmtGreek(q?.delta) };
+    const gamma: DeskColumnDef = { key: 'gamma', label: t('settings.deskColumns.gamma'), headerLabel: t('deskColumns.header.gamma'), className: ax.greek, render: (q) => fmtGreek(q?.gamma) };
+    const theta: DeskColumnDef = { key: 'theta', label: t('settings.deskColumns.theta'), headerLabel: t('deskColumns.header.theta'), className: ax.greek, render: (q) => fmtGreek(q?.theta) };
+    const vega: DeskColumnDef = { key: 'vega', label: t('settings.deskColumns.vega'), headerLabel: t('deskColumns.header.vega'), className: ax.greek, render: (q) => fmtGreek(q?.vega) };
+    const rho: DeskColumnDef = { key: 'rho', label: t('settings.deskColumns.rho'), headerLabel: t('deskColumns.header.rho'), className: ax.greek, render: (q) => fmtGreek(q?.rho) };
     const lambda: DeskColumnDef = { key: 'lambda', label: t('settings.deskColumns.lambda'), headerLabel: t('deskColumns.header.lambda'), className: 'text-fuchsia-500', render: (q) => fmtGreek(q?.lambda) };
     const vanna: DeskColumnDef = { key: 'vanna', label: t('settings.deskColumns.vanna'), headerLabel: t('deskColumns.header.vanna'), className: 'text-amber-500', render: (q) => fmtGreek(q?.vanna) };
     const vomma: DeskColumnDef = { key: 'vomma', label: t('settings.deskColumns.vomma'), headerLabel: t('deskColumns.header.vomma'), className: 'text-amber-500', render: (q) => fmtGreek(q?.vomma) };
@@ -3370,14 +3599,14 @@ function deskColumns(settings: DeskColumnSettings, t: (key: string) => string): 
     const zomma: DeskColumnDef = { key: 'zomma', label: t('settings.deskColumns.zomma'), headerLabel: t('deskColumns.header.zomma'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.zomma) };
     const color: DeskColumnDef = { key: 'color', label: t('settings.deskColumns.color'), headerLabel: t('deskColumns.header.color'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.color) };
     const callPrice: DeskColumnDef[] = [
-        { key: 'bid', label: 'Bid', render: (q) => fmt(q?.bid) },
-        { key: 'mid', label: 'Mid', className: 'font-medium text-emerald-600 dark:text-emerald-400', render: (q) => fmt(q?.mid) },
-        { key: 'ask', label: 'Ask', render: (q) => fmt(q?.ask) },
+        { key: 'bid', label: t('settings.deskColumns.bid'), headerLabel: t('deskColumns.header.bid'), render: (q) => fmt(q?.bid) },
+        { key: 'mid', label: t('settings.deskColumns.mid'), headerLabel: t('deskColumns.header.mid'), className: ax.mid, render: (q) => fmt(q?.mid) },
+        { key: 'ask', label: t('settings.deskColumns.ask'), headerLabel: t('deskColumns.header.ask'), render: (q) => fmt(q?.ask) },
     ];
     const putPrice: DeskColumnDef[] = [
-        { key: 'bid', label: 'Bid', render: (q) => fmt(q?.bid) },
-        { key: 'mid', label: 'Mid', className: 'font-medium text-rose-600 dark:text-rose-400', render: (q) => fmt(q?.mid) },
-        { key: 'ask', label: 'Ask', render: (q) => fmt(q?.ask) },
+        { key: 'bid', label: t('settings.deskColumns.bid'), headerLabel: t('deskColumns.header.bid'), render: (q) => fmt(q?.bid) },
+        { key: 'mid', label: t('settings.deskColumns.mid'), headerLabel: t('deskColumns.header.mid'), className: 'font-medium text-rose-600 dark:text-rose-400', render: (q) => fmt(q?.mid) },
+        { key: 'ask', label: t('settings.deskColumns.ask'), headerLabel: t('deskColumns.header.ask'), render: (q) => fmt(q?.ask) },
     ];
 
     const buildSide = (s: SideColumnSettings, isCall: boolean): DeskColumnDef[] => {
@@ -3404,10 +3633,14 @@ function deskColumns(settings: DeskColumnSettings, t: (key: string) => string): 
 }
 
 function gridCols(callCount: number, putCount: number): string {
-    return `repeat(${callCount}, minmax(3.5rem, 1fr)) minmax(4.25rem, 1.05fr) repeat(${putCount}, minmax(3.5rem, 1fr))`;
+    // Strike track must fit values like "1,480.00" (high-priced underlyings) without
+    // overflowing into Put Bid. 5.75rem min + slight fr boost keeps the center axis
+    // readable while side columns still flex. CSS on .od-strike-cell contains overflow.
+    return `repeat(${callCount}, minmax(3.5rem, 1fr)) minmax(5.75rem, 1.15fr) repeat(${putCount}, minmax(3.5rem, 1fr))`;
 }
 function deskMinWidth(callCount: number, putCount: number): string {
-    return `${Math.max(48, (callCount + putCount) * 3.75 + 4.5)}rem`;
+    // Strike allowance raised in lockstep with gridCols (was 4.5rem for 4.25rem track).
+    return `${Math.max(48, (callCount + putCount) * 3.75 + 6.25)}rem`;
 }
 
 /** One data cell in the grid desk. */
@@ -3450,6 +3683,7 @@ const ExpirationSection: React.FC<{
     spot: number | null;
     callColumns: DeskColumnDef[];
     putColumns: DeskColumnDef[];
+    colorTheme?: ColorThemeId;
     collapsed: boolean;
     active: boolean;
     onToggle: () => void;
@@ -3460,7 +3694,8 @@ const ExpirationSection: React.FC<{
     /** Registers this section's ATM (at-the-money) row element so the desk can
      *  scroll it to the vertical center on load / expand (center-strike view). */
     atmRef: (el: HTMLDivElement | null) => void;
-}> = ({ section, index, spot, callColumns, putColumns, collapsed, active, onToggle, innerRef, atmRef }) => {
+}> = ({ section, index, spot, callColumns, putColumns, collapsed, active, onToggle, innerRef, atmRef, colorTheme = DEFAULT_COLOR_THEME }) => {
+    const ax = accentOf(colorTheme);
     const { t } = useI18n();
     const { expiration, calls, puts, strikes } = section;
     const atmStrike = useMemo(() => {
@@ -3528,7 +3763,7 @@ const ExpirationSection: React.FC<{
                         }
                     >
                         <div className="od-calls px-2 py-1 text-center font-semibold text-emerald-700 dark:text-emerald-400" style={{ gridColumn: `span ${callColumns.length}` }}>{t('chain.calls')}</div>
-                        <div className="od-strike-cell px-2 py-1 text-center font-semibold">{t('chain.strike')}</div>
+                        <div className="od-strike-cell px-1.5 py-1 text-center font-semibold">{t('chain.strike')}</div>
                         <div className="od-puts px-2 py-1 text-center font-semibold text-rose-700 dark:text-rose-400" style={{ gridColumn: `span ${putColumns.length}` }}>{t('chain.puts')}</div>
                     </div>
                     {/* Column-label row (sticky only when active). */}
@@ -3542,7 +3777,7 @@ const ExpirationSection: React.FC<{
                         {callColumns.map((c) => (
                             <div key={`c${c.key}`} title={c.label} className="px-2 py-1 text-right font-medium">{c.headerLabel || c.label}</div>
                         ))}
-                        <div className="od-strike-cell px-2.5 py-1 text-center font-medium">{t('chain.strikeSymbol')}</div>
+                        <div className="od-strike-cell px-1.5 py-1 text-center font-medium">{t('chain.strikeSymbol')}</div>
                         {putColumns.map((c) => (
                             <div key={`p${c.key}`} title={c.label} className="px-2 py-1 text-right font-medium">{c.headerLabel || c.label}</div>
                         ))}
@@ -3564,10 +3799,13 @@ const ExpirationSection: React.FC<{
                                 style={stagger ? { animationDelay: `${i * 18}ms` } : undefined}
                             >
                                 <QuoteCells q={calls.get(strike)} columns={callColumns} />
-                                <div className={
-                                    'od-strike-cell px-2.5 py-1 text-center font-semibold tabular-nums ' +
-                                    (isAtm ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-900 dark:text-slate-100')
-                                }>
+                                <div
+                                    title={fmt(strike)}
+                                    className={
+                                        'od-strike-cell px-1.5 py-1 text-center font-semibold tabular-nums ' +
+                                        (isAtm ? ax.atm : 'text-slate-900 dark:text-slate-100')
+                                    }
+                                >
                                     {fmt(strike)}
                                 </div>
                                 <QuoteCells q={puts.get(strike)} columns={putColumns} />
@@ -3586,9 +3824,10 @@ const ExpirationSection: React.FC<{
  * PILES UP as you scroll down (un-piles scrolling up). A scroll listener marks
  * the in-view section active so its sub-headers stay pinned below the pile.
  */
-const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: number | null; columns: DeskColumnSettings }> = ({ symbol, sections, spot, columns }) => {
+const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: number | null; columns: DeskColumnSettings; colorTheme?: ColorThemeId }> = ({ symbol, sections, spot, columns, colorTheme = DEFAULT_COLOR_THEME }) => {
     const { t } = useI18n();
-    const visibleColumns = useMemo(() => deskColumns(columns, t), [columns, t]);
+    const ax = accentOf(colorTheme);
+    const visibleColumns = useMemo(() => deskColumns(columns, t, colorTheme), [columns, t, colorTheme]);
     const odGrid = useMemo(() => gridCols(visibleColumns.calls.length, visibleColumns.puts.length), [visibleColumns]);
     const odMinWidth = useMemo(() => deskMinWidth(visibleColumns.calls.length, visibleColumns.puts.length), [visibleColumns]);
 
@@ -3800,7 +4039,7 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
                 <button
                     type="button"
                     onClick={toggleAll}
-                    className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+                    className={`inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 ${ax.expHover}`}
                 >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
                          strokeLinecap="round" strokeLinejoin="round"
@@ -3825,6 +4064,7 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
                             spot={spot}
                             callColumns={visibleColumns.calls}
                             putColumns={visibleColumns.puts}
+                            colorTheme={colorTheme}
                             collapsed={collapsed.has(s.expiration)}
                             active={activeExp === s.expiration}
                             onToggle={() => toggleOne(s.expiration)}
@@ -3869,7 +4109,8 @@ const App: React.FC = () => {
         });
     }, []);
 
-    useThemeController(settings.theme);
+    useThemeController(settings.theme, settings.colorTheme);
+    const ax = accentOf(settings.colorTheme);
 
     // Sync the i18n context with persisted language changes (and vice versa).
     const { setLang } = useI18n();
@@ -3893,7 +4134,7 @@ const App: React.FC = () => {
     const [error, setError] = useState<string>('');
     const [notice, setNotice] = useState<string>('');              // calm info (e.g. cancelled)
     const [errorNonce, setErrorNonce] = useState<number>(0);
-    // Ticker suggestions: provider-native search when available; otherwise data/index.json fallback.
+    // Ticker suggestions: provider-native search when available; otherwise data/options/index.json fallback.
     const [tickerSuggestions, setTickerSuggestions] = useState<TickerSuggestion[]>([]);
     const [tickerSuggestionsLoading, setTickerSuggestionsLoading] = useState<boolean>(false);
     const [tickerSuggestionsOpen, setTickerSuggestionsOpen] = useState<boolean>(false);
@@ -3930,7 +4171,7 @@ const App: React.FC = () => {
 
     // Load ticker suggestions as the user types. Provider-native search is used
     // when supported (Yahoo/NASDAQ/CBOE proxy, DoltHub SQL); otherwise, or when
-    // the proxy/search request fails, suggestions fall back to data/index.json.
+    // the proxy/search request fails, suggestions fall back to data/options/index.json.
     useEffect(() => {
         let cancelled = false;
         const ac = new AbortController();
@@ -4167,7 +4408,7 @@ const App: React.FC = () => {
             <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
                 {/* ---- Controls: STEP 1 (ticker → Expirations), STEP 2 (exp → Load) ---- */}
                 <div className="mb-4 flex flex-wrap items-center gap-2">
-                    {/* Ticker input — searchable suggestions use provider-native search when possible, then data/index.json fallback. */}
+                    {/* Ticker input — searchable suggestions use provider-native search when possible, then data/options/index.json fallback. */}
                     <form
                         onSubmit={(e) => { e.preventDefault(); getDates(tickerInput); }}
                         className={
@@ -4216,8 +4457,8 @@ const App: React.FC = () => {
                                             onMouseDown={(e) => { e.preventDefault(); chooseTickerSuggestion(s); }}
                                             onMouseEnter={() => setActiveTickerSuggestion(i)}
                                             className={
-                                                'flex w-full items-start gap-3 px-3 py-2 text-left hover:bg-indigo-50 dark:hover:bg-indigo-950/40 ' +
-                                                (i === activeTickerSuggestion ? 'bg-indigo-50 dark:bg-indigo-950/40' : '')
+                                                'flex w-full items-start gap-3 px-3 py-2 text-left ' + ax.suggestHover + ' ' +
+                                                (i === activeTickerSuggestion ? ax.suggestActive : '')
                                             }
                                         >
                                             <span className="mt-0.5 min-w-16 font-semibold text-slate-900 dark:text-slate-50">
@@ -4273,8 +4514,8 @@ const App: React.FC = () => {
                                             className={
                                                 'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' +
                                                 (on
-                                                    ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm'
-                                                    : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-indigo-400 hover:-translate-y-px')
+                                                    ? ax.chipActive
+                                                    : ax.chipIdle)
                                             }
                                         >
                                             {exp}
@@ -4294,7 +4535,7 @@ const App: React.FC = () => {
                                 ref={loadBtnRef}
                                 type="submit"
                                 disabled={expLoading || selectedExps.length === 0}
-                                className="shrink-0 rounded-md bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900"
+                                className={`shrink-0 rounded-md ${ax.btn} px-3 py-1 text-xs font-semibold text-white disabled:opacity-50 ${ax.focusRingOffset}`}
                             >
                                 {expLoading ? tr('controls.loading') : (selectedExps.length > 1 ? tr('controls.loadCount', { count: selectedExps.length }) : tr('controls.load'))}
                             </button>
@@ -4327,7 +4568,7 @@ const App: React.FC = () => {
                     )}
 
                     {anyLoading && (
-                        <span className="animate-pulse-soft text-xs font-medium text-indigo-500">
+                        <span className={`animate-pulse-soft text-xs font-medium ${ax.pulse}`}>
                             {metaLoading ? tr('loading.expirations') : tr('loading.chain')}
                         </span>
                     )}
@@ -4361,6 +4602,7 @@ const App: React.FC = () => {
                             provider={provider}
                             tokenValue={settings.tokens[provider.id] || ''}
                             secretValue={settings.secrets[provider.id] || ''}
+                            colorTheme={settings.colorTheme}
                             onSave={(apiToken, apiSecret) => {
                                 setToken(provider.id, apiToken);
                                 if (provider.supportsSecret) setSecret(provider.id, apiSecret);
@@ -4377,10 +4619,10 @@ const App: React.FC = () => {
                 {/* Option chain desk (one section per expiration), or guidance. */}
                 {!showOnboarding && (
                     chainSymbol && hasRows ? (
-                        <ChainTable symbol={chainSymbol} sections={sections} spot={spot} columns={settings.deskColumns} />
+                        <ChainTable symbol={chainSymbol} sections={sections} spot={spot} columns={settings.deskColumns} colorTheme={settings.colorTheme} />
                     ) : meta && !expLoading && !chainSymbol ? (
                         <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
-                            {tr('notice.pickExp')} <span className="mx-1 font-semibold text-indigo-500">{tr('controls.load')}</span> {tr('notice.toFetch')}
+                            {tr('notice.pickExp')} <span className={`mx-1 font-semibold ${ax.pulse}`}>{tr('controls.load')}</span> {tr('notice.toFetch')}
                         </div>
                     ) : (!meta && !metaLoading && !error) ? (
                         <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
