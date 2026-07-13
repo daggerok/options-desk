@@ -24,6 +24,19 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.41 - i18n(ru): translate Bid / Mid / Ask (and OI tooltip) on the desk:
+ *          - Price columns were hard-coded as English `"Bid"` / `"Mid"` / `"Ask"`
+ *            in `deskColumns()` so the chain header stayed Latin under RU locale
+ *            while every other label (Коллы, Путы, Страйк, Объём, Вега…) was
+ *            already translated. Wired them through `t(...)` with new keys
+ *            `settings.deskColumns.bid|mid|ask` + short `deskColumns.header.*`.
+ *          - RU headers: `Бид` / `Мид` / `Аск` (common broker shorthand);
+ *            full Settings labels: `Бид (спрос)` / `Мид (середина)` /
+ *            `Аск (предложение)`. EN keeps Bid / Mid / Ask.
+ *          - RU open-interest header uses Cyrillic `ОИ` (not Latin `OI`);
+ *            Settings label `Открытый интерес (ОИ)` matches.
+ *          - Settings note translated fully: Bid/Mid/Ask/Strike/Rho →
+ *            Бид/Мид/Аск/Страйк/Ро.
  * v0.9.40 - Strike column containment fix:
  *          - Strike ($) track was too narrow for high-priced underlyings
  *            (e.g. MPWR ~$1,344 → strikes like `1,480.00`). With default
@@ -659,6 +672,9 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.deskColumns.speed': 'Speed',
         'settings.deskColumns.zomma': 'Zomma',
         'settings.deskColumns.color': 'Color',
+        'settings.deskColumns.bid': 'Bid',
+        'settings.deskColumns.mid': 'Mid',
+        'settings.deskColumns.ask': 'Ask',
         'settings.deskColumns.note': 'Bid / Mid / Ask and Strike stay visible. Rho is disabled by default.',
 
         'deskColumns.header.openInterest': 'OI',
@@ -676,6 +692,9 @@ const translations: Record<Language, Record<string, string>> = {
         'deskColumns.header.speed': 'Speed',
         'deskColumns.header.zomma': 'Zomma',
         'deskColumns.header.color': 'Color',
+        'deskColumns.header.bid': 'Bid',
+        'deskColumns.header.mid': 'Mid',
+        'deskColumns.header.ask': 'Ask',
 
         'settings.cache': 'Cache',
         'settings.cache.records': 'Data records',
@@ -819,7 +838,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.deskColumns': 'Колонки доски',
         'settings.deskColumns.calls': 'Коллы',
         'settings.deskColumns.puts': 'Путы',
-        'settings.deskColumns.openInterest': 'Открытый интерес (OI)',
+        'settings.deskColumns.openInterest': 'Открытый интерес (ОИ)',
         'settings.deskColumns.volume': 'Объём',
         'settings.deskColumns.iv': 'Подразумеваемая волатильность (IV)',
         'settings.deskColumns.delta': 'Дельта Δ',
@@ -834,9 +853,12 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.deskColumns.speed': 'Спид',
         'settings.deskColumns.zomma': 'Зомма',
         'settings.deskColumns.color': 'Колор',
-        'settings.deskColumns.note': 'Bid / Mid / Ask и Strike всегда видны. Rho отключён по умолчанию.',
+        'settings.deskColumns.bid': 'Бид (спрос)',
+        'settings.deskColumns.mid': 'Мид (середина)',
+        'settings.deskColumns.ask': 'Аск (предложение)',
+        'settings.deskColumns.note': 'Бид / Мид / Аск и Страйк всегда видны. Ро отключён по умолчанию.',
 
-        'deskColumns.header.openInterest': 'OI',
+        'deskColumns.header.openInterest': 'ОИ',
         'deskColumns.header.volume': 'Объём',
         'deskColumns.header.iv': 'IV',
         'deskColumns.header.delta': 'Δ',
@@ -851,6 +873,9 @@ const translations: Record<Language, Record<string, string>> = {
         'deskColumns.header.speed': 'Спид',
         'deskColumns.header.zomma': 'Зомма',
         'deskColumns.header.color': 'Колор',
+        'deskColumns.header.bid': 'Бид',
+        'deskColumns.header.mid': 'Мид',
+        'deskColumns.header.ask': 'Аск',
 
         'settings.cache': 'Кэш',
         'settings.cache.records': 'Записей данных',
@@ -3382,14 +3407,14 @@ function deskColumns(settings: DeskColumnSettings, t: (key: string) => string): 
     const zomma: DeskColumnDef = { key: 'zomma', label: t('settings.deskColumns.zomma'), headerLabel: t('deskColumns.header.zomma'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.zomma) };
     const color: DeskColumnDef = { key: 'color', label: t('settings.deskColumns.color'), headerLabel: t('deskColumns.header.color'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.color) };
     const callPrice: DeskColumnDef[] = [
-        { key: 'bid', label: 'Bid', render: (q) => fmt(q?.bid) },
-        { key: 'mid', label: 'Mid', className: 'font-medium text-emerald-600 dark:text-emerald-400', render: (q) => fmt(q?.mid) },
-        { key: 'ask', label: 'Ask', render: (q) => fmt(q?.ask) },
+        { key: 'bid', label: t('settings.deskColumns.bid'), headerLabel: t('deskColumns.header.bid'), render: (q) => fmt(q?.bid) },
+        { key: 'mid', label: t('settings.deskColumns.mid'), headerLabel: t('deskColumns.header.mid'), className: 'font-medium text-emerald-600 dark:text-emerald-400', render: (q) => fmt(q?.mid) },
+        { key: 'ask', label: t('settings.deskColumns.ask'), headerLabel: t('deskColumns.header.ask'), render: (q) => fmt(q?.ask) },
     ];
     const putPrice: DeskColumnDef[] = [
-        { key: 'bid', label: 'Bid', render: (q) => fmt(q?.bid) },
-        { key: 'mid', label: 'Mid', className: 'font-medium text-rose-600 dark:text-rose-400', render: (q) => fmt(q?.mid) },
-        { key: 'ask', label: 'Ask', render: (q) => fmt(q?.ask) },
+        { key: 'bid', label: t('settings.deskColumns.bid'), headerLabel: t('deskColumns.header.bid'), render: (q) => fmt(q?.bid) },
+        { key: 'mid', label: t('settings.deskColumns.mid'), headerLabel: t('deskColumns.header.mid'), className: 'font-medium text-rose-600 dark:text-rose-400', render: (q) => fmt(q?.mid) },
+        { key: 'ask', label: t('settings.deskColumns.ask'), headerLabel: t('deskColumns.header.ask'), render: (q) => fmt(q?.ask) },
     ];
 
     const buildSide = (s: SideColumnSettings, isCall: boolean): DeskColumnDef[] => {
