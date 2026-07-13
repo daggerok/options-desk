@@ -10,11 +10,11 @@ A single-page **options board** with English / Russian interface: enter a ticker
 
 | Document / Документ | English | Русский |
 |---|---|---|
-| Overview & usage | [`docs/README.en.md`](docs/README.en.md) | [`docs/README.ru.md`](docs/README.ru.md) |
-| Developer guide | [`docs/DEVELOPMENT.en.md`](docs/DEVELOPMENT.en.md) | [`docs/DEVELOPMENT.ru.md`](docs/DEVELOPMENT.ru.md) |
-| Agentic-setup how-to | [`docs/Setup.en.md`](docs/Setup.en.md) | [`docs/Setup.ru.md`](docs/Setup.ru.md) |
-| Arena.ai adapter | [`docs/ARENA.en.md`](docs/ARENA.en.md) | [`docs/ARENA.ru.md`](docs/ARENA.ru.md) |
-| `AGENTS.md` compat stub | [`docs/AGENTS.en.md`](docs/AGENTS.en.md) | [`docs/AGENTS.ru.md`](docs/AGENTS.ru.md) |
+| Overview & usage | [README](docs/README.en.md) | [README](docs/README.ru.md) |
+| Developer guide | [DEVELOPMENT](docs/DEVELOPMENT.en.md) | [DEVELOPMENT](docs/DEVELOPMENT.ru.md) |
+| Agentic-setup how-to | [Setup](docs/Setup.en.md) | [Setup](docs/Setup.ru.md) |
+| Arena.ai adapter | [ARENA](docs/ARENA.en.md) | [ARENA](docs/ARENA.ru.md) |
+| `AGENTS.md` compat stub | [AGENTS](docs/AGENTS.en.md) | [AGENTS](docs/AGENTS.ru.md) |
 
 ---
 
@@ -29,4 +29,4 @@ This repository is optimized for AI-agentic development. Core agent files stay i
 - [AGENT.md](./AGENT.md): Main agent contract and rules (главный контракт, RU).
 - [CLAUDE.md](./CLAUDE.md): Adapter for Claude Code.
 - [docs/.cursorrules](./docs/.cursorrules): Rules for Cursor AI.
-- [docs/Setup.en.md](./docs/Setup.en.md) / [docs/Setup.ru.md](./docs/Setup.ru.md): Tutorial on setting up agentic workflows.
+- Tutorial on setting up agentic workflows: [English](./docs/Setup.en.md) or [Russian](./docs/Setup.ru.md).
