@@ -23,6 +23,11 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.40 - Strike column containment: `.od-strike-cell` now forces the value to
+ *          stay inside its grid track (`min-width: 0`, `overflow: hidden`,
+ *          `text-overflow: ellipsis`, `white-space: nowrap`, `box-sizing:
+ *          border-box`) so high strikes like `1,480.00` never spill into Put Bid.
+ *          Paired with a wider Strike track in main.tsx (`minmax(5.75rem, 1.15fr)`).
  * v0.9.39 - Options chain column spacing: added `--od-cgap: 0.25rem` token and
  *          `column-gap: var(--od-cgap)` (scalable `rem` token) to `.od-drow` and
  *          `.od-sub` grid rows so Strike ($) and Put Bid (plus all desk columns)
@@ -484,8 +489,16 @@ body {
 .dark .od-drow.od-atm { background-color: rgba(30, 27, 75, 0.4); }
 
 /* Center "Strike" column guide — a subtle vertical tint on the explicitly
- * marked strike cell (column index changes when users hide/show desk columns). */
+ * marked strike cell (column index changes when users hide/show desk columns).
+ * CONTAINMENT (v0.9.40): grid items default to min-width:auto, so long strike
+ * strings (e.g. "1,480.00") would expand past the track and paint over Put Bid.
+ * Force the cell to respect its track width and clip/ellipsis if needed. */
 .od-strike-cell {
+    box-sizing: border-box;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     background-image: linear-gradient(rgba(99, 102, 241, 0.06), rgba(99, 102, 241, 0.06));
 }
 .dark .od-strike-cell {

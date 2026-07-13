@@ -24,6 +24,18 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.40 - Strike column containment fix:
+ *          - Strike ($) track was too narrow for high-priced underlyings
+ *            (e.g. MPWR ~$1,344 → strikes like `1,480.00`). With default
+ *            OI/Vol/IV/Greeks + Bid/Mid/Ask on both sides, the center track
+ *            compressed so strike text spilled past its cell into Put Bid.
+ *          - Widened Strike track to `minmax(5.75rem, 1.15fr)`, bumped the
+ *            desk min-width strike allowance (4.5 → 6.25 rem), tightened strike
+ *            cell padding (`px-1.5`), and added CSS containment on
+ *            `.od-strike-cell` (`min-width: 0`, `overflow: hidden`,
+ *            `text-overflow: ellipsis`, `white-space: nowrap`) so the value
+ *            stays INSIDE the Strike column at every viewport width. Full value
+ *            remains available via the cell `title` tooltip if clipped.
  * v0.9.39 - Option desk spacing, flag & i18n updates:
  *          - Spacing: widened Strike ($) column (`minmax(4.25rem, 1.05fr)`) and
  *            added scalable `--od-cgap: 0.25rem` (`column-gap: var(--od-cgap)`)
@@ -3404,10 +3416,14 @@ function deskColumns(settings: DeskColumnSettings, t: (key: string) => string): 
 }
 
 function gridCols(callCount: number, putCount: number): string {
-    return `repeat(${callCount}, minmax(3.5rem, 1fr)) minmax(4.25rem, 1.05fr) repeat(${putCount}, minmax(3.5rem, 1fr))`;
+    // Strike track must fit values like "1,480.00" (high-priced underlyings) without
+    // overflowing into Put Bid. 5.75rem min + slight fr boost keeps the center axis
+    // readable while side columns still flex. CSS on .od-strike-cell contains overflow.
+    return `repeat(${callCount}, minmax(3.5rem, 1fr)) minmax(5.75rem, 1.15fr) repeat(${putCount}, minmax(3.5rem, 1fr))`;
 }
 function deskMinWidth(callCount: number, putCount: number): string {
-    return `${Math.max(48, (callCount + putCount) * 3.75 + 4.5)}rem`;
+    // Strike allowance raised in lockstep with gridCols (was 4.5rem for 4.25rem track).
+    return `${Math.max(48, (callCount + putCount) * 3.75 + 6.25)}rem`;
 }
 
 /** One data cell in the grid desk. */
@@ -3528,7 +3544,7 @@ const ExpirationSection: React.FC<{
                         }
                     >
                         <div className="od-calls px-2 py-1 text-center font-semibold text-emerald-700 dark:text-emerald-400" style={{ gridColumn: `span ${callColumns.length}` }}>{t('chain.calls')}</div>
-                        <div className="od-strike-cell px-2 py-1 text-center font-semibold">{t('chain.strike')}</div>
+                        <div className="od-strike-cell px-1.5 py-1 text-center font-semibold">{t('chain.strike')}</div>
                         <div className="od-puts px-2 py-1 text-center font-semibold text-rose-700 dark:text-rose-400" style={{ gridColumn: `span ${putColumns.length}` }}>{t('chain.puts')}</div>
                     </div>
                     {/* Column-label row (sticky only when active). */}
@@ -3542,7 +3558,7 @@ const ExpirationSection: React.FC<{
                         {callColumns.map((c) => (
                             <div key={`c${c.key}`} title={c.label} className="px-2 py-1 text-right font-medium">{c.headerLabel || c.label}</div>
                         ))}
-                        <div className="od-strike-cell px-2.5 py-1 text-center font-medium">{t('chain.strikeSymbol')}</div>
+                        <div className="od-strike-cell px-1.5 py-1 text-center font-medium">{t('chain.strikeSymbol')}</div>
                         {putColumns.map((c) => (
                             <div key={`p${c.key}`} title={c.label} className="px-2 py-1 text-right font-medium">{c.headerLabel || c.label}</div>
                         ))}
@@ -3564,10 +3580,13 @@ const ExpirationSection: React.FC<{
                                 style={stagger ? { animationDelay: `${i * 18}ms` } : undefined}
                             >
                                 <QuoteCells q={calls.get(strike)} columns={callColumns} />
-                                <div className={
-                                    'od-strike-cell px-2.5 py-1 text-center font-semibold tabular-nums ' +
-                                    (isAtm ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-900 dark:text-slate-100')
-                                }>
+                                <div
+                                    title={fmt(strike)}
+                                    className={
+                                        'od-strike-cell px-1.5 py-1 text-center font-semibold tabular-nums ' +
+                                        (isAtm ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-900 dark:text-slate-100')
+                                    }
+                                >
                                     {fmt(strike)}
                                 </div>
                                 <QuoteCells q={puts.get(strike)} columns={putColumns} />
