@@ -175,21 +175,21 @@
 #   TICKERS="AAPL MSFT" python scripts/fetch_data.py # override: only these
 #
 # TUNABLES (env):
-#   MAX_FETCHES      default 40      NEW (non-skipped) fetches per run.
-#   UNIVERSE_SIZE    default 6000    how many top-market-cap/optionable symbols to consider.
-#   MIN_MARKET_CAP   default 1e7     Microcap floor in USD for NASDAQ rows (drops nano-caps).
-#   NASDAQ_TIMEOUT   default 20      seconds to wait for NASDAQ before using Cboe fallback.
-#   MAX_EXPIRATIONS  default 12      expirations stored per ticker (keeps JSON small)
-#   RATE_LIMIT_HITS  default 3    consecutive ERRORS that mean "we're blocked".
-#   REQUEST_SLEEP    default 0.6  seconds between fetches (be polite to Yahoo).
-#   SKIP_RECHECK_DAYS default 30  days before a no-options ticker is re-checked.
-#   CBOE_GREEKS default 1        enrich static cache with Cboe delayed 1st-order greeks.
-#                                 (Model/higher-order greeks: UI only — do not re-add here.)
-#   SYMBOL_ALIASES   default ""   extra "SCREENER=YAHOO" aliases, comma-separated
-#                                 (e.g. "BRK.B=BRK-B,FOO=BAR"). Class shares are
-#                                 auto-canonicalized ("."/"/" -> "-") regardless.
+#   MAX_FETCHES      default 500        NEW (non-skipped) fetches per run.
+#   UNIVERSE_SIZE    default 6000       how many top-market-cap/optionable symbols to consider.
+#   MIN_MARKET_CAP   default 90000000   Microcap floor in USD for NASDAQ rows (drops nano-caps).
+#   NASDAQ_TIMEOUT   default 20         seconds to wait for NASDAQ before using Cboe fallback.
+#   MAX_EXPIRATIONS  default 12         expirations stored per ticker (keeps JSON small)
+#   RATE_LIMIT_HITS  default 3          consecutive ERRORS that mean "we're blocked".
+#   REQUEST_SLEEP    default 0.6        seconds between fetches (be polite to Yahoo).
+#   SKIP_RECHECK_DAYS default 30        days before a no-options ticker is re-checked.
+#   CBOE_GREEKS default 1               enrich static cache with Cboe delayed 1st-order greeks.
+#                                       (Model/higher-order greeks: UI only — do not re-add here.)
+#   SYMBOL_ALIASES   default ""         extra "SCREENER=YAHOO" aliases, comma-separated
+#                                       (e.g. "BRK.B=BRK-B,FOO=BAR"). Class shares are
+#                                       auto-canonicalized ("."/"/" -> "-") regardless.
 #   TIMEZONE  default America/New_York  market tz for "today"/working-day rules.
-#                                 Set TIMEZONE=UTC for the old UTC behavior.
+#                                       Set TIMEZONE=UTC for the old UTC behavior.
 # =============================================================================
 
 import csv
@@ -250,7 +250,7 @@ INDEX_PATH = os.path.join(DATA_DIR, "index.json")
 # Legacy location of the no-options skiplist (pre-v9). Still read once for
 # migration, then deleted after the skiplist is written into INDEX_PATH.
 LEGACY_SKIP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "no_options.json")
-MAX_FETCHES = int(os.environ.get("MAX_FETCHES", "40"))
+MAX_FETCHES = int(os.environ.get("MAX_FETCHES", "500"))
 # How deep the market-cap-ranked universe goes. The NASDAQ screener returns
 # ~7k US tickers across NASDAQ/NYSE/AMEX/Arca; the whole optionable universe is a
 # few thousand, so a high default lets the resumable runs eventually cache them
