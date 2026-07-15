@@ -18,7 +18,8 @@
     "restart": "pm2 restart app",
     "ps": "pm2 ps",
     "logs": "pm2 logs",
-    "stop": "pm2 kill"
+    "stop": "pm2 kill",
+    "test": "bun test"
   },
   "keywords": [
     "npm-run-all",
