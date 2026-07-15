@@ -118,7 +118,7 @@ bun run build-github-pages
 
 **Единый источник model greeks — браузер** (`src/main.tsx`).
 
-- `scripts/fetch_data.py` пишет yfinance quotes и, если есть, **Cboe delayed 1st-order** (`delta`/`gamma`/`theta`/`vega`/`rho`, `greeksSource: "cboe"`).
+- `scripts/options-data.py` пишет yfinance quotes и, если есть, **Cboe delayed 1st-order** (`delta`/`gamma`/`theta`/`vega`/`rho`, `greeksSource: "cboe"`).
 - Скрипт **не** считает λ / Vanna / Vomma / Charm / Speed / Zomma / Color и не делает full Black-Scholes fallback — это дубль UI.
 - После любого fetch (включая **CACHE**) приложение считает client-side Black-Scholes: missing 1st-order при наличии IV+spot и higher-order когда возможно.
 - Пропуски — `greeksMissingReason` (fetcher или client).
@@ -128,10 +128,10 @@ bun run build-github-pages
 
 1. Включи Pages: **Settings → Pages**.
 2. Разреши Actions коммитить: **Settings → Actions → General → Workflow permissions → Read and write permissions**.
-3. Workflow **Update options data** запускает `scripts/fetch_data.py`, сам находит universe тикеров, обновляет/расширяет `data/*.json`, обновляет `data/index.json` и коммитит изменения в `master`.
+3. Workflow **Update options data** запускает `scripts/options-data.py`, сам находит universe тикеров, обновляет/расширяет `data/*.json`, обновляет `data/index.json` и коммитит изменения в `master`.
 4. Workflow **GitHub Pages** собирает приложение через `bun run build-github-pages` и деплоит `dist/`.
 
-Ручной список тикеров поддерживается только для разовых запусков: `TICKERS="AAPL MSFT SPY" python scripts/fetch_data.py`. Плановый workflow использует самообнаружение.
+Ручной список тикеров поддерживается только для разовых запусков: `TICKERS="AAPL MSFT SPY" python scripts/options-data.py`. Плановый workflow использует самообнаружение.
 
 ## Настройка прокси для GitHub Pages
 
@@ -155,7 +155,7 @@ cd options-desk
 bun install -E
 
 # Запусти прокси-сервер
-bun ./scripts/yahoo-proxy.ts
+bun ./scripts/options-local-proxy.ts
 ```
 
 Прокси запустится на `http://localhost:8787` по умолчанию.
@@ -177,15 +177,15 @@ bun ./scripts/yahoo-proxy.ts
 
 ### Решение проблем с прокси
 
-- **"Could not reach the proxy"**: убедись, что прокси запущен (`bun ./scripts/yahoo-proxy.ts`)
+- **"Could not reach the proxy"**: убедись, что прокси запущен (`bun ./scripts/options-local-proxy.ts`)
 - **CORS errors**: прокси должен быть запущен на `localhost` или деплоен как Cloudflare Worker
-- **Port conflicts**: измени порт в `scripts/yahoo-proxy.ts` или используй переменную окружения `PORT`
+- **Port conflicts**: измени порт в `scripts/options-local-proxy.ts` или используй переменную окружения `PORT`
 
 ## Вспомогательная инфраструктура
 
-- `scripts/fetch_data.py` — умный yfinance-сборщик. Создаёт/обновляет `data/*.json`, вешает Cboe delayed **1st-order** greeks (model greeks только в UI) и ведёт `data/index.json` с `{ files, count, names, no_options }`.
+- `scripts/options-data.py` — умный yfinance-сборщик. Создаёт/обновляет `data/*.json`, вешает Cboe delayed **1st-order** greeks (model greeks только в UI) и ведёт `data/index.json` с `{ files, count, names, no_options }`.
 - `.github/workflows/update-data.yml` — плановый/ручной refresh данных.
-- `scripts/yahoo-proxy.ts` — локальный **Bun**-прокси:
+- `scripts/options-local-proxy.ts` — локальный **Bun**-прокси:
   - `/api/options` — Yahoo optionChain с crumb/cookies.
   - `/api/nasdaq` — relay NASDAQ option-chain.
   - `/api/cboe` — relay CBOE delayed-options.
@@ -203,15 +203,15 @@ data/
   index.json                  # { files, count, names, no_options }
   AAPL.json, SPY.json, ...    # один cache-файл цепочки на тикер, с greeks metadata после refresh
 scripts/
-  fetch_data.py               # yfinance -> data/*.json + data/index.json
-  yahoo-proxy.ts              # локальный Bun proxy: Yahoo/NASDAQ/CBOE/search
+  options-data.py               # yfinance -> data/*.json + data/index.json
+  options-local-proxy.ts              # локальный Bun proxy: Yahoo/NASDAQ/CBOE/search
   cloudflare-worker.js        # Cloudflare Worker: Yahoo/NASDAQ/CBOE/search/raw
 .github/workflows/
   ci.yaml                     # build checks
   update-data.yml             # обновление данных по расписанию
   github-pages.yml            # деплой Pages
 package.json                  # Bun/Parcel scripts
-pyproject.toml                # Python deps для fetch_data.py
+pyproject.toml                # Python deps для options-data.py
 README.md                     # TOC со ссылками на docs/README.en.md и docs/README.ru.md
 docs/
   README.en.md                # Английская документация
@@ -233,11 +233,11 @@ docs/
 ## Решение проблем
 
 - **При открытии ничего не грузится:** это нормально. Нажми **Expirations**, затем **Load**.
-- **Needs proxy / CORS:** запусти `bun ./scripts/yahoo-proxy.ts` локально или укажи Cloudflare Worker URL в Settings → Proxy base URL.
+- **Needs proxy / CORS:** запусти `bun ./scripts/options-local-proxy.ts` локально или укажи Cloudflare Worker URL в Settings → Proxy base URL.
 - **`Unexpected token '<'`:** прокси/сервер вернул HTML вместо JSON. Проверь URL прокси или провайдера.
 - **CACHE говорит not cached:** тикера нет в `data/*.json`; используй другой провайдер или дождись, пока data workflow его закэширует.
 - **Подсказка `(no options)`:** тикер валиден в локальном manifest, но последний скан не нашёл listed options.
-- **Proxy connection refused:** убедись, что прокси запущен (`bun ./scripts/yahoo-proxy.ts`) и Proxy base URL указан правильно в Settings.
+- **Proxy connection refused:** убедись, что прокси запущен (`bun ./scripts/options-local-proxy.ts`) и Proxy base URL указан правильно в Settings.
 
 ---
 
