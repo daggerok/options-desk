@@ -3733,25 +3733,7 @@ const TopBar: React.FC<{
                         )}
                     </button>
 
-                    {/* 5. CACHE / LIVE — fundamentals Pill */}
-                    <div title={isCache ? t('topBar.cache') : t('topBar.live')} className="flex-shrink-0">
-                        <Pill
-                            value={isCache ? 'cache' : 'live'}
-                            options={[
-                                { k: 'cache', l: '💾' },
-                                { k: 'live', l: '🌐' },
-                            ]}
-                            onChange={(k) => {
-                                if (k === 'cache') onChange({ providerId: 'static' });
-                                else if (isCache) onChange({ providerId: 'cboe' });
-                            }}
-                            dark={dark}
-                            accentActive={pillActive}
-                            title={isCache ? t('topBar.cache') : t('topBar.live')}
-                        />
-                    </div>
-
-                    {/* 6. Provider — greys out when CACHE (same pill shell feel via native select styled) */}
+                    {/* 5. Provider — greys out when CACHE (same pill shell feel via native select styled) */}
                     <div className="hidden sm:block flex-shrink-0">
                         <select
                             value={settings.providerId}
@@ -3773,6 +3755,24 @@ const TopBar: React.FC<{
                                 <option key={p.id} value={p.id}>{p.label}</option>
                             ))}
                         </select>
+                    </div>
+
+                    {/* 6. CACHE / LIVE — fundamentals Pill */}
+                    <div title={isCache ? t('topBar.cache') : t('topBar.live')} className="flex-shrink-0">
+                        <Pill
+                            value={isCache ? 'cache' : 'live'}
+                            options={[
+                                { k: 'cache', l: '💾' },
+                                { k: 'live', l: '🌐' },
+                            ]}
+                            onChange={(k) => {
+                                if (k === 'cache') onChange({ providerId: 'static' });
+                                else if (isCache) onChange({ providerId: 'cboe' });
+                            }}
+                            dark={dark}
+                            accentActive={pillActive}
+                            title={isCache ? t('topBar.cache') : t('topBar.live')}
+                        />
                     </div>
 
                     {/* 7. Theme — fundamentals sun/moon text button */}
