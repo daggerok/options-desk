@@ -185,7 +185,7 @@ For a deployable proxy that doesn't require local setup:
 
 These files are optional infrastructure outside the core app source:
 
-- `scripts/fetch_data.py` — smart yfinance fetcher. Builds/refreshes `data/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), and maintains `data/index.json` with `{ files, count, generated, names, no_options }`.
+- `scripts/fetch_data.py` — smart yfinance fetcher. Builds/refreshes `data/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), and maintains `data/index.json` with `{ files, count, names, no_options }`.
 - `.github/workflows/update-data.yml` — scheduled/manual data refresh workflow.
 - `scripts/yahoo-proxy.ts` — local **Bun** proxy serving:
   - `/api/options` — Yahoo optionChain with crumb/cookie handling.
@@ -202,7 +202,7 @@ src/
   index.css                   # Tailwind v4, theme tokens, scrollbar/table-desk CSS
   main.tsx                    # React app, providers, UI, cache/state logic, i18n
 data/
-  index.json                  # { files, count, generated, names, no_options }
+  index.json                  # { files, count, names, no_options }
   AAPL.json, SPY.json, ...    # one option-chain cache file per ticker, with greeks metadata when refreshed
 scripts/
   fetch_data.py               # yfinance -> data/*.json + data/index.json

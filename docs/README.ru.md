@@ -183,7 +183,7 @@ bun ./scripts/yahoo-proxy.ts
 
 ## Вспомогательная инфраструктура
 
-- `scripts/fetch_data.py` — умный yfinance-сборщик. Создаёт/обновляет `data/*.json`, вешает Cboe delayed **1st-order** greeks (model greeks только в UI) и ведёт `data/index.json` с `{ files, count, generated, names, no_options }`.
+- `scripts/fetch_data.py` — умный yfinance-сборщик. Создаёт/обновляет `data/*.json`, вешает Cboe delayed **1st-order** greeks (model greeks только в UI) и ведёт `data/index.json` с `{ files, count, names, no_options }`.
 - `.github/workflows/update-data.yml` — плановый/ручной refresh данных.
 - `scripts/yahoo-proxy.ts` — локальный **Bun**-прокси:
   - `/api/options` — Yahoo optionChain с crumb/cookies.
@@ -200,7 +200,7 @@ src/
   index.css                   # Tailwind v4, тема, scrollbars/CSS для доски
   main.tsx                    # React app, providers, UI, кэш/состояние, i18n
 data/
-  index.json                  # { files, count, generated, names, no_options }
+  index.json                  # { files, count, names, no_options }
   AAPL.json, SPY.json, ...    # один cache-файл цепочки на тикер, с greeks metadata после refresh
 scripts/
   fetch_data.py               # yfinance -> data/*.json + data/index.json

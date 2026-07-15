@@ -24,6 +24,11 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.43 - Static index without timestamp churn:
+ *          - data/index.json `files` is a sorted ticker list (no per-ticker
+ *            updated ISO map) and `generated` is dropped. loadStaticTickerManifest
+ *            still accepts the legacy map shape. Freshness lives on file mtime /
+ *            in-file `updated`, so no-op fetch runs no longer rewrite the index.
  * v0.9.42 - Shared color palettes (merge-ready with fundamentals):
  *          - Settings gain a Color palette control with two product skins:
  *            Emerald Ledger (`fundamentals`) and Indigo Desk (`options-desk`).
@@ -1744,7 +1749,6 @@ interface StaticTickerManifest {
     noOptions: string[];
     /** Optional TICKER -> company / fund / index name, stored in data/index.json. */
     names: Record<string, string>;
-    generated?: string;
 }
 
 /** In-memory copy of data/index.json so typing in the ticker box stays instant. */
@@ -1769,7 +1773,11 @@ function looksLikeTicker(sym: string): boolean {
 async function loadStaticTickerManifest(ctx: ProviderContext): Promise<StaticTickerManifest> {
     if (staticTickerManifestCache) return staticTickerManifestCache;
     const j: any = await fetchStaticJson('data/index.json', ctx.signal);
-    const files = j?.files && typeof j.files === 'object' ? j.files : {};
+    // v13: `files` is a sorted ticker list. Legacy v4–v12 used { TICKER: updatedISO }.
+    const rawFiles = j?.files;
+    const fileSymbols: string[] = Array.isArray(rawFiles)
+        ? rawFiles.map(normalizeTickerSymbol)
+        : (rawFiles && typeof rawFiles === 'object' ? Object.keys(rawFiles).map(normalizeTickerSymbol) : []);
     const noRaw = j?.no_options;
     const noOptions = Array.isArray(noRaw)
         ? noRaw.map(normalizeTickerSymbol)
@@ -1782,10 +1790,9 @@ async function loadStaticTickerManifest(ctx: ProviderContext): Promise<StaticTic
         if (key && value) names[key] = value;
     });
     staticTickerManifestCache = {
-        options: Object.keys(files).map(normalizeTickerSymbol).filter(Boolean).sort(),
+        options: fileSymbols.filter(Boolean).sort(),
         noOptions: noOptions.filter(Boolean).sort(),
         names,
-        generated: typeof j?.generated === 'string' ? j.generated : undefined,
     };
     return staticTickerManifestCache;
 }
@@ -1862,8 +1869,8 @@ async function suggestTickers(provider: DataProvider, query: string, ctx: Provid
 /**
  * Static cache provider (BULK, no setup — best for GitHub Pages).
  * Reads the site's OWN files (same-origin => zero CORS, zero keys):
- *   ./data/index.json     -> { files: { "<TICKER>": "<updated ISO>", ... },
- *                              count, generated, names?, no_options? }
+ *   ./data/index.json     -> { files: ["<TICKER>", ...],
+ *                              count, names?, no_options? }
  *                            (v0.9.16: the manifest now records EACH ticker's own
  *                            `updated` timestamp instead of a single global
  *                            `updated` that churned on every run. The ticker list
@@ -1889,8 +1896,7 @@ const staticProvider: DataProvider = {
         try {
             // Reuse the robust JSON fetch so a mis-served index.json (e.g. SPA
             // HTML fallback) fails cleanly to an empty list instead of throwing.
-            // v0.9.16 shape: { files: { TICKER: updatedISO } }. The ticker list is
-            // the sorted keys of `files`.
+            // v0.9.43 shape: { files: [TICKER, ...] } (legacy map keys still OK).
             const manifest = await loadStaticTickerManifest(ctx);
             return manifest.options;
         } catch { return []; }
