@@ -315,6 +315,7 @@
     "VZ",
     "WAY",
     "WDC",
+    "WFC",
     "WIX",
     "WLDN",
     "WMT",
@@ -335,7 +336,7 @@
     "ZETA",
     "ZM"
   ],
-  "count": 334,
+  "count": 335,
   "names": {},
   "no_options": {
     "AGMI": "2026-07-15",
