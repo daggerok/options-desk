@@ -52,5 +52,5 @@ We use `uv` to manage the Python environment.
 Before submitting changes, make sure that:
 1. The project builds: `bun run build`.
 2. Python scripts compile: `uv run python -m py_compile scripts/options-data.py`.
-3. The Cloudflare Worker is valid: `node --check scripts/cloudflare-worker.js`.
+3. The Cloudflare Worker is valid: `node --check scripts/options-cloudflare-proxy.js`.
 4. There are no secrets or leftover debug logs in the code.

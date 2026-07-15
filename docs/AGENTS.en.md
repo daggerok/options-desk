@@ -15,5 +15,5 @@ Short checklist:
 7. Do not commit `dist/`, `node_modules/`, `.parcel-cache`, `package-lock.json`, `.venv`, `__pycache__`.
 8. Do not change workflows without permission + a token with `workflow` scope.
 9. Do not scan the whole `data/` directory (thousands of files).
-10. Before PR: `bun run build`, `uv run python -m py_compile scripts/options-data.py`, `node --check scripts/cloudflare-worker.js`.
+10. Before PR: `bun run build`, `uv run python -m py_compile scripts/options-data.py`, `node --check scripts/options-cloudflare-proxy.js`.
 11. Stale comments / docs — fix them, do not carry them forward.

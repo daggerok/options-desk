@@ -14,4 +14,4 @@ See the main agentic contract in [AGENT.md](../AGENT.md).
 ## Verification
 - Run `bun run build`.
 - Run `uv run python -m py_compile scripts/options-data.py`.
-- Run `node --check scripts/cloudflare-worker.js`.
+- Run `node --check scripts/options-cloudflare-proxy.js`.

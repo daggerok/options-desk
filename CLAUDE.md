@@ -16,7 +16,7 @@
 - Stack: React + TypeScript + Tailwind v4 + Parcel/Bun.
 - Providers (UI): **CACHE, CBOE, NASDAQ, YAHOO** — fixed order.
 - Defaults: localhost/LAN → **CBOE**; GitHub Pages → **CACHE** (`defaultProviderId` in `src/main.tsx`).
-- Proxy: `scripts/options-local-proxy.ts` / `scripts/cloudflare-worker.js` (`/api/cboe`, `/api/nasdaq`, `/api/options`, `/api/search`).
+- Proxy: `scripts/options-local-proxy.ts` / `scripts/options-cloudflare-proxy.js` (`/api/cboe`, `/api/nasdaq`, `/api/options`, `/api/search`).
 - CACHE files: `data/options/*.json` + `data/options/index.json` via `scripts/options-data.py`.
 
 ## Anti-duplication (критично)
@@ -41,7 +41,7 @@
 ```bash
 bun run build
 uv run python -m py_compile scripts/options-data.py
-node --check scripts/cloudflare-worker.js
+node --check scripts/options-cloudflare-proxy.js
 git diff --check
 ```
 

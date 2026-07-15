@@ -560,7 +560,7 @@
  *            small proxy that handles Yahoo's crumb/cookie flow — either the
  *            local Bun server (scripts/options-local-proxy.ts, default
  *            http://localhost:8787) or a deployed Cloudflare Worker
- *            (scripts/cloudflare-worker.js). Endpoint:
+ *            (scripts/options-cloudflare-proxy.js). Endpoint:
  *            GET {base}/api/options?symbol=X[&date=YYYY-MM-DD].
  *          - Settings gained a "Proxy base URL" field (for Yahoo/worker) and the
  *            existing CBOE CORS-proxy dropdown now also accepts a custom Worker
@@ -590,7 +590,7 @@
  *   - scripts/options-data.py           yfinance -> data/options/*.json + data/options/index.json
  *   - .github/workflows/update-data.yml   schedules the fetch + commits JSON
  *   - scripts/options-local-proxy.ts          local Bun proxy (Yahoo/NASDAQ/CBOE/search)
- *   - scripts/cloudflare-worker.js    deployable proxy (Yahoo/NASDAQ/CBOE/search/raw)
+ *   - scripts/options-cloudflare-proxy.js    deployable proxy (Yahoo/NASDAQ/CBOE/search/raw)
  *
  * WHY THESE API CHOICES (research summary, keep for future agents):
  *   - Dropdown order is fixed: CACHE, CBOE, NASDAQ, YAHOO.
@@ -665,7 +665,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.getKey': 'Get a free key',
         'settings.keyHint': 'Stored only in your browser (localStorage).',
         'settings.proxyBase': 'Proxy base URL',
-        'settings.proxyBaseHint': 'Run bun ./scripts/options-local-proxy.ts locally, or deploy scripts/cloudflare-worker.js.',
+        'settings.proxyBaseHint': 'Run bun ./scripts/options-local-proxy.ts locally, or deploy scripts/options-cloudflare-proxy.js.',
         'settings.proxyBasePlaceholder': 'http://localhost:8787 or https://name.you.workers.dev',
         'settings.corsProxy': 'CORS proxy',
         'settings.corsProxyHint': 'Public proxies can be flaky — switch if one fails, or use your own Worker.',
@@ -802,7 +802,7 @@ const translations: Record<Language, Record<string, string>> = {
             '2. Install dependencies: bun install -E\n' +
             '3. Run the proxy: bun ./scripts/options-local-proxy.ts\n' +
             '4. Set Proxy base URL in Settings to http://localhost:8787\n\n' +
-            'Or deploy scripts/cloudflare-worker.js and set the Worker URL instead.\n\n' +
+            'Or deploy scripts/options-cloudflare-proxy.js and set the Worker URL instead.\n\n' +
             'See docs/README.en.md for detailed instructions.',
         'error.friendly.networkCors':
             'Network/CORS error reaching the proxy. Try a different CORS proxy in Settings, or use CACHE (static data).',
@@ -850,7 +850,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.getKey': 'Получить бесплатный ключ',
         'settings.keyHint': 'Хранится только в браузере (localStorage).',
         'settings.proxyBase': 'Базовый URL прокси',
-        'settings.proxyBaseHint': 'Запусти bun ./scripts/options-local-proxy.ts локально или задеплой scripts/cloudflare-worker.js.',
+        'settings.proxyBaseHint': 'Запусти bun ./scripts/options-local-proxy.ts локально или задеплой scripts/options-cloudflare-proxy.js.',
         'settings.proxyBasePlaceholder': 'http://localhost:8787 или https://name.you.workers.dev',
         'settings.corsProxy': 'CORS прокси',
         'settings.corsProxyHint': 'Публичные прокси могут быть нестабильны — переключайся при сбоях или используй свой Worker.',
@@ -987,7 +987,7 @@ const translations: Record<Language, Record<string, string>> = {
             '2. Установи зависимости: bun install -E\n' +
             '3. Запусти прокси: bun ./scripts/options-local-proxy.ts\n' +
             '4. Укажи Proxy base URL в настройках: http://localhost:8787\n\n' +
-            'Или задеплой scripts/cloudflare-worker.js и укажи URL Worker.\n\n' +
+            'Или задеплой scripts/options-cloudflare-proxy.js и укажи URL Worker.\n\n' +
             'Подробности — в docs/README.en.md.',
         'error.friendly.networkCors':
             'Ошибка сети/CORS при обращении к прокси. Попробуй другой CORS-прокси в настройках или используй CACHE (статичные данные).',
@@ -1986,7 +1986,7 @@ async function proxyTickerSuggestions(providerId: 'yahoo' | 'nasdaq' | 'cboe', q
 
 /**
  * Yahoo (via proxy) provider (LAZY, needs a proxy base URL).
- * The proxy (scripts/options-local-proxy.ts locally, or scripts/cloudflare-worker.js
+ * The proxy (scripts/options-local-proxy.ts locally, or scripts/options-cloudflare-proxy.js
  * deployed) handles Yahoo's crumb/cookie flow and re-exposes CORS:*.
  * Endpoint: GET {base}/api/options?symbol=X[&date=YYYY-MM-DD]
  *   -> Yahoo optionChain JSON: result[0].expirationDates (unix), quote price,

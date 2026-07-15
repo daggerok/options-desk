@@ -58,7 +58,7 @@
 ```bash
 bun run build
 uv run python -m py_compile scripts/options-data.py
-node --check scripts/cloudflare-worker.js
+node --check scripts/options-cloudflare-proxy.js
 git diff --check
 ```
 

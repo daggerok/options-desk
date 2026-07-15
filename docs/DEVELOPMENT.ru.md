@@ -52,5 +52,5 @@
 Перед отправкой изменений убедитесь, что:
 1. Проект собирается: `bun run build`.
 2. Python скрипты компилируются: `uv run python -m py_compile scripts/options-data.py`.
-3. Cloudflare Worker валиден: `node --check scripts/cloudflare-worker.js`.
+3. Cloudflare Worker валиден: `node --check scripts/options-cloudflare-proxy.js`.
 4. В коде нет секретов и лишних отладочных логов.

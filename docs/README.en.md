@@ -172,7 +172,7 @@ The proxy will start on `http://localhost:8787` by default.
 
 For a deployable proxy that doesn't require local setup:
 
-1. Deploy `scripts/cloudflare-worker.js` to Cloudflare Workers
+1. Deploy `scripts/options-cloudflare-proxy.js` to Cloudflare Workers
 2. Set the **Proxy base URL** to your Worker URL (e.g., `https://your-worker.your-subdomain.workers.dev`)
 
 ### Troubleshooting proxy issues
@@ -192,7 +192,7 @@ These files are optional infrastructure outside the core app source:
   - `/api/nasdaq` — NASDAQ option-chain relay.
   - `/api/cboe` — CBOE delayed-options relay.
   - `/api/search?provider=yahoo|nasdaq|cboe&q=...` — provider-native suggestions.
-- `scripts/cloudflare-worker.js` — deployable Worker with the same provider endpoints plus `/raw?url=...` generic CORS passthrough.
+- `scripts/options-cloudflare-proxy.js` — deployable Worker with the same provider endpoints plus `/raw?url=...` generic CORS passthrough.
 
 ## Project structure
 
@@ -207,7 +207,7 @@ data/
 scripts/
   options-data.py               # yfinance -> data/options/*.json + data/options/index.json
   options-local-proxy.ts              # local Bun proxy: Yahoo/NASDAQ/CBOE/search
-  cloudflare-worker.js        # Cloudflare Worker proxy: Yahoo/NASDAQ/CBOE/search/raw
+  options-cloudflare-proxy.js        # Cloudflare Worker proxy: Yahoo/NASDAQ/CBOE/search/raw
 .github/workflows/
   ci.yaml                     # build checks
   update-data.yml             # scheduled data refresh

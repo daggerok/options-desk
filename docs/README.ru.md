@@ -172,7 +172,7 @@ bun ./scripts/options-local-proxy.ts
 
 Для деплоя прокси без локального запуска:
 
-1. Деплой `scripts/cloudflare-worker.js` на Cloudflare Workers
+1. Деплой `scripts/options-cloudflare-proxy.js` на Cloudflare Workers
 2. Установи **Proxy base URL** на URL твоего Worker (например, `https://your-worker.your-subdomain.workers.dev`)
 
 ### Решение проблем с прокси
@@ -190,7 +190,7 @@ bun ./scripts/options-local-proxy.ts
   - `/api/nasdaq` — relay NASDAQ option-chain.
   - `/api/cboe` — relay CBOE delayed-options.
   - `/api/search?provider=yahoo|nasdaq|cboe&q=...` — подсказки тикеров.
-- `scripts/cloudflare-worker.js` — Cloudflare Worker с теми же provider endpoints плюс `/raw?url=...`.
+- `scripts/options-cloudflare-proxy.js` — Cloudflare Worker с теми же provider endpoints плюс `/raw?url=...`.
 
 ## Структура проекта
 
@@ -205,7 +205,7 @@ data/
 scripts/
   options-data.py               # yfinance -> data/options/*.json + data/options/index.json
   options-local-proxy.ts              # локальный Bun proxy: Yahoo/NASDAQ/CBOE/search
-  cloudflare-worker.js        # Cloudflare Worker: Yahoo/NASDAQ/CBOE/search/raw
+  options-cloudflare-proxy.js        # Cloudflare Worker: Yahoo/NASDAQ/CBOE/search/raw
 .github/workflows/
   ci.yaml                     # build checks
   update-data.yml             # обновление данных по расписанию

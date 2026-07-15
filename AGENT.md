@@ -20,7 +20,7 @@ Options Desk — статическое React/TypeScript приложение д
 - `src/index.css` — Tailwind CSS v4, theme tokens, sticky desk/grid CSS.
 - `scripts/options-data.py` — build-time CACHE generator: yfinance + **Cboe delayed 1st-order only** + `data/options/index.json`. **Без** model BS.
 - `scripts/options-local-proxy.ts` — локальный Bun proxy: `/api/cboe`, `/api/nasdaq`, `/api/options` (Yahoo), `/api/search`.
-- `scripts/cloudflare-worker.js` — Cloudflare Worker с теми же endpoints (+ `/raw`).
+- `scripts/options-cloudflare-proxy.js` — Cloudflare Worker с теми же endpoints (+ `/raw`).
 - `data/options/*.json` — static cache цепочек (quotes + optional Cboe 1st-order).
 - `data/options/index.json` — manifest: `files`, `count`, `names`, `no_options`.
 
@@ -99,7 +99,7 @@ Per-quote:
 ```bash
 bun run build
 uv run python -m py_compile scripts/options-data.py
-node --check scripts/cloudflare-worker.js
+node --check scripts/options-cloudflare-proxy.js
 git diff --check
 ```
 
@@ -164,7 +164,7 @@ git diff --check
 ```bash
 bun run build
 uv run python -m py_compile scripts/options-data.py
-node --check scripts/cloudflare-worker.js
+node --check scripts/options-cloudflare-proxy.js
 git diff --check
 ```
 
