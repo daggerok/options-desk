@@ -13,6 +13,15 @@
 # PROJECT: Options Desk — SMART build-time data fetcher
 #
 # CHANGELOG (append newest at top; keep history accurate):
+#   v13 - Index manifest without timestamp churn:
+#        * data/index.json `files` is now a sorted ticker LIST (not
+#          {TICKER: updatedISO}). Dropped global `generated`.
+#        * Freshness / oldest-first refresh use filesystem mtime and the
+#          optional in-file `updated` field (weekend dead-zone rule unchanged).
+#        * write_index() rewrites only when ticker set, names, or no_options
+#          change (or once when migrating off the legacy timestamp shape), so
+#          scheduled no-op runs no longer create git commits that only bump
+#          datetimes.
 #   v12 - No model greeks in the fetcher (single source of truth = UI runtime):
 #        * Removed Black-Scholes / higher-order greek computation from this script.
 #          Non-standard greeks (λ, vanna, vomma, charm, speed, zomma, color) and
@@ -95,7 +104,7 @@
 #          so you know precisely what to copy & replace.
 #   v4 - Missing-first then oldest-first rotation, per-ticker index (see below).
 #
-# WHAT IT DOES (v12 — Cboe 1st-order only; model greeks in UI; v10 names; v9 skiplist; v8 logged Cboe universe; v5/v4 queue + index):
+# WHAT IT DOES (v13 — index has no timestamps/generated; v12 — Cboe 1st-order only; model greeks in UI; v10 names; v9 skiplist; v8 logged Cboe universe; v5/v4 queue + index):
 #   1. Builds a UNIVERSE of optionable US underlyings. Preferred path: pull the
 #      NASDAQ screener (no key), sort DESC by market cap, and keep/merge symbols
 #      that appear in Cboe's optionable-underlying directory so the queue mostly
@@ -145,17 +154,16 @@
 #   - Idempotent + resumable: safe to run many times/day from GitHub Actions.
 #
 # OUTPUT SHAPE (matches the "Static cache" provider in main.tsx):
-#   data/index.json        -> { "files": { "<TICKER>": "<updated ISO>", ... },
-#                               "count": N, "generated": ISO,
+#   data/index.json        -> { "files": ["<TICKER>", ...],
+#                               "count": N,
 #                               "names": { "<TICKER>": "Company Name", ... },
 #                               "no_options": { "<TICKER>": "YYYY-MM-DD", ... } }
-#                             (v4: per-ticker `updated` map. The app derives the
-#                             ticker list from sorted keys of `files`. "generated"
-#                             is just when the manifest was rebuilt; the per-ticker
-#                             timestamps are what drive freshness decisions.
-#                             v9: `no_options` is the skiplist of tickers that
-#                             returned no chain. v10: `names` powers local ticker
-#                             suggestions and name-based local search.)
+#                             (v13: `files` is a sorted ticker LIST — no per-ticker
+#                             timestamps and no global `generated`. Freshness uses
+#                             data/{TICKER}.json mtime (+ in-file `updated` for the
+#                             weekend dead-zone rule). Legacy map shape still read.
+#                             v9: `no_options` skiplist. v10: `names` for suggestions.)
+
 #   data/{TICKER}.json     -> { symbol, updated (ISO), underlyingPrice,
 #                               greeks{...}, expirations[], quotes[] }
 #                             quotes keep bid/ask/last/volume/OI/IV from yfinance,
@@ -868,12 +876,21 @@ def fetch_ticker(symbol):
 # ---- Freshness check --------------------------------------------------------
 
 def _file_updated(path):
-    """Return a cached file's stored `updated` ISO string, or "" if unreadable.
-    Used both to build the per-ticker index.json manifest and to order the
-    REFRESH phase oldest-first."""
+    """Return a cached file's stored `updated` ISO string, or mtime-based ISO.
+
+    Used by is_fresh (weekend dead-zone) and to order the REFRESH phase
+    oldest-first. Index.json no longer stores these timestamps (v13) — the
+    filesystem mtime is the source of truth when the in-file field is absent.
+    """
     try:
         with open(path) as f:
-            return str(json.load(f).get("updated", ""))
+            val = str(json.load(f).get("updated", "") or "")
+            if val:
+                return val
+    except Exception:
+        pass
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(path), tz=_market_tz()).isoformat()
     except Exception:
         return ""
 
@@ -973,10 +990,18 @@ def load_skiplist():
     return {}
 
 
+def _normalize_files_list(raw):
+    """Accept legacy {TICKER: updatedISO} maps or plain ticker lists → sorted list."""
+    if isinstance(raw, dict):
+        return sorted(str(k) for k in raw.keys() if k)
+    if isinstance(raw, list):
+        return sorted({str(x) for x in raw if x})
+    return []
+
 def save_skiplist(skip):
     """Persist the no-option skiplist into data/index.json (sorted for stable diffs).
 
-    Preserves any existing `files` / `count` / `generated` / `names` fields so a
+    Preserves any existing `files` / `count` / `names` fields so a
     skiplist-only update does not wipe the per-ticker manifest. Removes the legacy
     scripts/no_options.json once the new location has been written successfully.
     """
@@ -986,8 +1011,11 @@ def save_skiplist(skip):
         if not isinstance(doc.get("files"), dict):
             doc["files"] = {}
         doc["count"] = int(doc.get("count") or len(doc["files"]))
-        if not doc.get("generated"):
-            doc["generated"] = _now_iso()
+        # Drop legacy timestamp fields if present (no longer part of the manifest).
+        doc.pop("generated", None)
+        if isinstance(doc.get("files"), dict):
+            doc["files"] = _normalize_files_list(doc.get("files"))
+            doc["count"] = len(doc["files"])
         doc["no_options"] = _sorted_no_options(skip)
         with open(INDEX_PATH, "w") as f:
             json.dump(doc, f, indent=2)
@@ -1193,30 +1221,28 @@ def main():
         print("  (none — everything was already fresh / skiplisted)", flush=True)
 
 
+
 def write_index(skip=None):
     """
-    Rebuild data/index.json as a PER-TICKER manifest from the files on disk.
-    Shape (v10): { "files": { TICKER: <updated ISO>, ... }, "count": N,
-                   "generated": <ISO>,
+    Rebuild data/index.json as a ticker manifest from the files on disk.
+    Shape (v13): { "files": [TICKER, ...], "count": N,
                    "names": { TICKER: "Company Name", ... },
                    "no_options": { TICKER: "YYYY-MM-DD", ... } }.
-    Each ticker keeps ITS OWN `updated` (read from its file), so the manifest
-    reflects real per-ticker freshness and unchanged tickers keep their old
-    timestamp. The no-options skiplist is stored on the same document (v9);
-    pass `skip` to write the in-memory skiplist, otherwise the existing
-    `no_options` field on disk is preserved. v10 also stores optional display
-    names for cached and no-options symbols so the static app can render local
-    ticker suggestions with provider-like company names.
 
-    To avoid churn, the file is only REWRITTEN when the per-ticker `files` map,
-    name map, or skiplist actually changed vs. what's on disk (so a run that
-    fetched nothing and didn't change metadata leaves index.json byte-for-byte
-    untouched, and `generated` is NOT bumped). Returns True if index.json was
-    (re)written this call, else False.
+    No per-ticker timestamps and no global `generated` — those only produced
+    git commits when a scheduled run refreshed nothing. Freshness for the
+    fetcher uses each data/{TICKER}.json filesystem mtime (ordering) and the
+    optional in-file `updated` field (weekend dead-zone rule in is_fresh).
+
+    The no-options skiplist is stored on the same document (v9); pass `skip` to
+    write the in-memory skiplist, otherwise the existing `no_options` field on
+    disk is preserved. v10 also stores optional display names.
+
+    To avoid churn, the file is only REWRITTEN when the ticker set, name map, or
+    skiplist actually changed (or when migrating off the legacy timestamp shape).
+    Returns True if index.json was (re)written this call, else False.
     """
-    files = {}
-    for sym in sorted(_cached_symbols()):
-        files[sym] = _file_updated(os.path.join(DATA_DIR, f"{sym}.json"))
+    files = sorted(_cached_symbols())
 
     prev = _read_index_doc()
     if skip is None:
@@ -1227,7 +1253,7 @@ def write_index(skip=None):
 
     prev_names_raw = prev.get("names") if isinstance(prev, dict) else {}
     prev_names = prev_names_raw if isinstance(prev_names_raw, dict) else {}
-    wanted_name_symbols = set(files.keys()) | set(no_options.keys())
+    wanted_name_symbols = set(files) | set(no_options.keys())
     names = {}
     for sym in sorted(wanted_name_symbols):
         # Prefer names discovered in THIS run; fall back to the previous manifest
@@ -1236,17 +1262,22 @@ def write_index(skip=None):
         if name:
             names[sym] = name
 
-    # Compare the meaningful parts (files + names + skiplist); ignore `generated`.
-    if (isinstance(prev, dict)
-            and prev.get("files") == files
-            and prev.get("names", {}) == names
-            and _sorted_no_options(prev.get("no_options") or {}) == no_options):
+    prev_files = _normalize_files_list(prev.get("files") if isinstance(prev, dict) else None)
+    prev_names_sorted = dict(sorted(prev_names.items())) if isinstance(prev_names, dict) else {}
+    prev_skip = _sorted_no_options(prev.get("no_options") or {}) if isinstance(prev, dict) else {}
+    legacy = isinstance(prev, dict) and (
+        "generated" in prev or isinstance(prev.get("files"), dict)
+    )
+
+    if (prev_files == files
+            and prev_names_sorted == names
+            and prev_skip == no_options
+            and not legacy):
         return False
 
     payload = {
         "files": files,
         "count": len(files),
-        "generated": _now_iso(),
         "names": names,
         "no_options": no_options,
     }

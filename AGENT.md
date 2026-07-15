@@ -22,7 +22,7 @@ Options Desk — статическое React/TypeScript приложение д
 - `scripts/yahoo-proxy.ts` — локальный Bun proxy: `/api/cboe`, `/api/nasdaq`, `/api/options` (Yahoo), `/api/search`.
 - `scripts/cloudflare-worker.js` — Cloudflare Worker с теми же endpoints (+ `/raw`).
 - `data/*.json` — static cache цепочек (quotes + optional Cboe 1st-order).
-- `data/index.json` — manifest: `files`, `count`, `generated`, `names`, `no_options`.
+- `data/index.json` — manifest: `files`, `count`, `names`, `no_options`.
 
 Agent docs:
 
