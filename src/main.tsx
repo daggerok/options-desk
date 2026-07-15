@@ -24,6 +24,10 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.45 - Header/settings/debug VISUAL parity with fundamentals:
+ *          - Same sticky surface tokens (slate-950/95, backdrop-blur-md),
+ *            Pill segmented controls, emoji theme ☀️/🌙 + ⚙️ settings,
+ *            flag i18n pills, and card-shell debug/settings popovers.
  * v0.9.44 - Header parity with fundamentals + CACHE-muted proxies:
  *          - Sticky header now mirrors fundamentals order: debug · proxy dots ·
  *            ticker · search · CACHE/LIVE · theme · i18n · settings.
@@ -3137,7 +3141,9 @@ const SettingsPanel: React.FC<{
     onClearSettings: () => void;
     onClearAll: () => void;
     onClose: () => void;
-}> = ({ settings, provider, onChange, onSetToken, onSetSecret, onClearData, onClearSettings, onClearAll, onClose }) => {
+    /** When true, render body only (no absolute popover chrome) — used inside fundamentals-style settings card. */
+    embedded?: boolean;
+}> = ({ settings, provider, onChange, onSetToken, onSetSecret, onClearData, onClearSettings, onClearAll, onClose, embedded = false }) => {
     const { t, lang } = useI18n();
     const ax = accentOf(settings.colorTheme);
     const currentToken = settings.tokens[provider.id] || '';
@@ -3155,14 +3161,18 @@ const SettingsPanel: React.FC<{
     const bump = () => setStatsNonce((n) => n + 1);
     return (
         <>
-            {/* Click-away backdrop */}
-            <div className="fixed inset-0 z-40" onClick={onClose} />
+            {/* Click-away backdrop (standalone popover only) */}
+            {!embedded && <div className="fixed inset-0 z-40" onClick={onClose} />}
             <div
-                className="themed-scroll absolute right-0 top-11 z-50 max-h-[80vh] w-80 origin-top-right animate-fade-in overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-xl"
-                role="dialog"
-                aria-label={t('settings.title')}
+                className={embedded
+            ? "themed-scroll max-h-[50vh] overflow-auto space-y-3"
+            : "themed-scroll absolute right-0 top-11 z-50 max-h-[80vh] w-80 origin-top-right animate-fade-in overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-xl"}
+                role={embedded ? undefined : 'dialog'}
+                aria-label={embedded ? undefined : t('settings.title')}
             >
-                <h2 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">{t('settings.title')}</h2>
+                {!embedded && (
+                  <h2 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">{t('settings.title')}</h2>
+                )}
 
                 <p className="mb-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                     {providerDescription(provider.id, lang)}
@@ -3369,6 +3379,7 @@ const SettingsPanel: React.FC<{
                     {armed && <p className="mt-1 text-[10px] text-rose-500">{t('settings.cache.confirmHelp')}</p>}
                 </div>
 
+                {!embedded && (<>
                 {/* ---- Heading fast-access controls (must live at the end of the settings menu) ---- */}
                 <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-3 space-y-3">
                     <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('topBar.settings')}</h3>
@@ -3404,7 +3415,7 @@ const SettingsPanel: React.FC<{
                         <LanguageSwitch value={settings.language} onChange={(l) => onChange({ language: l })} colorTheme={settings.colorTheme} />
                         <span className="mt-1 block text-[11px] text-slate-400">{t('settings.languageHint')}</span>
                     </div>
-                </div>
+                </div></>)}
             </div>
         </>
     );
@@ -3418,6 +3429,57 @@ const SettingsPanel: React.FC<{
  * Top navigation bar. Layout per product spec:
  *   [ left: brand "Option Desk" ] ................ [ API dropdown | theme | gear ]
  */
+
+/** Segmented control — same visual language as fundamentals header pills. */
+type PillOption = string | { k: string; l: string };
+const Pill = ({
+    value,
+    options,
+    onChange,
+    dark,
+    title,
+    accentActive,
+    disabled,
+}: {
+    value: string;
+    options: PillOption[];
+    onChange: (k: string) => void;
+    dark: boolean;
+    title?: string;
+    /** Active fill classes, e.g. "bg-indigo-600 text-white shadow-sm" */
+    accentActive: string;
+    disabled?: boolean;
+}) => (
+    <div
+        title={title}
+        className={`flex-shrink-0 flex items-center rounded-lg p-0.5 border ${
+            dark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'
+        } ${disabled ? 'opacity-50' : ''}`}
+    >
+        {options.map((opt) => {
+            const k = typeof opt === 'string' ? opt : opt.k;
+            const l = typeof opt === 'string' ? opt : opt.l;
+            return (
+                <button
+                    key={k}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onChange(k)}
+                    className={`px-2.5 py-1 rounded-md text-sm font-bold leading-none transition-all ${
+                        value === k
+                            ? accentActive
+                            : dark
+                                ? 'text-slate-400 hover:text-slate-200'
+                                : 'text-slate-500 hover:text-slate-700'
+                    } ${disabled ? 'cursor-not-allowed hover:text-slate-400' : ''}`}
+                >
+                    {l}
+                </button>
+            );
+        })}
+    </div>
+);
+
 const TopBar: React.FC<{
     settings: Settings;
     provider: DataProvider;
@@ -3427,7 +3489,6 @@ const TopBar: React.FC<{
     onClearData: () => void;
     onClearSettings: () => void;
     onClearAll: () => void;
-    /** Ticker field bound to App state */
     tickerInput: string;
     onTickerInput: (v: string) => void;
     onSearch: () => void;
@@ -3442,7 +3503,6 @@ const TopBar: React.FC<{
     onChooseSuggestion: (s: TickerSuggestion) => void;
     setActiveTickerSuggestion: (i: number) => void;
     setTickerSuggestionsOpen: (v: boolean) => void;
-    /** Live proxy health (only meaningful when not CACHE/static). */
     proxyOk: boolean | null;
     proxyChecking: boolean;
 }> = ({
@@ -3454,25 +3514,76 @@ const TopBar: React.FC<{
 }) => {
     const [openSettings, setOpenSettings] = useState(false);
     const [showDebug, setShowDebug] = useState(false);
-    const { t } = useI18n();
+    const { t, lang, setLang } = useI18n();
     const hasKey = !!(settings.tokens[provider.id]) &&
         (!provider.supportsSecret || !!(settings.secrets[provider.id]));
     const ax = accentOf(settings.colorTheme);
     const isCache = settings.providerId === 'static';
+    const isDark = settings.theme === 'dark' || (
+        settings.theme === 'system' &&
+        typeof window !== 'undefined' &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches
+    );
+    // Resolve effective dark for class tokens (subscribe via theme controller already on html)
+    const [dark, setDarkLocal] = useState(isDark);
+    useEffect(() => {
+        const root = document.documentElement;
+        const sync = () => setDarkLocal(root.classList.contains('dark'));
+        sync();
+        const obs = new MutationObserver(sync);
+        obs.observe(root, { attributes: true, attributeFilter: ['class'] });
+        return () => obs.disconnect();
+    }, [settings.theme]);
+
     const debugRef = useRef<HTMLDivElement | null>(null);
     const settingsRef = useRef<HTMLDivElement | null>(null);
     const showTickerSuggestions = tickerSuggestionsOpen && (tickerSuggestionsLoading || tickerSuggestions.length > 0);
 
-    // Click-away for debug + settings
     useEffect(() => {
         const h = (e: MouseEvent) => {
-            const t = e.target as Node;
-            if (debugRef.current && !debugRef.current.contains(t)) setShowDebug(false);
-            if (settingsRef.current && !settingsRef.current.contains(t)) setOpenSettings(false);
+            const n = e.target as Node;
+            if (debugRef.current && !debugRef.current.contains(n)) setShowDebug(false);
+            if (settingsRef.current && !settingsRef.current.contains(n)) setOpenSettings(false);
         };
         document.addEventListener('mousedown', h);
         return () => document.removeEventListener('mousedown', h);
     }, []);
+
+    // ---- fundamentals-identical surface tokens ----
+    const bg = dark ? 'bg-slate-950/95 text-slate-100' : 'bg-white/95 text-slate-900';
+    const bdr = dark ? 'border-slate-800' : 'border-slate-200';
+    const card = dark
+        ? 'bg-slate-800 border-slate-600 text-slate-100'
+        : 'bg-white border-slate-200 text-slate-900 shadow-sm';
+    const inp = dark
+        ? `bg-slate-800 border-slate-700 ${settings.colorTheme === 'fundamentals' ? 'text-emerald-400' : 'text-indigo-400'}`
+        : `bg-slate-50 border-slate-300 ${settings.colorTheme === 'fundamentals' ? 'text-emerald-700' : 'text-indigo-700'}`;
+    const mt = dark ? 'text-slate-400' : 'text-slate-500';
+    const t1 = dark ? 'text-slate-100' : 'text-slate-800';
+    const t2 = dark ? 'text-slate-300' : 'text-slate-600';
+    const sugBg = dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-lg';
+    const sugH = dark ? 'bg-slate-700' : 'bg-slate-100';
+    const sugH2 = dark ? 'hover:bg-slate-700/50' : 'hover:bg-slate-50';
+    const pillActive = settings.colorTheme === 'fundamentals'
+        ? 'bg-emerald-500 text-white shadow-sm'
+        : 'bg-indigo-600 text-white shadow-sm';
+    const focusBorder = settings.colorTheme === 'fundamentals'
+        ? 'focus:border-emerald-500'
+        : 'focus:border-indigo-500';
+    const btn = settings.colorTheme === 'fundamentals'
+        ? 'bg-emerald-500 hover:bg-emerald-400'
+        : 'bg-indigo-600 hover:bg-indigo-500';
+    const chipActiveDark = settings.colorTheme === 'fundamentals'
+        ? 'bg-slate-700 text-emerald-400'
+        : 'bg-slate-700 text-indigo-400';
+    const chipActiveLight = settings.colorTheme === 'fundamentals'
+        ? 'bg-slate-200 text-emerald-700'
+        : 'bg-slate-200 text-indigo-700';
+    const statusOk = settings.colorTheme === 'fundamentals' ? 'text-emerald-500' : 'text-indigo-500';
+    const textAccent = dark
+        ? (settings.colorTheme === 'fundamentals' ? 'text-emerald-400' : 'text-indigo-400')
+        : (settings.colorTheme === 'fundamentals' ? 'text-emerald-700' : 'text-indigo-700');
+    const sun = 'text-yellow-400';
 
     const proxyDotCls = isCache
         ? 'bg-slate-400/50 dark:bg-slate-600/50'
@@ -3481,12 +3592,17 @@ const TopBar: React.FC<{
             : proxyOk
                 ? (settings.colorTheme === 'fundamentals' ? 'bg-emerald-500' : 'bg-indigo-500')
                 : 'bg-red-500';
+    const proxyStatusCls = !isCache && proxyOk ? statusOk : (!isCache && proxyOk === false ? 'text-red-500' : mt);
+    const proxyStatusLabel = isCache ? '● n/a' : proxyChecking ? '● …' : proxyOk ? '● online' : '● offline';
+
+    const setThemeMode = (mode: ThemeMode) => onChange({ theme: mode });
+    const toggleDark = () => setThemeMode(dark ? 'light' : 'dark');
 
     return (
-        <header className={`sticky top-0 z-50 border-b border-slate-200 dark:border-slate-800 ${ax.headerBg} backdrop-blur`}>
+        <div className={`sticky top-0 z-50 ${bg} backdrop-blur-md border-b ${bdr}`}>
             <div className="px-4 xl:px-8">
                 <div className="flex items-center gap-2 sm:gap-3 py-3">
-                    {/* 1. Debug */}
+                    {/* 1. Debug — same as fundamentals ⌘ */}
                     <div className="relative flex-shrink-0" ref={debugRef}>
                         <button
                             type="button"
@@ -3494,12 +3610,13 @@ const TopBar: React.FC<{
                             title={t('topBar.debug')}
                             aria-label={t('topBar.debug')}
                             aria-expanded={showDebug}
-                            className={
-                                'text-xs px-2 py-1.5 rounded-lg transition-colors ' +
-                                (showDebug
-                                    ? 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100'
-                                    : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:text-slate-300 dark:hover:bg-slate-800')
-                            }
+                            className={`text-xs px-2 py-1.5 rounded-lg transition-colors ${
+                                showDebug
+                                    ? dark ? chipActiveDark : chipActiveLight
+                                    : dark
+                                        ? 'text-slate-600 hover:text-slate-400 hover:bg-slate-800'
+                                        : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                            }`}
                         >
                             ⌘
                         </button>
@@ -3507,49 +3624,50 @@ const TopBar: React.FC<{
                             <div
                                 role="dialog"
                                 aria-label={t('topBar.debug')}
-                                className="absolute left-0 top-full mt-2 w-[min(92vw,22rem)] z-[60] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl p-3 space-y-2"
+                                className={`absolute left-0 top-full mt-2 w-[min(92vw,22rem)] z-[60] ${card} border rounded-xl shadow-xl p-3 space-y-3`}
                             >
-                                <div className="font-bold text-sm text-slate-800 dark:text-slate-100">⌘ {t('topBar.debug')}</div>
-                                <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-700 text-xs">
-                                    <div className="flex justify-between gap-2 px-3 py-2">
-                                        <span className="text-slate-500">Provider</span>
-                                        <span className="font-mono font-semibold text-slate-800 dark:text-slate-100">{provider.label}</span>
+                                <div className={`font-bold text-sm ${t1}`}>⌘ {t('topBar.debug')}</div>
+                                <div className={`text-[10px] font-bold uppercase tracking-wide ${mt}`}>Overview</div>
+                                <div className={`rounded-lg border ${bdr} divide-y ${bdr}`}>
+                                    <div className="flex items-start justify-between gap-3 px-3 py-2">
+                                        <span className={`text-xs ${mt}`}>Provider</span>
+                                        <span className={`text-xs font-mono text-right ${t1}`}>{provider.label}</span>
                                     </div>
-                                    <div className="flex justify-between gap-2 px-3 py-2">
-                                        <span className="text-slate-500">Mode</span>
-                                        <span className="font-mono font-semibold text-slate-800 dark:text-slate-100">{isCache ? 'CACHE' : 'LIVE'}</span>
-                                    </div>
-                                    <div className="flex justify-between gap-2 px-3 py-2">
-                                        <span className="text-slate-500">Proxy</span>
-                                        <span className={'font-mono ' + (isCache ? 'text-slate-400' : proxyOk ? 'text-emerald-500' : 'text-red-500')}>
-                                            {isCache ? '● n/a' : proxyChecking ? '● …' : proxyOk ? '● online' : '● offline'}
-                                        </span>
+                                    <div className="grid grid-cols-2 divide-x divide-inherit">
+                                        <div className="px-3 py-2">
+                                            <div className={`text-[10px] ${mt}`}>Mode</div>
+                                            <div className={`text-xs font-mono font-semibold ${t1}`}>{isCache ? 'CACHE' : 'LIVE'}</div>
+                                        </div>
+                                        <div className="px-3 py-2">
+                                            <div className={`text-[10px] ${mt}`}>Proxy</div>
+                                            <div className={`text-xs font-mono font-semibold ${proxyStatusCls}`}>{proxyStatusLabel}</div>
+                                        </div>
                                     </div>
                                     <div className="px-3 py-2">
-                                        <div className="text-slate-500 mb-0.5">proxyBase</div>
-                                        <div className="font-mono break-all text-slate-600 dark:text-slate-300">{settings.proxyBase || '—'}</div>
+                                        <div className={`text-[10px] ${mt}`}>proxyBase</div>
+                                        <div className={`mt-1 text-[10px] font-mono break-all ${t2}`}>{settings.proxyBase || '—'}</div>
+                                    </div>
+                                    <div className="px-3 py-2">
+                                        <div className={`text-[10px] ${mt}`}>Ticker</div>
+                                        <div className={`text-xs font-mono font-semibold ${t1}`}>{tickerInput || '—'}</div>
                                     </div>
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* 2. Proxy health dots — muted in CACHE */}
+                    {/* 2. Proxy dots — fundamentals size/spacing */}
                     <div
                         className="flex gap-1.5 flex-shrink-0"
                         data-proxy-indicators={isCache ? 'disabled' : 'live'}
-                        title={
-                            isCache
-                                ? `${t('topBar.proxy')} (${t('topBar.cache')} — ${t('topBar.proxyDisabled')})`
-                                : t('topBar.proxy')
-                        }
+                        title={isCache ? `${t('topBar.proxy')} (${t('topBar.cache')} — ${t('topBar.proxyDisabled')})` : t('topBar.proxy')}
                         aria-label={t('topBar.proxy')}
                     >
                         <div className={`h-2.5 w-2.5 rounded-full ${proxyDotCls}`} />
                         <div className={`h-2.5 w-2.5 rounded-full ${proxyDotCls}`} />
                     </div>
 
-                    {/* 3. Ticker input */}
+                    {/* 3. Ticker — fundamentals mono input */}
                     <div className="flex-1 min-w-0 relative" title={t('topBar.ticker')}>
                         <input
                             type="text"
@@ -3568,29 +3686,28 @@ const TopBar: React.FC<{
                             role="combobox"
                             aria-expanded={showTickerSuggestions}
                             aria-label={t('topBar.ticker')}
-                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 font-mono font-bold text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-slate-400 uppercase"
+                            className={`w-full ${inp} border rounded-lg px-3 py-2 font-mono font-bold text-sm focus:outline-none ${focusBorder} transition-colors uppercase`}
                         />
                         {showTickerSuggestions && (
-                            <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                            <div className={`absolute top-full left-0 right-0 mt-1 ${sugBg} border rounded-lg overflow-hidden z-50 max-w-xl`}>
                                 {tickerSuggestionsLoading && tickerSuggestions.length === 0 ? (
-                                    <div className="px-3 py-2 text-xs text-slate-500">{t('controls.searching')}</div>
+                                    <div className={`px-3 py-2 text-xs ${mt}`}>{t('controls.searching')}</div>
                                 ) : tickerSuggestions.map((s, i) => (
                                     <button
                                         key={`${s.source}:${s.symbol}:${i}`}
                                         type="button"
                                         onMouseDown={(e) => { e.preventDefault(); onChooseSuggestion(s); }}
                                         onMouseEnter={() => setActiveTickerSuggestion(i)}
-                                        className={
-                                            'flex w-full items-start gap-3 px-3 py-2 text-left ' + ax.suggestHover + ' ' +
-                                            (i === activeTickerSuggestion ? ax.suggestActive : '')
-                                        }
+                                        className={`w-full text-left px-3 py-2 flex items-center gap-3 transition-colors ${
+                                            i === activeTickerSuggestion ? sugH : sugH2
+                                        }`}
                                     >
-                                        <span className="mt-0.5 min-w-16 font-semibold text-slate-900 dark:text-slate-50">
+                                        <span className={`font-mono font-bold text-sm w-14 flex-shrink-0 ${textAccent}`}>
                                             {s.symbol}
-                                            {!s.hasOptions && <span className="ml-1 font-medium text-amber-600 dark:text-amber-400">{t('noOptions')}</span>}
                                         </span>
-                                        <span className="min-w-0 flex-1 truncate text-slate-600 dark:text-slate-300">
+                                        <span className={`text-xs truncate ${t2}`}>
                                             {s.name || (s.hasOptions ? t('tickerFromIndex') : t('validTickerFromIndex'))}
+                                            {!s.hasOptions ? ` ${t('noOptions')}` : ''}
                                         </span>
                                     </button>
                                 ))}
@@ -3598,115 +3715,213 @@ const TopBar: React.FC<{
                         )}
                     </div>
 
-                    {/* 4. Search / Expirations */}
+                    {/* 4. Search — fundamentals solid accent button */}
                     <button
                         type="button"
                         onClick={onSearch}
                         disabled={!!searching}
                         title={t('topBar.search')}
                         aria-label={t('topBar.search')}
-                        className={`flex-shrink-0 flex items-center ${ax.btn} text-white font-bold px-3 sm:px-4 py-2 rounded-lg text-sm transition-all active:scale-95 disabled:opacity-40`}
+                        className={`flex-shrink-0 flex items-center ${btn} text-white font-bold px-3 sm:px-4 py-2 rounded-lg text-sm transition-all active:scale-95 disabled:opacity-40`}
                     >
                         {searching ? (
                             <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
                         ) : (
-                            <Icon.Search className="h-4 w-4" />
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4" aria-hidden>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                            </svg>
                         )}
                     </button>
 
-                    {/* 5. CACHE / LIVE (static vs proxy providers) — disk emoji like fundamentals */}
-                    <div className="flex-shrink-0 flex items-center rounded-lg p-0.5 border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                        <button
-                            type="button"
-                            title={t('topBar.cache')}
-                            aria-pressed={isCache}
-                            onClick={() => onChange({ providerId: 'static' })}
-                            className={`px-2.5 py-1 rounded-md text-sm font-bold leading-none transition-all ${
-                                isCache
-                                    ? (settings.colorTheme === 'fundamentals' ? 'bg-emerald-500 text-white shadow-sm' : 'bg-indigo-600 text-white shadow-sm')
-                                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
-                            }`}
-                        >
-                            💾
-                        </button>
-                        <button
-                            type="button"
-                            title={t('topBar.live')}
-                            aria-pressed={!isCache}
-                            onClick={() => {
-                                if (isCache) onChange({ providerId: 'cboe' });
+                    {/* 5. CACHE / LIVE — fundamentals Pill */}
+                    <div title={isCache ? t('topBar.cache') : t('topBar.live')} className="flex-shrink-0">
+                        <Pill
+                            value={isCache ? 'cache' : 'live'}
+                            options={[
+                                { k: 'cache', l: '💾' },
+                                { k: 'live', l: '🌐' },
+                            ]}
+                            onChange={(k) => {
+                                if (k === 'cache') onChange({ providerId: 'static' });
+                                else if (isCache) onChange({ providerId: 'cboe' });
                             }}
-                            className={`px-2.5 py-1 rounded-md text-sm font-bold leading-none transition-all ${
-                                !isCache
-                                    ? (settings.colorTheme === 'fundamentals' ? 'bg-emerald-500 text-white shadow-sm' : 'bg-indigo-600 text-white shadow-sm')
-                                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
-                            }`}
-                        >
-                            🌐
-                        </button>
+                            dark={dark}
+                            accentActive={pillActive}
+                            title={isCache ? t('topBar.cache') : t('topBar.live')}
+                        />
                     </div>
 
-                    {/* 6. Provider select — disabled + grey when CACHE */}
-                    <div className="hidden sm:flex items-center gap-1.5 flex-shrink-0">
+                    {/* 6. Provider — greys out when CACHE (same pill shell feel via native select styled) */}
+                    <div className="hidden sm:block flex-shrink-0">
                         <select
                             value={settings.providerId}
                             onChange={(e) => onChange({ providerId: e.target.value })}
                             disabled={isCache}
-                            title={isCache ? `${t('settings.provider')} (${t('topBar.proxyDisabled')})` : t('settings.provider')}
                             data-provider-select={isCache ? 'disabled' : 'live'}
-                            className={
-                                'rounded-lg border px-2 py-1.5 text-sm outline-none focus:ring-2 ' +
-                                (isCache
-                                    ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-600'
-                                    : `border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 ${ax.focusRing}`)
-                            }
+                            title={isCache ? `${t('settings.provider')} (${t('topBar.proxyDisabled')})` : t('settings.provider')}
+                            className={`rounded-lg border px-2 py-1.5 text-sm font-bold outline-none transition-colors ${
+                                isCache
+                                    ? dark
+                                        ? 'border-slate-700 bg-slate-800/50 text-slate-500 cursor-not-allowed'
+                                        : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : dark
+                                        ? 'border-slate-700 bg-slate-800 text-slate-100'
+                                        : 'border-slate-200 bg-slate-100 text-slate-800'
+                            }`}
                         >
                             {PROVIDERS.map((p) => (
                                 <option key={p.id} value={p.id}>{p.label}</option>
                             ))}
                         </select>
-                        {!isCache && <SetupBadge provider={provider} hasKey={hasKey} />}
                     </div>
 
-                    {/* 7. Theme */}
-                    <ThemeSwitch value={settings.theme} onChange={(theme) => onChange({ theme })} colorTheme={settings.colorTheme} />
+                    {/* 7. Theme — fundamentals sun/moon text button */}
+                    <button
+                        type="button"
+                        onClick={toggleDark}
+                        title={t('theme.' + (dark ? 'light' : 'dark'))}
+                        aria-label={t('theme.' + (dark ? 'light' : 'dark'))}
+                        className={`flex-shrink-0 text-base leading-none px-2 py-1.5 rounded-lg transition-colors ${
+                            dark ? `${sun} hover:bg-slate-800` : 'text-slate-500 hover:bg-slate-100'
+                        }`}
+                    >
+                        {dark ? '☀️' : '🌙'}
+                    </button>
 
-                    {/* 8. i18n */}
-                    <LanguageSwitch value={settings.language} onChange={(l) => onChange({ language: l })} colorTheme={settings.colorTheme} />
+                    {/* 8. i18n — fundamentals flag Pill */}
+                    <div title={t('settings.language')} className="flex-shrink-0">
+                        <Pill
+                            value={settings.language}
+                            options={[
+                                { k: 'en', l: '🇺🇸' },
+                                { k: 'ru', l: '🇷🇺' },
+                            ]}
+                            onChange={(k) => {
+                                onChange({ language: k as Language });
+                                setLang(k as Language);
+                            }}
+                            dark={dark}
+                            accentActive={pillActive}
+                            title={t('settings.language')}
+                        />
+                    </div>
 
-                    {/* 9. Settings */}
+                    {/* 9. Settings — fundamentals gear emoji button + card popover shell */}
                     <div className="relative flex-shrink-0" ref={settingsRef}>
                         <button
                             type="button"
                             onClick={() => setOpenSettings((v) => !v)}
-                            aria-label={t('topBar.settings')}
                             title={t('topBar.settings')}
-                            className={
-                                'flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ' +
-                                (openSettings
-                                    ? ax.openBorder
-                                    : 'border-slate-300 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')
-                            }
+                            aria-label={t('topBar.settings')}
+                            aria-expanded={openSettings}
+                            className={`flex-shrink-0 text-base leading-none px-2 py-1.5 rounded-lg transition-colors ${
+                                openSettings
+                                    ? dark ? chipActiveDark : chipActiveLight
+                                    : dark
+                                        ? 'text-slate-300 hover:bg-slate-800'
+                                        : 'text-slate-600 hover:bg-slate-100'
+                            }`}
                         >
-                            <Icon.Gear className="h-4 w-4" />
+                            ⚙️
                         </button>
                         {openSettings && (
-                            <SettingsPanel
-                                settings={settings}
-                                provider={provider}
-                                onChange={onChange}
-                                onSetToken={onSetToken}
-                                onSetSecret={onSetSecret}
-                                onClearData={onClearData}
-                                onClearSettings={onClearSettings}
-                                onClearAll={onClearAll}
-                                onClose={() => setOpenSettings(false)}
-                            />
+                            <div
+                                className={`absolute right-0 top-full mt-2 w-[min(92vw,22rem)] z-[60] ${card} border rounded-xl shadow-xl p-3 space-y-3`}
+                            >
+                                <div className={`font-bold text-sm ${t1}`}>⚙️ {t('settings.title')}</div>
+
+                                <div className={`text-[10px] font-bold uppercase tracking-wide ${mt}`}>{t('settings.theme')}</div>
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className={`text-xs ${t2}`}>{t('settings.theme')}</span>
+                                    <Pill
+                                        value={dark ? 'dark' : 'light'}
+                                        options={[
+                                            { k: 'light', l: '☀️' },
+                                            { k: 'dark', l: '🌙' },
+                                        ]}
+                                        onChange={(k) => setThemeMode(k as ThemeMode)}
+                                        dark={dark}
+                                        accentActive={pillActive}
+                                    />
+                                </div>
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className={`text-xs ${t2}`}>{t('settings.colorTheme')}</span>
+                                    <Pill
+                                        value={settings.colorTheme}
+                                        options={[
+                                            { k: 'options-desk', l: '📘' },
+                                            { k: 'fundamentals', l: '📗' },
+                                        ]}
+                                        onChange={(k) => onChange({ colorTheme: normalizeColorTheme(k) })}
+                                        dark={dark}
+                                        accentActive={pillActive}
+                                    />
+                                </div>
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className={`text-xs ${t2}`}>{t('settings.language')}</span>
+                                    <Pill
+                                        value={settings.language}
+                                        options={[
+                                            { k: 'en', l: '🇺🇸' },
+                                            { k: 'ru', l: '🇷🇺' },
+                                        ]}
+                                        onChange={(k) => {
+                                            onChange({ language: k as Language });
+                                            setLang(k as Language);
+                                        }}
+                                        dark={dark}
+                                        accentActive={pillActive}
+                                    />
+                                </div>
+
+                                <div className={`text-[10px] font-bold uppercase tracking-wide pt-1 ${mt}`}>{t('settings.provider')}</div>
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className={`text-xs ${t2}`}>{t('settings.provider')}</span>
+                                    <select
+                                        value={settings.providerId}
+                                        onChange={(e) => onChange({ providerId: e.target.value })}
+                                        disabled={isCache}
+                                        data-provider-select={isCache ? 'disabled' : 'live'}
+                                        className={`rounded-lg border px-2 py-1 text-xs font-bold outline-none ${
+                                            isCache
+                                                ? dark
+                                                    ? 'border-slate-700 bg-slate-900/50 text-slate-500 cursor-not-allowed'
+                                                    : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                                                : dark
+                                                    ? 'border-slate-600 bg-slate-900 text-slate-100'
+                                                    : 'border-slate-200 bg-white text-slate-800'
+                                        }`}
+                                    >
+                                        {PROVIDERS.map((p) => (
+                                            <option key={p.id} value={p.id}>{p.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className={`text-[10px] ${mt}`}>
+                                    {isCache ? t('topBar.proxyDisabled') : t('settings.providerHint')}
+                                </div>
+
+                                {/* Nested full SettingsPanel for desk columns / cache / proxy fields */}
+                                <div className={`border-t ${bdr} pt-2`}>
+                                    <SettingsPanel
+                                        settings={settings}
+                                        provider={provider}
+                                        onChange={onChange}
+                                        onSetToken={onSetToken}
+                                        onSetSecret={onSetSecret}
+                                        onClearData={onClearData}
+                                        onClearSettings={onClearSettings}
+                                        onClearAll={onClearAll}
+                                        onClose={() => setOpenSettings(false)}
+                                        embedded
+                                    />
+                                </div>
+                            </div>
                         )}
                     </div>
                 </div>
             </div>
-        </header>
+        </div>
     );
 };
 

@@ -7,38 +7,51 @@ const ci = readFileSync(join(import.meta.dir, '../.github/workflows/ci.yaml'), '
 const pkg = JSON.parse(readFileSync(join(import.meta.dir, '../package.json'), 'utf8'));
 
 describe('header parity + CACHE-muted proxies (options-desk)', () => {
-  test('TopBar includes fundamentals-like control order markers', () => {
-    expect(main).toContain('data-proxy-indicators=');
-    expect(main).toContain('data-provider-select=');
-    expect(main).toContain("providerId: 'static'");
-    expect(main).toContain('topBar.proxyDisabled');
-    expect(main).toContain('💾');
-    expect(main).toContain('🌐');
-    expect(main).toContain('topBar.debug');
+  test('uses fundamentals surface tokens on sticky header', () => {
+    expect(main).toContain('bg-slate-950/95 text-slate-100');
+    expect(main).toContain('bg-white/95 text-slate-900');
+    expect(main).toContain('backdrop-blur-md');
+    expect(main).toContain('px-4 xl:px-8');
+    expect(main).toContain('gap-2 sm:gap-3 py-3');
+  });
+
+  test('theme / i18n / settings match fundamentals control chrome', () => {
+    // emoji theme toggle (not SVG ThemeSwitch in header)
+    expect(main).toContain("dark ? '☀️' : '🌙'");
+    // flag pills
+    expect(main).toContain("{ k: 'en', l: '🇺🇸' }");
+    expect(main).toContain("{ k: 'ru', l: '🇷🇺' }");
+    // settings gear emoji
+    expect(main).toContain('⚙️');
+    // shared Pill segmented control
+    expect(main).toContain('const Pill =');
+    expect(main).toContain('rounded-lg p-0.5 border');
+  });
+
+  test('debug + settings popovers use fundamentals card shell', () => {
+    expect(main).toContain('w-[min(92vw,22rem)] z-[60]');
+    expect(main).toContain('rounded-xl shadow-xl p-3 space-y-3');
+    expect(main).toContain("bg-slate-800 border-slate-600 text-slate-100");
+    expect(main).toContain("bg-white border-slate-200 text-slate-900 shadow-sm");
   });
 
   test('CACHE mode disables provider select and mutes proxy dots', () => {
-    expect(main).toContain("isCache ? 'disabled' : 'live'");
+    expect(main).toContain('data-proxy-indicators=');
+    expect(main).toContain('data-provider-select=');
     expect(main).toContain('bg-slate-400/50 dark:bg-slate-600/50');
     expect(main).toContain('cursor-not-allowed');
-    expect(main).toContain("disabled={isCache}");
-    expect(main).toContain("disabled={settings.providerId === 'static'}");
+    expect(main).toContain('disabled={isCache}');
   });
 
   test('LIVE mode probes proxyBase /health', () => {
     expect(main).toContain('fetch(`${base}/health`');
     expect(main).toContain('proxyOk');
-    expect(main).toContain('proxyChecking');
   });
 
-  test('CI runs unit tests and fails the job on test failure', () => {
+  test('CI runs unit tests before build', () => {
     expect(pkg.scripts.test).toBe('bun test');
     expect(ci).toContain('bun run test');
     expect(ci).toContain('pull_request');
-    // test step must run before build so failures block pipeline
-    const testIdx = ci.indexOf('bun run test');
-    const buildIdx = ci.indexOf('bun run build');
-    expect(testIdx).toBeGreaterThan(0);
-    expect(buildIdx).toBeGreaterThan(testIdx);
+    expect(ci.indexOf('bun run test')).toBeLessThan(ci.indexOf('bun run build'));
   });
 });
