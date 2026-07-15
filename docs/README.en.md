@@ -118,7 +118,7 @@ Removed from the live registry (changelog only): marketdata.app, DoltHub, Tradie
 
 **Single source of truth for model greeks: the browser** (`src/main.tsx`).
 
-- `scripts/fetch_data.py` writes yfinance quotes and, when available, **Cboe delayed 1st-order** greeks (`delta`/`gamma`/`theta`/`vega`/`rho`, `greeksSource: "cboe"`).
+- `scripts/options-data.py` writes yfinance quotes and, when available, **Cboe delayed 1st-order** greeks (`delta`/`gamma`/`theta`/`vega`/`rho`, `greeksSource: "cboe"`).
 - It does **not** compute λ / Vanna / Vomma / Charm / Speed / Zomma / Color or full Black-Scholes fallback — that would duplicate the UI.
 - After any provider fetch (including **CACHE**), the app runs client-side Black-Scholes enrichment: fills missing 1st-order when IV+spot allow, and always fills higher-order when possible.
 - Remaining gaps use `greeksMissingReason` (from fetcher or client).
@@ -128,10 +128,10 @@ Removed from the live registry (changelog only): marketdata.app, DoltHub, Tradie
 
 1. Enable Pages in repo **Settings → Pages**.
 2. Allow Actions to commit: **Settings → Actions → General → Workflow permissions → Read and write permissions**.
-3. The scheduled **Update options data** workflow runs `scripts/fetch_data.py`, self-discovers an optionable universe, refreshes/grows `data/*.json`, updates `data/index.json`, and commits changes back to `master`.
+3. The scheduled **Update options data** workflow runs `scripts/options-data.py`, self-discovers an optionable universe, refreshes/grows `data/*.json`, updates `data/index.json`, and commits changes back to `master`.
 4. The **GitHub Pages** workflow builds the app with `bun run build-github-pages` and deploys `dist/`.
 
-You do **not** need to maintain a ticker list. For a one-off/manual data run, set `TICKERS="AAPL MSFT SPY"` when running `scripts/fetch_data.py`; the default scheduled workflow uses self-discovery.
+You do **not** need to maintain a ticker list. For a one-off/manual data run, set `TICKERS="AAPL MSFT SPY"` when running `scripts/options-data.py`; the default scheduled workflow uses self-discovery.
 
 ## Proxy setup for GitHub Pages
 
@@ -155,7 +155,7 @@ cd options-desk
 bun install -E
 
 # Run the proxy server
-bun ./scripts/yahoo-proxy.ts
+bun ./scripts/options-local-proxy.ts
 ```
 
 The proxy will start on `http://localhost:8787` by default.
@@ -177,17 +177,17 @@ For a deployable proxy that doesn't require local setup:
 
 ### Troubleshooting proxy issues
 
-- **"Could not reach the proxy"**: Make sure the proxy is running (`bun ./scripts/yahoo-proxy.ts`)
+- **"Could not reach the proxy"**: Make sure the proxy is running (`bun ./scripts/options-local-proxy.ts`)
 - **CORS errors**: The proxy must be running on `localhost` or deployed as a Cloudflare Worker
-- **Port conflicts**: Change the port in `scripts/yahoo-proxy.ts` or use the `PORT` environment variable
+- **Port conflicts**: Change the port in `scripts/options-local-proxy.ts` or use the `PORT` environment variable
 
 ## Companion infrastructure
 
 These files are optional infrastructure outside the core app source:
 
-- `scripts/fetch_data.py` — smart yfinance fetcher. Builds/refreshes `data/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), and maintains `data/index.json` with `{ files, count, names, no_options }`.
+- `scripts/options-data.py` — smart yfinance fetcher. Builds/refreshes `data/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), and maintains `data/index.json` with `{ files, count, names, no_options }`.
 - `.github/workflows/update-data.yml` — scheduled/manual data refresh workflow.
-- `scripts/yahoo-proxy.ts` — local **Bun** proxy serving:
+- `scripts/options-local-proxy.ts` — local **Bun** proxy serving:
   - `/api/options` — Yahoo optionChain with crumb/cookie handling.
   - `/api/nasdaq` — NASDAQ option-chain relay.
   - `/api/cboe` — CBOE delayed-options relay.
@@ -205,15 +205,15 @@ data/
   index.json                  # { files, count, names, no_options }
   AAPL.json, SPY.json, ...    # one option-chain cache file per ticker, with greeks metadata when refreshed
 scripts/
-  fetch_data.py               # yfinance -> data/*.json + data/index.json
-  yahoo-proxy.ts              # local Bun proxy: Yahoo/NASDAQ/CBOE/search
+  options-data.py               # yfinance -> data/*.json + data/index.json
+  options-local-proxy.ts              # local Bun proxy: Yahoo/NASDAQ/CBOE/search
   cloudflare-worker.js        # Cloudflare Worker proxy: Yahoo/NASDAQ/CBOE/search/raw
 .github/workflows/
   ci.yaml                     # build checks
   update-data.yml             # scheduled data refresh
   github-pages.yml            # Pages deployment
 package.json                  # Bun/Parcel scripts
-pyproject.toml                # Python deps for fetch_data.py
+pyproject.toml                # Python deps for options-data.py
 README.md                     # TOC pointing to docs/README.en.md and docs/README.ru.md
 docs/
   README.en.md                # English documentation (this file)
@@ -235,11 +235,11 @@ docs/
 ## Troubleshooting
 
 - **Nothing loads on open:** expected. Press **Expirations**, then **Load**.
-- **Needs proxy / CORS errors:** start `bun ./scripts/yahoo-proxy.ts` locally or set a Cloudflare Worker URL in Settings → Proxy base URL.
+- **Needs proxy / CORS errors:** start `bun ./scripts/options-local-proxy.ts` locally or set a Cloudflare Worker URL in Settings → Proxy base URL.
 - **`Unexpected token '<'`:** a proxy/server returned HTML instead of JSON. Check proxy URL/provider.
 - **CACHE says not cached:** the ticker is absent from `data/*.json`; use another provider or let the data workflow eventually cache it.
 - **`(no options)` suggestion:** the ticker is valid in the local manifest, but the latest data scan found no listed options.
-- **Proxy connection refused:** ensure the proxy is running with `bun ./scripts/yahoo-proxy.ts` and the Proxy base URL is set correctly in Settings.
+- **Proxy connection refused:** ensure the proxy is running with `bun ./scripts/options-local-proxy.ts` and the Proxy base URL is set correctly in Settings.
 
 ---
 

@@ -176,11 +176,11 @@
 #
 # USAGE:
 #   pip install yfinance requests
-#   python scripts/fetch_data.py                 # smart auto-universe run
-#   MAX_FETCHES=50 python scripts/fetch_data.py  # cap how many NEW fetches
-#   UNIVERSE_SIZE=500 python scripts/fetch_data.py  # how deep the ranked list is
-#   MAX_EXPIRATIONS=8 python scripts/fetch_data.py  # cap expirations per ticker
-#   TICKERS="AAPL MSFT" python scripts/fetch_data.py # override: only these
+#   python scripts/options-data.py                 # smart auto-universe run
+#   MAX_FETCHES=50 python scripts/options-data.py  # cap how many NEW fetches
+#   UNIVERSE_SIZE=500 python scripts/options-data.py  # how deep the ranked list is
+#   MAX_EXPIRATIONS=8 python scripts/options-data.py  # cap expirations per ticker
+#   TICKERS="AAPL MSFT" python scripts/options-data.py # override: only these
 #
 # TUNABLES (env):
 #   MAX_FETCHES      default 500        NEW (non-skipped) fetches per run.

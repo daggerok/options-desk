@@ -43,7 +43,7 @@ The agent must:
 
 Example of a good question:
 
-> “Model greeks (λ / 2nd / 3rd) only in the UI, while `fetch_data.py` keeps only Cboe 1st-order?”
+> “Model greeks (λ / 2nd / 3rd) only in the UI, while `options-data.py` keeps only Cboe 1st-order?”
 
 Bad approach:
 
@@ -57,7 +57,7 @@ For Options Desk the typical checks are:
 
 ```bash
 bun run build
-uv run python -m py_compile scripts/fetch_data.py
+uv run python -m py_compile scripts/options-data.py
 node --check scripts/cloudflare-worker.js
 git diff --check
 ```
@@ -65,7 +65,7 @@ git diff --check
 For data-fetcher tasks:
 
 ```bash
-TICKERS=XSW MAX_FETCHES=1 REQUEST_SLEEP=0 uv run python scripts/fetch_data.py
+TICKERS=XSW MAX_FETCHES=1 REQUEST_SLEEP=0 uv run python scripts/options-data.py
 ```
 
 But a mass data refresh must not be committed without an explicit request.
@@ -297,7 +297,7 @@ The rules are specifically tailored for Options Desk:
 - static React / TypeScript + Parcel / Bun;
 - **exactly 4 providers**, fixed dropdown order `CACHE, CBOE, NASDAQ, YAHOO`;
 - default selection only: localhost → CBOE, GitHub Pages → CACHE;
-- yfinance + Cboe **1st-order** in `fetch_data.py` for CACHE;
+- yfinance + Cboe **1st-order** in `options-data.py` for CACHE;
 - **single source of truth** for model / higher-order greeks — `src/main.tsx` (never duplicate in Python);
 - companion proxy (Bun / Cloudflare Worker) for CBOE / NASDAQ / YAHOO;
 - GitHub Pages deploy + scheduled data refresh workflow;
@@ -306,6 +306,6 @@ The rules are specifically tailored for Options Desk:
 
 Example of a good checkpoint question for this repo:
 
-> “Higher-order greeks should be calculated only in the UI, while `fetch_data.py` keeps Cboe 1st-order — correct?”
+> “Higher-order greeks should be calculated only in the UI, while `options-data.py` keeps Cboe 1st-order — correct?”
 
 Main idea: agent docs are a working contract, not ritual files. When architecture changes (providers, greeks ownership), **first** update `AGENT.md` / `CLAUDE.md` / `AGENTS.md`, then the code — or in the same PR, but do not leave docs stale.

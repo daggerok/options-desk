@@ -11,7 +11,7 @@
     "serve": "parcel --no-cache --no-source-maps",
     "build": "parcel build --no-cache --no-source-maps",
     "postbuild": "npm run ncp",
-    "all:proxy": "bun ./scripts/yahoo-proxy.ts  ",
+    "all:proxy": "bun ./scripts/options-local-proxy.ts",
     "all:serve": "npm run serve",
     "all": "npm-run-all --parallel all:*",
     "start": "pm2 start 'npm run all' --name app",
