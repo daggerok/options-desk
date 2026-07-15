@@ -24,6 +24,15 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.42 - Shared color palettes (merge-ready with fundamentals):
+ *          - Settings gain a Color palette control with two product skins:
+ *            Emerald Ledger (`fundamentals`) and Indigo Desk (`options-desk`).
+ *          - Default remains Indigo Desk (this app's native look). Emerald is
+ *            the native fundamentals palette so a future merge already has both
+ *            UIs prepared and consistent. Persisted as `settings.colorTheme`.
+ *          - `useThemeController` sets `data-palette` on <html>; accent classes
+ *            (buttons, focus rings, brand chip, Theme/Language switches) and
+ *            index.css surface tokens follow the selected palette.
  * v0.9.41 - i18n(ru): translate Bid / Mid / Ask (and OI tooltip) on the desk:
  *          - Price columns were hard-coded as English `"Bid"` / `"Mid"` / `"Ask"`
  *            in `deskColumns()` so the chain header stayed Latin under RU locale
@@ -640,6 +649,10 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.providerHint': 'Also available in the heading for quick access.',
         'settings.theme': 'Theme',
         'settings.themeHint': 'Also available in the heading for quick access.',
+        'settings.colorTheme': 'Color palette',
+        'settings.colorThemeHint': 'Shared with Fundamentals for a consistent merge-ready UI.',
+        'colorTheme.fundamentals': 'Emerald Ledger',
+        'colorTheme.options-desk': 'Indigo Desk',
         'settings.language': 'Language',
         'settings.languageHint': 'Also available in the heading for quick access.',
         'settings.apiKey': 'API key',
@@ -705,7 +718,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.cache.clearData': 'Clear data',
         'settings.cache.clearDataHint': 'Downloaded query results only',
         'settings.cache.clearSettings': 'Clear settings',
-        'settings.cache.clearSettingsHint': 'Provider / theme / language / keys / proxy / columns',
+        'settings.cache.clearSettingsHint': 'Provider / theme / color palette / language / keys / proxy / columns',
         'settings.cache.clearAll': 'Clear everything',
         'settings.cache.clearAllHint': 'Data + settings (full reset)',
         'settings.cache.confirm': 'Confirm?',
@@ -821,6 +834,10 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.providerHint': 'Также доступен в шапке для быстрого доступа.',
         'settings.theme': 'Тема',
         'settings.themeHint': 'Также доступна в шапке для быстрого доступа.',
+        'settings.colorTheme': 'Цветовая палитра',
+        'settings.colorThemeHint': 'Общая с Fundamentals — единый UI при будущем слиянии.',
+        'colorTheme.fundamentals': 'Изумрудный Ledger',
+        'colorTheme.options-desk': 'Индиго Desk',
         'settings.language': 'Язык',
         'settings.languageHint': 'Также доступен в шапке для быстрого доступа.',
         'settings.apiKey': 'API ключ',
@@ -886,7 +903,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.cache.clearData': 'Очистить данные',
         'settings.cache.clearDataHint': 'Только загруженные результаты запросов',
         'settings.cache.clearSettings': 'Очистить настройки',
-        'settings.cache.clearSettingsHint': 'Провайдер / тема / язык / ключи / прокси / колонки',
+        'settings.cache.clearSettingsHint': 'Провайдер / тема / палитра / язык / ключи / прокси / колонки',
         'settings.cache.clearAll': 'Очистить всё',
         'settings.cache.clearAllHint': 'Данные + настройки (полный сброс)',
         'settings.cache.confirm': 'Подтвердить?',
@@ -2565,6 +2582,21 @@ async function loadExpiration(provider: DataProvider, symbol: string, expiration
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
+/**
+ * Shared color palettes across daggerok apps (fundamentals + options-desk).
+ * Each product keeps its native default; the other palette is selectable so a
+ * future merge ships with both UIs already consistent.
+ *  - options-desk  → Indigo Desk     (indigo accents, slate-900 dark surface)  [default here]
+ *  - fundamentals  → Emerald Ledger (emerald accents, slate-950 dark surface)
+ */
+type ColorThemeId = 'fundamentals' | 'options-desk';
+const COLOR_THEME_IDS: ColorThemeId[] = ['fundamentals', 'options-desk'];
+const DEFAULT_COLOR_THEME: ColorThemeId = 'options-desk';
+
+function normalizeColorTheme(v: unknown): ColorThemeId {
+    return v === 'fundamentals' ? 'fundamentals' : DEFAULT_COLOR_THEME;
+}
+
 interface SideColumnSettings {
     openInterest: boolean;
     volume: boolean;
@@ -2593,6 +2625,8 @@ interface Settings {
     providerId: string;
     language: Language;
     theme: ThemeMode;
+    /** Shared product color palette (Emerald Ledger / Indigo Desk). */
+    colorTheme: ColorThemeId;
     proxyTemplate: string;
     /** Base URL of the request-handling proxy (Yahoo/worker). */
     proxyBase: string;
@@ -2614,6 +2648,7 @@ const DEFAULT_SETTINGS: Settings = {
     providerId: defaultProviderId(),
     language: DEFAULT_LANGUAGE,
     theme: 'system',
+    colorTheme: DEFAULT_COLOR_THEME,
     proxyTemplate: PROXY_PRESETS[0].template,
     proxyBase: 'http://localhost:8787',    // local Bun Yahoo proxy default
     workerUrl: '',
@@ -2642,6 +2677,7 @@ function loadSettings(): Settings {
             ...DEFAULT_SETTINGS,
             ...parsed,
             language: (parsed.language && LANGUAGES.includes(parsed.language) ? parsed.language : DEFAULT_LANGUAGE) as Language,
+            colorTheme: normalizeColorTheme(parsed.colorTheme),
             tokens: { ...DEFAULT_SETTINGS.tokens, ...(parsed.tokens || {}) },
             secrets: { ...DEFAULT_SETTINGS.secrets, ...(parsed.secrets || {}) },
             deskColumns: {
@@ -2688,14 +2724,15 @@ function ctxFor(settings: Settings, provider: DataProvider, signal?: AbortSignal
  * For 'system', it subscribes to the OS color-scheme media query and updates
  * live if the user flips their system theme while the app is open.
  */
-function useThemeController(theme: ThemeMode): void {
+function useThemeController(theme: ThemeMode, colorTheme: ColorThemeId = DEFAULT_COLOR_THEME): void {
     useEffect(() => {
         const root = document.documentElement;
         const mql = window.matchMedia('(prefers-color-scheme: dark)');
         const apply = () => {
             const isDark = theme === 'dark' || (theme === 'system' && mql.matches);
             root.classList.toggle('dark', isDark);
-            dbg('theme applied', { theme, isDark });
+            root.dataset.palette = colorTheme;
+            dbg('theme applied', { theme, colorTheme, isDark });
         };
         apply();
         if (theme === 'system') {
@@ -2703,7 +2740,7 @@ function useThemeController(theme: ThemeMode): void {
             return () => mql.removeEventListener('change', apply);
         }
         return undefined;
-    }, [theme]);
+    }, [theme, colorTheme]);
 }
 
 // ============================================================================
@@ -2781,8 +2818,72 @@ const SetupBadge: React.FC<{ provider: DataProvider; hasKey: boolean }> = ({ pro
  * Compact theme picker: shows only the current theme icon. Clicking it toggles a
  * small animated menu with the other themes; Escape/click-away closes it.
  */
-const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (theme: ThemeMode) => void }> = ({ value, onChange }) => {
+
+/** Resolve accent Tailwind classes for the selected shared color palette. */
+function accentOf(colorTheme: ColorThemeId) {
+    const isFund = colorTheme === 'fundamentals';
+    return {
+        brand: isFund ? 'bg-emerald-600' : 'bg-indigo-600',
+        brandSoft: isFund
+            ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400'
+            : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400',
+        btn: isFund ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700',
+        focusRing: isFund ? 'focus:ring-emerald-500' : 'focus:ring-indigo-500',
+        focusRingOffset: isFund
+            ? 'focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900'
+            : 'focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900',
+        open: isFund
+            ? 'scale-105 border-emerald-500 bg-emerald-50 text-emerald-600 shadow-sm dark:bg-emerald-950/40 dark:text-emerald-400'
+            : ax.open,
+        menuHover: isFund
+            ? 'hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-300'
+            : 'hover:bg-indigo-50 hover:text-indigo-700 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300',
+        menuActive: isFund
+            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+            : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300',
+        link: isFund
+            ? 'text-emerald-600 hover:underline dark:text-emerald-400'
+            : 'text-indigo-600 hover:underline dark:text-indigo-400',
+        borderHover: isFund
+            ? 'hover:border-emerald-300 dark:hover:border-emerald-700'
+            : 'hover:border-indigo-300 dark:hover:border-indigo-700',
+        accentInput: isFund ? 'accent-emerald-600' : 'accent-indigo-600',
+        openBorder: isFund
+            ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
+            : 'border-indigo-500 text-indigo-600 dark:text-indigo-400',
+        chipActive: isFund
+            ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
+            : 'border-indigo-500 bg-indigo-600 text-white shadow-sm',
+        chipIdle: 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 ' +
+            (isFund ? 'hover:border-emerald-400 hover:-translate-y-px' : 'hover:border-indigo-400 hover:-translate-y-px'),
+        greek: isFund
+            ? 'text-emerald-600 dark:text-emerald-300'
+            : 'text-indigo-600 dark:text-indigo-300',
+        mid: isFund
+            ? 'font-medium text-teal-600 dark:text-teal-400'
+            : 'font-medium text-emerald-600 dark:text-emerald-400',
+        pulse: isFund ? 'text-emerald-500' : 'text-indigo-500',
+        headerBg: isFund
+            ? 'bg-white/80 dark:bg-slate-950/80'
+            : 'bg-white/80 dark:bg-slate-900/80',
+        suggestHover: isFund
+            ? 'hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+            : 'hover:bg-indigo-50 dark:hover:bg-indigo-950/40',
+        suggestActive: isFund
+            ? 'bg-emerald-50 dark:bg-emerald-950/40'
+            : 'bg-indigo-50 dark:bg-indigo-950/40',
+        atm: isFund
+            ? 'text-emerald-700 dark:text-emerald-300'
+            : 'text-indigo-700 dark:text-indigo-300',
+        expHover: isFund
+            ? 'hover:border-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-400'
+            : 'hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400',
+    } as const;
+}
+
+const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (theme: ThemeMode) => void; colorTheme?: ColorThemeId }> = ({ value, onChange, colorTheme = DEFAULT_COLOR_THEME }) => {
     const { t } = useI18n();
+    const ax = accentOf(colorTheme);
     const options: { id: ThemeMode; icon: React.FC<{ className?: string }>; title: string }[] = [
         { id: 'light', icon: Icon.Sun, title: t('theme.light') },
         { id: 'system', icon: Icon.Monitor, title: t('theme.system') },
@@ -2820,7 +2921,7 @@ const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (theme: ThemeMode) => 
                 className={
                     'flex h-8 w-8 items-center justify-center rounded-lg border transition-all duration-150 ' +
                     (open
-                        ? 'scale-105 border-indigo-500 bg-indigo-50 text-indigo-600 shadow-sm dark:bg-indigo-950/40 dark:text-indigo-400'
+                        ? ax.open
                         : 'border-slate-300 dark:border-slate-700 text-slate-500 hover:-translate-y-px hover:text-slate-800 dark:hover:text-slate-200')
                 }
             >
@@ -2839,7 +2940,7 @@ const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (theme: ThemeMode) => 
                                 type="button"
                                 role="menuitem"
                                 onClick={() => { onChange(o.id); setOpen(false); }}
-                                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 transition-all duration-150 hover:bg-indigo-50 hover:text-indigo-700 dark:text-slate-200 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300"
+                                className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 transition-all duration-150 dark:text-slate-200 ${ax.menuHover}`}
                             >
                                 <IconCmp className="h-4 w-4" />
                                 <span>{o.title}</span>
@@ -2852,12 +2953,85 @@ const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (theme: ThemeMode) => 
     );
 };
 
+
+/**
+ * Compact color-palette switcher (Emerald Ledger / Indigo Desk).
+ * Shared with fundamentals so both apps can preview each other's skin.
+ */
+const ColorThemeSwitch: React.FC<{ value: ColorThemeId; onChange: (c: ColorThemeId) => void }> = ({ value, onChange }) => {
+    const { t } = useI18n();
+    const ax = accentOf(value);
+    const options: { id: ColorThemeId; swatch: string; title: string }[] = [
+        { id: 'options-desk', swatch: 'bg-indigo-500', title: t('colorTheme.options-desk') },
+        { id: 'fundamentals', swatch: 'bg-emerald-500', title: t('colorTheme.fundamentals') },
+    ];
+    const [open, setOpen] = useState(false);
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const current = options.find((o) => o.id === value) ?? options[0];
+    const choices = options.filter((o) => o.id !== value);
+
+    useEffect(() => {
+        if (!open) return undefined;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+        const onPointer = (e: MouseEvent) => {
+            if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        window.addEventListener('keydown', onKey);
+        window.addEventListener('mousedown', onPointer);
+        return () => {
+            window.removeEventListener('keydown', onKey);
+            window.removeEventListener('mousedown', onPointer);
+        };
+    }, [open]);
+
+    return (
+        <div ref={rootRef} className="relative">
+            <button
+                type="button"
+                title={current.title}
+                aria-label={current.title}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                onClick={() => setOpen((v) => !v)}
+                className={
+                    'flex h-8 w-8 items-center justify-center rounded-lg border transition-all duration-150 ' +
+                    (open
+                        ? ax.open
+                        : 'border-slate-300 dark:border-slate-700 text-slate-500 hover:-translate-y-px hover:text-slate-800 dark:hover:text-slate-200')
+                }
+            >
+                <span className={`h-3.5 w-3.5 rounded-full ${current.swatch} ring-2 ring-white dark:ring-slate-900`} />
+            </button>
+            {open && (
+                <div
+                    role="menu"
+                    className="absolute right-0 top-10 z-50 w-44 origin-top-right animate-fade-in rounded-xl border border-slate-200 bg-white p-1 shadow-xl ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10"
+                >
+                    {choices.map((o) => (
+                        <button
+                            key={o.id}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { onChange(o.id); setOpen(false); }}
+                            className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 transition-all duration-150 dark:text-slate-200 ${ax.menuHover}`}
+                        >
+                            <span className={`h-3.5 w-3.5 rounded-full ${o.swatch}`} />
+                            <span>{o.title}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 /**
  * Compact language switcher: shows a globe icon + current language code.
  * Clicking it toggles a small animated menu; Escape/click-away closes it.
  */
-const LanguageSwitch: React.FC<{ value: Language; onChange: (l: Language) => void }> = ({ value, onChange }) => {
+const LanguageSwitch: React.FC<{ value: Language; onChange: (l: Language) => void; colorTheme?: ColorThemeId }> = ({ value, onChange, colorTheme = DEFAULT_COLOR_THEME }) => {
     const { t } = useI18n();
+    const ax = accentOf(colorTheme);
     const [open, setOpen] = useState(false);
     const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -2887,7 +3061,7 @@ const LanguageSwitch: React.FC<{ value: Language; onChange: (l: Language) => voi
                 className={
                     'flex h-8 items-center gap-1 rounded-lg border px-1.5 transition-all duration-150 ' +
                     (open
-                        ? 'scale-105 border-indigo-500 bg-indigo-50 text-indigo-600 shadow-sm dark:bg-indigo-950/40 dark:text-indigo-400'
+                        ? ax.open
                         : 'border-slate-300 dark:border-slate-700 text-slate-500 hover:-translate-y-px hover:text-slate-800 dark:hover:text-slate-200')
                 }
             >
@@ -2908,8 +3082,8 @@ const LanguageSwitch: React.FC<{ value: Language; onChange: (l: Language) => voi
                             className={
                                 'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-all duration-150 ' +
                                 (l === value
-                                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300'
-                                    : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-slate-200 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300')
+                                    ? ax.menuActive
+                                    : 'text-slate-700 dark:text-slate-200 ' + ax.menuHover)
                             }
                         >
                             <span className="text-base leading-none" aria-hidden="true">{LANG_FLAGS[l]}</span>
@@ -2976,7 +3150,7 @@ const SettingsPanel: React.FC<{
                             </span>
                             {provider.keyUrl && (
                                 <a href={provider.keyUrl} target="_blank" rel="noopener noreferrer"
-                                   className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+                                   className={`inline-flex items-center gap-1 text-[11px] font-semibold ${ax.link}`}>
                                     {t('settings.getKey')} <Icon.External className="h-3 w-3" />
                                 </a>
                             )}
@@ -2986,7 +3160,7 @@ const SettingsPanel: React.FC<{
                             value={currentToken}
                             placeholder={provider.keyLabel || t('settings.apiKey')}
                             onChange={(e) => onSetToken(provider.id, e.target.value.trim())}
-                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                            className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                         />
                         {/* Secret field — only for KEY+SECRET providers (e.g. Alpaca). */}
                         {provider.supportsSecret && (
@@ -2999,7 +3173,7 @@ const SettingsPanel: React.FC<{
                                     value={currentSecret}
                                     placeholder={provider.secretLabel || t('settings.apiSecret')}
                                     onChange={(e) => onSetSecret(provider.id, e.target.value.trim())}
-                                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                                    className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                                 />
                             </>
                         )}
@@ -3018,7 +3192,7 @@ const SettingsPanel: React.FC<{
                             value={settings.proxyBase}
                             placeholder={t('settings.proxyBasePlaceholder')}
                             onChange={(e) => onChange({ proxyBase: e.target.value.trim() })}
-                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                            className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                         />
                         <span className="mt-1 block text-[11px] text-slate-400">
                             {t('settings.proxyBaseHint')}
@@ -3034,7 +3208,7 @@ const SettingsPanel: React.FC<{
                             <select
                                 value={settings.proxyTemplate}
                                 onChange={(e) => onChange({ proxyTemplate: e.target.value })}
-                                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                                className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                             >
                                 {PROXY_PRESETS.map((p) => (
                                     <option key={p.template} value={p.template}>{p.label}</option>
@@ -3052,7 +3226,7 @@ const SettingsPanel: React.FC<{
                                     value={settings.workerUrl}
                                     placeholder={t('settings.workerUrlPlaceholder')}
                                     onChange={(e) => onChange({ workerUrl: e.target.value.trim() })}
-                                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                                    className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                                 />
                             </label>
                         )}
@@ -3087,12 +3261,12 @@ const SettingsPanel: React.FC<{
                                         { id: 'zomma', label: t('settings.deskColumns.zomma') },
                                         { id: 'color', label: t('settings.deskColumns.color') },
                                     ] as const).map((c) => (
-                                        <label key={c.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 hover:border-indigo-300 dark:border-slate-700 dark:text-slate-300 dark:hover:border-indigo-700">
+                                        <label key={c.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 dark:border-slate-700 dark:text-slate-300">
                                             <input
                                                 type="checkbox"
                                                 checked={(settings.deskColumns as any)[side][c.id]}
                                                 onChange={(e) => onChange({ deskColumns: { ...settings.deskColumns, [side]: { ...(settings.deskColumns as any)[side], [c.id]: e.target.checked } } })}
-                                                className="h-3.5 w-3.5 accent-indigo-600"
+                                                className={`h-3.5 w-3.5 ${ax.accentInput}`}
                                             />
                                             <span>{c.label}</span>
                                         </label>
@@ -3176,7 +3350,7 @@ const SettingsPanel: React.FC<{
                         <select
                             value={settings.providerId}
                             onChange={(e) => onChange({ providerId: e.target.value })}
-                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                            className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                         >
                             {PROVIDERS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
                         </select>
@@ -3184,12 +3358,17 @@ const SettingsPanel: React.FC<{
                     </label>
                     <div>
                         <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.theme')}</span>
-                        <ThemeSwitch value={settings.theme} onChange={(theme) => onChange({ theme })} />
+                        <ThemeSwitch value={settings.theme} onChange={(theme) => onChange({ theme })} colorTheme={settings.colorTheme} />
                         <span className="mt-1 block text-[11px] text-slate-400">{t('settings.themeHint')}</span>
                     </div>
                     <div>
+                        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.colorTheme')}</span>
+                        <ColorThemeSwitch value={settings.colorTheme} onChange={(colorTheme) => onChange({ colorTheme })} />
+                        <span className="mt-1 block text-[11px] text-slate-400">{t('settings.colorThemeHint')}</span>
+                    </div>
+                    <div>
                         <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.language')}</span>
-                        <LanguageSwitch value={settings.language} onChange={(l) => onChange({ language: l })} />
+                        <LanguageSwitch value={settings.language} onChange={(l) => onChange({ language: l })} colorTheme={settings.colorTheme} />
                         <span className="mt-1 block text-[11px] text-slate-400">{t('settings.languageHint')}</span>
                     </div>
                 </div>
@@ -3221,11 +3400,12 @@ const TopBar: React.FC<{
     // "Key set" badge requires the secret too, when the provider needs both.
     const hasKey = !!(settings.tokens[provider.id]) &&
         (!provider.supportsSecret || !!(settings.secrets[provider.id]));
+    const ax = accentOf(settings.colorTheme);
 
     return (
-        <header className="sticky top-0 z-50 flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 px-4 py-2.5 backdrop-blur">
+        <header className={`sticky top-0 z-50 flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 ${ax.headerBg} px-4 py-2.5 backdrop-blur`}>
             <div className="flex items-center gap-2">
-                <span className="grid h-7 w-7 place-items-center rounded-md bg-indigo-600 text-sm font-black text-white">O</span>
+                <span className={`grid h-7 w-7 place-items-center rounded-md ${ax.brand} text-sm font-black text-white`}>O</span>
                 <span className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">{t('app.brand')}</span>
             </div>
 
@@ -3236,16 +3416,18 @@ const TopBar: React.FC<{
                         value={settings.providerId}
                         onChange={(e) => onChange({ providerId: e.target.value })}
                         title={t('settings.provider')}
-                        className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                        className={`rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                     >
                         {PROVIDERS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
                     </select>
                     <SetupBadge provider={provider} hasKey={hasKey} />
                 </div>
 
-                <ThemeSwitch value={settings.theme} onChange={(theme) => onChange({ theme })} />
+                <ThemeSwitch value={settings.theme} onChange={(theme) => onChange({ theme })} colorTheme={settings.colorTheme} />
 
-                <LanguageSwitch value={settings.language} onChange={(l) => onChange({ language: l })} />
+                <ColorThemeSwitch value={settings.colorTheme} onChange={(colorTheme) => onChange({ colorTheme })} />
+
+                <LanguageSwitch value={settings.language} onChange={(l) => onChange({ language: l })} colorTheme={settings.colorTheme} />
 
                 <div className="relative">
                     <button
@@ -3256,7 +3438,7 @@ const TopBar: React.FC<{
                         className={
                             'flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ' +
                             (openSettings
-                                ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                                ? ax.openBorder
                                 : 'border-slate-300 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')
                         }
                     >
@@ -3292,8 +3474,10 @@ const KeyOnboarding: React.FC<{
     onSave: (apiToken: string, apiSecret: string) => void;
     onPreview: () => void;
     previewLabel: string;
-}> = ({ provider, tokenValue, secretValue, onSave, onPreview, previewLabel }) => {
+    colorTheme?: ColorThemeId;
+}> = ({ provider, tokenValue, secretValue, onSave, onPreview, previewLabel, colorTheme = DEFAULT_COLOR_THEME }) => {
     const { t, lang } = useI18n();
+    const ax = accentOf(colorTheme);
     const [keyDraft, setKeyDraft] = useState('');
     const [secretDraft, setSecretDraft] = useState('');
     // Ready when the key (and, if required, the secret) are filled in.
@@ -3301,7 +3485,7 @@ const KeyOnboarding: React.FC<{
     const save = () => { if (ready) onSave(keyDraft, secretDraft); };
     return (
         <div className="mx-auto max-w-lg animate-fade-in rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 text-center shadow-sm">
-            <div className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
+            <div className={`mx-auto mb-3 grid h-11 w-11 place-items-center rounded-full ${ax.brandSoft}`}>
                 <Icon.Key className="h-5 w-5" />
             </div>
             <h2 className="mb-1 text-base font-semibold text-slate-900 dark:text-slate-50">
@@ -3313,7 +3497,7 @@ const KeyOnboarding: React.FC<{
 
             {provider.keyUrl && (
                 <a href={provider.keyUrl} target="_blank" rel="noopener noreferrer"
-                   className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+                   className={`mb-3 inline-flex items-center gap-1.5 rounded-lg ${ax.btn} px-4 py-2 text-sm font-semibold text-white`}>
                     {t('onboarding.getKey')} <Icon.External className="h-4 w-4" />
                 </a>
             )}
@@ -3325,7 +3509,7 @@ const KeyOnboarding: React.FC<{
                     placeholder={provider.keyLabel || t('settings.apiKey')}
                     onChange={(e) => setKeyDraft(e.target.value.trim())}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !provider.supportsSecret) save(); }}
-                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                    className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                 />
                 {provider.supportsSecret && (
                     <input
@@ -3334,7 +3518,7 @@ const KeyOnboarding: React.FC<{
                         placeholder={provider.secretLabel || t('settings.apiSecret')}
                         onChange={(e) => setSecretDraft(e.target.value.trim())}
                         onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
-                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                        className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
                     />
                 )}
                 <button
@@ -3350,7 +3534,7 @@ const KeyOnboarding: React.FC<{
             <button
                 type="button"
                 onClick={onPreview}
-                className="mt-4 text-xs font-medium text-slate-500 underline-offset-2 hover:text-indigo-600 hover:underline dark:text-slate-400"
+                className={`mt-4 text-xs font-medium text-slate-500 underline-offset-2 hover:underline dark:text-slate-400 ${ax.link}`}
             >
                 {previewLabel}
             </button>
@@ -3390,15 +3574,16 @@ interface DeskColumnDef {
 }
 
 /** Build the currently visible call/put columns from Settings → Desk columns. */
-function deskColumns(settings: DeskColumnSettings, t: (key: string) => string): { calls: DeskColumnDef[]; puts: DeskColumnDef[] } {
+function deskColumns(settings: DeskColumnSettings, t: (key: string) => string, colorTheme: ColorThemeId = DEFAULT_COLOR_THEME): { calls: DeskColumnDef[]; puts: DeskColumnDef[] } {
+    const ax = accentOf(colorTheme);
     const oi: DeskColumnDef = { key: 'openInterest', label: t('settings.deskColumns.openInterest'), headerLabel: t('deskColumns.header.openInterest'), render: (q) => fmtInt(q?.openInterest) };
     const vol: DeskColumnDef = { key: 'volume', label: t('settings.deskColumns.volume'), headerLabel: t('deskColumns.header.volume'), render: (q) => fmtInt(q?.volume) };
     const iv: DeskColumnDef = { key: 'iv', label: t('settings.deskColumns.iv'), headerLabel: t('deskColumns.header.iv'), className: 'text-slate-500', render: (q) => fmtPct(q?.iv) };
-    const delta: DeskColumnDef = { key: 'delta', label: t('settings.deskColumns.delta'), headerLabel: t('deskColumns.header.delta'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.delta) };
-    const gamma: DeskColumnDef = { key: 'gamma', label: t('settings.deskColumns.gamma'), headerLabel: t('deskColumns.header.gamma'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.gamma) };
-    const theta: DeskColumnDef = { key: 'theta', label: t('settings.deskColumns.theta'), headerLabel: t('deskColumns.header.theta'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.theta) };
-    const vega: DeskColumnDef = { key: 'vega', label: t('settings.deskColumns.vega'), headerLabel: t('deskColumns.header.vega'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.vega) };
-    const rho: DeskColumnDef = { key: 'rho', label: t('settings.deskColumns.rho'), headerLabel: t('deskColumns.header.rho'), className: 'text-indigo-600 dark:text-indigo-300', render: (q) => fmtGreek(q?.rho) };
+    const delta: DeskColumnDef = { key: 'delta', label: t('settings.deskColumns.delta'), headerLabel: t('deskColumns.header.delta'), className: ax.greek, render: (q) => fmtGreek(q?.delta) };
+    const gamma: DeskColumnDef = { key: 'gamma', label: t('settings.deskColumns.gamma'), headerLabel: t('deskColumns.header.gamma'), className: ax.greek, render: (q) => fmtGreek(q?.gamma) };
+    const theta: DeskColumnDef = { key: 'theta', label: t('settings.deskColumns.theta'), headerLabel: t('deskColumns.header.theta'), className: ax.greek, render: (q) => fmtGreek(q?.theta) };
+    const vega: DeskColumnDef = { key: 'vega', label: t('settings.deskColumns.vega'), headerLabel: t('deskColumns.header.vega'), className: ax.greek, render: (q) => fmtGreek(q?.vega) };
+    const rho: DeskColumnDef = { key: 'rho', label: t('settings.deskColumns.rho'), headerLabel: t('deskColumns.header.rho'), className: ax.greek, render: (q) => fmtGreek(q?.rho) };
     const lambda: DeskColumnDef = { key: 'lambda', label: t('settings.deskColumns.lambda'), headerLabel: t('deskColumns.header.lambda'), className: 'text-fuchsia-500', render: (q) => fmtGreek(q?.lambda) };
     const vanna: DeskColumnDef = { key: 'vanna', label: t('settings.deskColumns.vanna'), headerLabel: t('deskColumns.header.vanna'), className: 'text-amber-500', render: (q) => fmtGreek(q?.vanna) };
     const vomma: DeskColumnDef = { key: 'vomma', label: t('settings.deskColumns.vomma'), headerLabel: t('deskColumns.header.vomma'), className: 'text-amber-500', render: (q) => fmtGreek(q?.vomma) };
@@ -3408,7 +3593,7 @@ function deskColumns(settings: DeskColumnSettings, t: (key: string) => string): 
     const color: DeskColumnDef = { key: 'color', label: t('settings.deskColumns.color'), headerLabel: t('deskColumns.header.color'), className: 'text-cyan-500', render: (q) => fmtGreek(q?.color) };
     const callPrice: DeskColumnDef[] = [
         { key: 'bid', label: t('settings.deskColumns.bid'), headerLabel: t('deskColumns.header.bid'), render: (q) => fmt(q?.bid) },
-        { key: 'mid', label: t('settings.deskColumns.mid'), headerLabel: t('deskColumns.header.mid'), className: 'font-medium text-emerald-600 dark:text-emerald-400', render: (q) => fmt(q?.mid) },
+        { key: 'mid', label: t('settings.deskColumns.mid'), headerLabel: t('deskColumns.header.mid'), className: ax.mid, render: (q) => fmt(q?.mid) },
         { key: 'ask', label: t('settings.deskColumns.ask'), headerLabel: t('deskColumns.header.ask'), render: (q) => fmt(q?.ask) },
     ];
     const putPrice: DeskColumnDef[] = [
@@ -3609,7 +3794,7 @@ const ExpirationSection: React.FC<{
                                     title={fmt(strike)}
                                     className={
                                         'od-strike-cell px-1.5 py-1 text-center font-semibold tabular-nums ' +
-                                        (isAtm ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-900 dark:text-slate-100')
+                                        (isAtm ? ax.atm : 'text-slate-900 dark:text-slate-100')
                                     }
                                 >
                                     {fmt(strike)}
@@ -3630,9 +3815,10 @@ const ExpirationSection: React.FC<{
  * PILES UP as you scroll down (un-piles scrolling up). A scroll listener marks
  * the in-view section active so its sub-headers stay pinned below the pile.
  */
-const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: number | null; columns: DeskColumnSettings }> = ({ symbol, sections, spot, columns }) => {
+const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: number | null; columns: DeskColumnSettings; colorTheme?: ColorThemeId }> = ({ symbol, sections, spot, columns, colorTheme = DEFAULT_COLOR_THEME }) => {
     const { t } = useI18n();
-    const visibleColumns = useMemo(() => deskColumns(columns, t), [columns, t]);
+    const ax = accentOf(colorTheme);
+    const visibleColumns = useMemo(() => deskColumns(columns, t, colorTheme), [columns, t, colorTheme]);
     const odGrid = useMemo(() => gridCols(visibleColumns.calls.length, visibleColumns.puts.length), [visibleColumns]);
     const odMinWidth = useMemo(() => deskMinWidth(visibleColumns.calls.length, visibleColumns.puts.length), [visibleColumns]);
 
@@ -3844,7 +4030,7 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
                 <button
                     type="button"
                     onClick={toggleAll}
-                    className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+                    className={`inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 ${ax.expHover}`}
                 >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
                          strokeLinecap="round" strokeLinejoin="round"
@@ -3913,7 +4099,8 @@ const App: React.FC = () => {
         });
     }, []);
 
-    useThemeController(settings.theme);
+    useThemeController(settings.theme, settings.colorTheme);
+    const ax = accentOf(settings.colorTheme);
 
     // Sync the i18n context with persisted language changes (and vice versa).
     const { setLang } = useI18n();
@@ -4260,8 +4447,8 @@ const App: React.FC = () => {
                                             onMouseDown={(e) => { e.preventDefault(); chooseTickerSuggestion(s); }}
                                             onMouseEnter={() => setActiveTickerSuggestion(i)}
                                             className={
-                                                'flex w-full items-start gap-3 px-3 py-2 text-left hover:bg-indigo-50 dark:hover:bg-indigo-950/40 ' +
-                                                (i === activeTickerSuggestion ? 'bg-indigo-50 dark:bg-indigo-950/40' : '')
+                                                'flex w-full items-start gap-3 px-3 py-2 text-left ' + ax.suggestHover + ' ' +
+                                                (i === activeTickerSuggestion ? ax.suggestActive : '')
                                             }
                                         >
                                             <span className="mt-0.5 min-w-16 font-semibold text-slate-900 dark:text-slate-50">
@@ -4317,8 +4504,8 @@ const App: React.FC = () => {
                                             className={
                                                 'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' +
                                                 (on
-                                                    ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm'
-                                                    : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-indigo-400 hover:-translate-y-px')
+                                                    ? ax.chipActive
+                                                    : ax.chipIdle)
                                             }
                                         >
                                             {exp}
@@ -4338,7 +4525,7 @@ const App: React.FC = () => {
                                 ref={loadBtnRef}
                                 type="submit"
                                 disabled={expLoading || selectedExps.length === 0}
-                                className="shrink-0 rounded-md bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900"
+                                className={`shrink-0 rounded-md ${ax.btn} px-3 py-1 text-xs font-semibold text-white disabled:opacity-50 ${ax.focusRingOffset}`}
                             >
                                 {expLoading ? tr('controls.loading') : (selectedExps.length > 1 ? tr('controls.loadCount', { count: selectedExps.length }) : tr('controls.load'))}
                             </button>
@@ -4371,7 +4558,7 @@ const App: React.FC = () => {
                     )}
 
                     {anyLoading && (
-                        <span className="animate-pulse-soft text-xs font-medium text-indigo-500">
+                        <span className={`animate-pulse-soft text-xs font-medium ${ax.pulse}`}>
                             {metaLoading ? tr('loading.expirations') : tr('loading.chain')}
                         </span>
                     )}
@@ -4405,6 +4592,7 @@ const App: React.FC = () => {
                             provider={provider}
                             tokenValue={settings.tokens[provider.id] || ''}
                             secretValue={settings.secrets[provider.id] || ''}
+                            colorTheme={settings.colorTheme}
                             onSave={(apiToken, apiSecret) => {
                                 setToken(provider.id, apiToken);
                                 if (provider.supportsSecret) setSecret(provider.id, apiSecret);
@@ -4421,10 +4609,10 @@ const App: React.FC = () => {
                 {/* Option chain desk (one section per expiration), or guidance. */}
                 {!showOnboarding && (
                     chainSymbol && hasRows ? (
-                        <ChainTable symbol={chainSymbol} sections={sections} spot={spot} columns={settings.deskColumns} />
+                        <ChainTable symbol={chainSymbol} sections={sections} spot={spot} columns={settings.deskColumns} colorTheme={settings.colorTheme} />
                     ) : meta && !expLoading && !chainSymbol ? (
                         <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
-                            {tr('notice.pickExp')} <span className="mx-1 font-semibold text-indigo-500">{tr('controls.load')}</span> {tr('notice.toFetch')}
+                            {tr('notice.pickExp')} <span className={`mx-1 font-semibold ${ax.pulse}`}>{tr('controls.load')}</span> {tr('notice.toFetch')}
                         </div>
                     ) : (!meta && !metaLoading && !error) ? (
                         <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">

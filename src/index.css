@@ -347,6 +347,64 @@ button:not(:disabled):active { transform: translateY(0.5px) scale(0.985); }
     --od-scroll-track: transparent;
 }
 
+
+/* ---------------------------------------------------------------------------
+ * Shared color palettes (merge-ready with fundamentals)
+ * html[data-palette] is set by useThemeController:
+ *   - options-desk  (default): indigo accents, slate-900 dark surface
+ *   - fundamentals:            emerald accents, slate-950 dark surface
+ * ------------------------------------------------------------------------- */
+
+html[data-palette='fundamentals'] {
+    --od-accent: #059669;          /* emerald-600 */
+    --od-accent-soft: #10b981;     /* emerald-500 */
+    --od-accent-fg: #047857;       /* emerald-700 */
+}
+
+html[data-palette='options-desk'],
+:root {
+    --od-accent: #4f46e5;          /* indigo-600 */
+    --od-accent-soft: #6366f1;     /* indigo-500 */
+    --od-accent-fg: #4338ca;       /* indigo-700 */
+}
+
+/* When Emerald Ledger is selected, retint the desk chrome that is hard-coded
+ * indigo in index.css so both product skins stay consistent. */
+html[data-palette='fundamentals'] .od-bar {
+    background-color: #d1fae5; /* emerald-100 */
+    color: #047857;            /* emerald-700 */
+}
+html[data-palette='fundamentals'].dark .od-bar {
+    background-color: #022c22; /* emerald-950-ish */
+    color: #6ee7b7;            /* emerald-300 */
+}
+html[data-palette='fundamentals'] .od-bar.od-current {
+    background-color: #a7f3d0; /* emerald-200 */
+    color: #065f46;            /* emerald-800 */
+    box-shadow: inset 3px 0 0 0 #10b981; /* emerald-500 */
+}
+html[data-palette='fundamentals'].dark .od-bar.od-current {
+    background-color: #064e3b; /* emerald-900 */
+    color: #a7f3d0;
+    box-shadow: inset 3px 0 0 0 #34d399; /* emerald-400 */
+}
+html[data-palette='fundamentals'] .od-drow.od-atm {
+    background-color: #ecfdf5; /* emerald-50 */
+}
+html[data-palette='fundamentals'].dark .od-drow.od-atm {
+    background-color: rgba(6, 78, 59, 0.4);
+}
+html[data-palette='fundamentals'] .od-strike-cell {
+    background-image: linear-gradient(rgba(16, 185, 129, 0.06), rgba(16, 185, 129, 0.06));
+}
+html[data-palette='fundamentals'].dark .od-strike-cell {
+    background-image: linear-gradient(rgba(52, 211, 153, 0.10), rgba(52, 211, 153, 0.10));
+}
+html[data-palette='fundamentals'].dark {
+    --od-bg: #020617; /* slate-950 — matches fundamentals dark surface */
+    --od-fg: #f1f5f9;
+}
+
 /* Base body binding. Uses the CSS variables above so the whole page reacts to
  * the `.dark` class instantly with a soft transition. */
 html, body {
