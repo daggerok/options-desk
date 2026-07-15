@@ -14,7 +14,7 @@
 #
 # CHANGELOG (append newest at top; keep history accurate):
 #   v13 - Index manifest without timestamp churn:
-#        * data/index.json `files` is now a sorted ticker LIST (not
+#        * data/options/index.json `files` is now a sorted ticker LIST (not
 #          {TICKER: updatedISO}). Dropped global `generated`.
 #        * Freshness / oldest-first refresh use filesystem mtime and the
 #          optional in-file `updated` field (weekend dead-zone rule unchanged).
@@ -37,7 +37,7 @@
 #        * (superseded by v12) previously also computed Black-Scholes in Python.
 #        * Each cache payload includes a top-level `greeks` summary.
 #   v10 - Local-index company names for ticker suggestions:
-#        * data/index.json now also carries `names: { TICKER: companyName }` for
+#        * data/options/index.json now also carries `names: { TICKER: companyName }` for
 #          cached tickers and no-options skiplist entries whenever live universe
 #          discovery can resolve a human-readable name. The app uses this to show
 #          local suggestions like provider-native suggestions (company/fund/index
@@ -46,12 +46,12 @@
 #        * Name metadata is collected from the NASDAQ screener (preferred display
 #          names such as "Apple Inc. Common Stock") and Cboe optionable-underlying
 #          CSV (fallback), then preserved across no-op runs to avoid churn.
-#   v9 - No-options skiplist lives in data/index.json:
+#   v9 - No-options skiplist lives in data/options/index.json:
 #        * scripts/no_options.json is REMOVED. The skiplist is now stored as the
-#          `no_options` field on data/index.json (alongside `files` / `count` /
+#          `no_options` field on data/options/index.json (alongside `files` / `count` /
 #          `generated`), so one manifest tracks both cached tickers and the
 #          tickers known to have no listed options.
-#        * load_skiplist / save_skiplist / write_index all share data/index.json.
+#        * load_skiplist / save_skiplist / write_index all share data/options/index.json.
 #          A one-shot migration still reads a leftover scripts/no_options.json if
 #          present, then deletes it after a successful write.
 #        * GitHub Actions only needs to `git add data/` (no separate skiplist path).
@@ -90,7 +90,7 @@
 #          name, index key, skiplist) so BRK.B & co. actually fetch. Explicit
 #          SYMBOL_ALIASES map (+ SYMBOL_ALIASES env) covers irregular cases; the
 #          class-share "^"-only filter no longer drops "." / "/" tickers.
-#        * NO-OPTIONS SKIPLIST (data/index.json → no_options; was scripts/no_options.json
+#        * NO-OPTIONS SKIPLIST (data/options/index.json → no_options; was scripts/no_options.json
 #          before v9): a ticker that genuinely
 #          returns no chain is recorded with the date checked and SKIPPED on
 #          future runs (re-checked after SKIP_RECHECK_DAYS, default 30), so we
@@ -125,10 +125,10 @@
 #      Files that are still FRESH today are skipped in both phases.
 #   3. Fetches the full option chain via yfinance, enriches greeks from Cboe
 #      delayed 1st-order quotes (model greeks left to the UI), then WRITES/OVERWRITES
-#      data/{SYMBOL}.json. Stops when EITHER we hit the per-run budget
+#      data/options/{SYMBOL}.json. Stops when EITHER we hit the per-run budget
 #      (MAX_FETCHES) OR the source appears to rate-limit us (a streak of
 #      empty/error responses). Each run does NEW work; the next run resumes.
-#   4. Rewrites data/index.json as a per-ticker manifest that records EACH
+#   4. Rewrites data/options/index.json as a per-ticker manifest that records EACH
 #      ticker's own `updated` timestamp (see OUTPUT SHAPE) so freshness is
 #      visible without opening every file. It is regenerated from the files on
 #      disk (each file's real `updated`), so unchanged tickers keep their old
@@ -154,17 +154,17 @@
 #   - Idempotent + resumable: safe to run many times/day from GitHub Actions.
 #
 # OUTPUT SHAPE (matches the "Static cache" provider in main.tsx):
-#   data/index.json        -> { "files": ["<TICKER>", ...],
+#   data/options/index.json        -> { "files": ["<TICKER>", ...],
 #                               "count": N,
 #                               "names": { "<TICKER>": "Company Name", ... },
 #                               "no_options": { "<TICKER>": "YYYY-MM-DD", ... } }
 #                             (v13: `files` is a sorted ticker LIST — no per-ticker
 #                             timestamps and no global `generated`. Freshness uses
-#                             data/{TICKER}.json mtime (+ in-file `updated` for the
+#                             data/options/{TICKER}.json mtime (+ in-file `updated` for the
 #                             weekend dead-zone rule). Legacy map shape still read.
 #                             v9: `no_options` skiplist. v10: `names` for suggestions.)
 
-#   data/{TICKER}.json     -> { symbol, updated (ISO), underlyingPrice,
+#   data/options/{TICKER}.json     -> { symbol, updated (ISO), underlyingPrice,
 #                               greeks{...}, expirations[], quotes[] }
 #                             quotes keep bid/ask/last/volume/OI/IV from yfinance,
 #                             then fill delta/gamma/theta/vega/rho from Cboe delayed
@@ -253,7 +253,7 @@ except ImportError:
     requests = None  # only needed for the live universe; we degrade gracefully
 
 # ---- Paths & configuration --------------------------------------------------
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "options")
 INDEX_PATH = os.path.join(DATA_DIR, "index.json")
 # Legacy location of the no-options skiplist (pre-v9). Still read once for
 # migration, then deleted after the skiplist is written into INDEX_PATH.
@@ -326,7 +326,7 @@ FALLBACK_UNIVERSE = [
 ]
 
 # v10: live universe discovery fills this TICKER -> human name map. write_index()
-# persists the subset relevant to cached/no-options symbols into data/index.json.
+# persists the subset relevant to cached/no-options symbols into data/options/index.json.
 SYMBOL_NAMES = {}
 
 
@@ -945,14 +945,14 @@ def is_fresh(path):
 # checked; after SKIP_RECHECK_DAYS we re-try (a ticker may start listing options
 # later).
 #
-# v9/v10: the skiplist lives on data/index.json under `no_options` (same
+# v9/v10: the skiplist lives on data/options/index.json under `no_options` (same
 # manifest as `files` and `names`). The static app surfaces this field in ticker
 # suggestions as `(no options)`. A leftover scripts/no_options.json (pre-v9) is
 # still accepted once for migration and then removed.
 
 
 def _read_index_doc():
-    """Return the parsed data/index.json object, or {} if missing/unreadable."""
+    """Return the parsed data/options/index.json object, or {} if missing/unreadable."""
     try:
         with open(INDEX_PATH) as f:
             d = json.load(f)
@@ -969,7 +969,7 @@ def _sorted_no_options(skip):
 def load_skiplist():
     """Return {SYMBOL: 'YYYY-MM-DD last-checked'} of known no-option tickers.
 
-    Prefers data/index.json → no_options. Falls back to the legacy
+    Prefers data/options/index.json → no_options. Falls back to the legacy
     scripts/no_options.json path so older checkouts migrate cleanly on the next
     successful save.
     """
@@ -983,7 +983,7 @@ def load_skiplist():
             legacy = json.load(f)
             if isinstance(legacy, dict) and legacy:
                 _log(f"skiplist: migrating {len(legacy)} entries from "
-                     f"scripts/no_options.json → data/index.json")
+                     f"scripts/no_options.json → data/options/index.json")
                 return dict(legacy)
     except Exception:
         pass
@@ -999,7 +999,7 @@ def _normalize_files_list(raw):
     return []
 
 def save_skiplist(skip):
-    """Persist the no-option skiplist into data/index.json (sorted for stable diffs).
+    """Persist the no-option skiplist into data/options/index.json (sorted for stable diffs).
 
     Preserves any existing `files` / `count` / `names` fields so a
     skiplist-only update does not wipe the per-ticker manifest. Removes the legacy
@@ -1027,7 +1027,7 @@ def save_skiplist(skip):
             except Exception as e:
                 _log_err(f"skiplist: could not remove legacy scripts/no_options.json: {e}")
     except Exception as e:
-        _log_err(f"skiplist: could not write data/index.json no_options: {e}")
+        _log_err(f"skiplist: could not write data/options/index.json no_options: {e}")
 
 
 def _skip_is_active(last_checked):
@@ -1043,7 +1043,7 @@ def _skip_is_active(last_checked):
 # ---- Main loop --------------------------------------------------------------
 
 def _cached_symbols():
-    """Set of ticker symbols that already have a data/{SYMBOL}.json file."""
+    """Set of ticker symbols that already have a data/options/{SYMBOL}.json file."""
     return {
         f[:-5] for f in os.listdir(DATA_DIR)
         if f.endswith(".json") and f != "index.json"
@@ -1138,7 +1138,7 @@ def main():
         phase = "coverage" if position <= n_missing else "refresh"
         started = time.monotonic()
         _log(f"FETCH [{position}/{len(queue)}] {phase} {sym}: fetching option chain "
-             f"(writes={fetched}/{MAX_FETCHES}, file=data/{sym}.json)")
+             f"(writes={fetched}/{MAX_FETCHES}, file=data/options/{sym}.json)")
 
         # Fetch (missing OR stale -> overwrite). The queue already excludes fresh
         # files, so no per-item freshness check is needed here. fetch_ticker
@@ -1187,12 +1187,12 @@ def main():
         # _log(f"SLEEP {sym}: waiting REQUEST_SLEEP={REQUEST_SLEEP}s before next symbol")
         time.sleep(REQUEST_SLEEP)  # be polite to the data source
 
-    _log(f"skiplist: saving {len(skip)} entries to data/index.json (no_options)")
-    # write_index owns the single data/index.json write (files + names + no_options).
+    _log(f"skiplist: saving {len(skip)} entries to data/options/index.json (no_options)")
+    # write_index owns the single data/options/index.json write (files + names + no_options).
     # save_skiplist is kept as a thin helper for migration / standalone use, but
     # the normal end-of-run path goes through write_index so we never double-write
     # or race the two sections of the manifest against each other.
-    _log("index: rebuilding data/index.json manifest if files/names/skiplist changed")
+    _log("index: rebuilding data/options/index.json manifest if files/names/skiplist changed")
     index_changed = write_index(skip)
     if index_changed and os.path.exists(LEGACY_SKIP_PATH):
         try:
@@ -1203,9 +1203,9 @@ def main():
     if index_changed:
         updated_files.append(os.path.relpath(
             os.path.join(DATA_DIR, "index.json"), os.path.dirname(DATA_DIR)))
-        _log("index: wrote data/index.json")
+        _log("index: wrote data/options/index.json")
     else:
-        _log("index: unchanged; data/index.json was not rewritten")
+        _log("index: unchanged; data/options/index.json was not rewritten")
 
     total = len(_cached_symbols())
     _log(f"DONE RUN: writes={fetched}, missing_left_estimate={max(0, n_missing - fetched)}, "
@@ -1224,14 +1224,14 @@ def main():
 
 def write_index(skip=None):
     """
-    Rebuild data/index.json as a ticker manifest from the files on disk.
+    Rebuild data/options/index.json as a ticker manifest from the files on disk.
     Shape (v13): { "files": [TICKER, ...], "count": N,
                    "names": { TICKER: "Company Name", ... },
                    "no_options": { TICKER: "YYYY-MM-DD", ... } }.
 
     No per-ticker timestamps and no global `generated` — those only produced
     git commits when a scheduled run refreshed nothing. Freshness for the
-    fetcher uses each data/{TICKER}.json filesystem mtime (ordering) and the
+    fetcher uses each data/options/{TICKER}.json filesystem mtime (ordering) and the
     optional in-file `updated` field (weekend dead-zone rule in is_fresh).
 
     The no-options skiplist is stored on the same document (v9); pass `skip` to

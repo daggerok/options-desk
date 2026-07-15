@@ -18,11 +18,11 @@ Options Desk — статическое React/TypeScript приложение д
 
 - `src/main.tsx` — React app: **4 провайдера**, state/cache, UI, **единственный** Black-Scholes / higher-order greeks.
 - `src/index.css` — Tailwind CSS v4, theme tokens, sticky desk/grid CSS.
-- `scripts/options-data.py` — build-time CACHE generator: yfinance + **Cboe delayed 1st-order only** + `data/index.json`. **Без** model BS.
+- `scripts/options-data.py` — build-time CACHE generator: yfinance + **Cboe delayed 1st-order only** + `data/options/index.json`. **Без** model BS.
 - `scripts/options-local-proxy.ts` — локальный Bun proxy: `/api/cboe`, `/api/nasdaq`, `/api/options` (Yahoo), `/api/search`.
 - `scripts/cloudflare-worker.js` — Cloudflare Worker с теми же endpoints (+ `/raw`).
-- `data/*.json` — static cache цепочек (quotes + optional Cboe 1st-order).
-- `data/index.json` — manifest: `files`, `count`, `names`, `no_options`.
+- `data/options/*.json` — static cache цепочек (quotes + optional Cboe 1st-order).
+- `data/options/index.json` — manifest: `files`, `count`, `names`, `no_options`.
 
 Agent docs:
 
@@ -48,7 +48,7 @@ CACHE, CBOE, NASDAQ, YAHOO
 
 | UI label | id | Режим | Proxy | Default selection |
 |----------|-----|--------|-------|-------------------|
-| **CACHE** | `static` | bulk | нет (`data/*.json`) | **GitHub Pages / hosted** |
+| **CACHE** | `static` | bulk | нет (`data/options/*.json`) | **GitHub Pages / hosted** |
 | **CBOE** | `cboe` | bulk | `/api/cboe` | **localhost / LAN** |
 | **NASDAQ** | `nasdaq` | bulk | `/api/nasdaq` | — |
 | **YAHOO** | `yahoo` | lazy | `/api/options` | — |
@@ -81,7 +81,7 @@ Per-quote:
 - Provider 1st-order **не перезаписывать** model-значениями; UI только **досчитывает** missing + higher-order.
 - `greeksSource: "cboe"` — provider; `"black-scholes"` — полная модель в UI; `null` + reason — gap.
 - NASDAQ без IV → model greeks empty (`missing_iv`).
-- Legacy `data/*.json` могут ещё содержать precomputed higher-order — UI skip recompute, если они уже есть.
+- Legacy `data/options/*.json` могут ещё содержать precomputed higher-order — UI skip recompute, если они уже есть.
 - BS assumptions (client only): `r=0.045`, `q=0.0`; theta/day; vega per 1 vol-pt.
 - Колонки λ / Vanna / … в Settings **disabled by default**.
 - Missing cell = пусто; `0.0` = реальное значение.
@@ -129,8 +129,8 @@ git diff --check
 
 ### Спросить сначала
 
-- схема `data/*.json`, ломающая старые файлы;
-- mass regenerate/commit `data/*.json`;
+- схема `data/options/*.json`, ломающая старые файлы;
+- mass regenerate/commit `data/options/*.json`;
 - `.github/workflows/*`;
 - **менять fixed provider order** (`CACHE, CBOE, NASDAQ, YAHOO`) или host defaults;
 - добавлять 5-й provider / платный API;
@@ -148,7 +148,7 @@ git diff --check
 - **Дублировать business logic** в двух местах (особенно Black-Scholes: UI only).
 - **Искать/list/grep по всей `data/`** (~тысячи файлов). Допустимо:
   - известный тикер → `data/AAPL.json`;
-  - `data/index.json`;
+  - `data/options/index.json`;
   - явная просьба по конкретному файлу;
   - иначе — спросить.
 

@@ -25,7 +25,7 @@
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
  * v0.9.43 - Static index without timestamp churn:
- *          - data/index.json `files` is a sorted ticker list (no per-ticker
+ *          - data/options/index.json `files` is a sorted ticker list (no per-ticker
  *            updated ISO map) and `generated` is dropped. loadStaticTickerManifest
  *            still accepts the legacy map shape. Freshness lives on file mtime /
  *            in-file `updated`, so no-op fetch runs no longer rewrite the index.
@@ -137,12 +137,12 @@
  * v0.9.28 - Static-cache greeks metadata:
  *          - OptionQuote now carries optional `greeksSource` and
  *            `greeksMissingReason` fields, and ChainMeta/ChainResult can carry a
- *            top-level `greeks` enrichment summary from data/{TICKER}.json.
+ *            top-level `greeks` enrichment summary from data/options/{TICKER}.json.
  *          - Static-cache parsing preserves these fields so future greeks-based
  *            analytics can distinguish provider-supplied Cboe delayed greeks
  *            from Black-Scholes model estimates.
  * v0.9.27 - Local-index company names in ticker suggestions:
- *          - data/index.json may now include `names: { TICKER: companyName }`.
+ *          - data/options/index.json may now include `names: { TICKER: companyName }`.
  *            The local fallback suggestion source reads that map, displays the
  *            company/fund/index name instead of the generic "Ticker from local
  *            index", and also searches names so typing "apple" can suggest AAPL.
@@ -158,8 +158,8 @@
  *            NASDAQ and CBOE call the companion proxy's new unified
  *            /api/search?provider=<id>&q=... endpoint; DoltHub uses SQL against
  *            option_chain at DOLT_LATEST_DATE. Providers without such an endpoint
- *            fall back to data/index.json.
- *          - data/index.json fallback now reads BOTH `files` (cached tickers with
+ *            fall back to data/options/index.json.
+ *          - data/options/index.json fallback now reads BOTH `files` (cached tickers with
  *            options) and `no_options` (valid tickers where the latest scan found
  *            no listed options). no_options rows are visibly labeled
  *            "(no options)" in the suggestion menu and Static fetches now produce
@@ -237,7 +237,7 @@
  * v0.9.20 - Static cache: replace the vague "Bad static data" with ACTIONABLE
  *          diagnostics. The old code did `await res.json().catch(() => null)`,
  *          which swallowed the real cause. Root cause in the wild: a dev/preview
- *          or SPA host serving index.html (200 HTML) for a missing data/*.json
+ *          or SPA host serving index.html (200 HTML) for a missing data/options/*.json
  *          instead of a 404 — so res.json() throws and the message was useless
  *          (and the ticker <select> also went blank because index.json failed
  *          the same way). New fetchStaticJson() reads the body as TEXT first and
@@ -292,7 +292,7 @@
  *            `atmRef` on ExpirationSection registers the ATM row; ChainTable's
  *            centerStrike() accounts for the sticky expiration-bar pile so the
  *            strike lands in the visible center, not under the pinned headers.
- *          - Static-cache provider reads the NEW data/index.json shape:
+ *          - Static-cache provider reads the NEW data/options/index.json shape:
  *            `{ files: { TICKER: updatedISO }, count, generated }` (per-ticker
  *            timestamps). listTickers() now derives the list from sorted keys of
  *            `files`. No backward-compat with the old `{ tickers, updated }`.
@@ -553,9 +553,9 @@
  *            visible Cancel appears while loading, so you can bail and switch
  *            provider/ticker. Aborts are shown as a calm notice, not an error.
  *          - NEW PROVIDER "Static cache (data.json)" [BULK, no setup]: reads the
- *            site's OWN ./data/{TICKER}.json (produced by the GitHub Action +
+ *            site's OWN ./data/options/{TICKER}.json (produced by the GitHub Action +
  *            scripts/options-data.py, yfinance). 100% CORS-free on GitHub Pages,
- *            no keys. Ships with a ticker picker sourced from ./data/index.json.
+ *            no keys. Ships with a ticker picker sourced from ./data/options/index.json.
  *          - NEW PROVIDER "Yahoo (via proxy)" [LAZY, needs proxy base]: calls a
  *            small proxy that handles Yahoo's crumb/cookie flow — either the
  *            local Bun server (scripts/options-local-proxy.ts, default
@@ -587,14 +587,14 @@
  * ---------------------------------------------------------------------------
  *
  * COMPANION INFRASTRUCTURE (optional; outside the 3 app source files):
- *   - scripts/options-data.py           yfinance -> data/*.json + data/index.json
+ *   - scripts/options-data.py           yfinance -> data/options/*.json + data/options/index.json
  *   - .github/workflows/update-data.yml   schedules the fetch + commits JSON
  *   - scripts/options-local-proxy.ts          local Bun proxy (Yahoo/NASDAQ/CBOE/search)
  *   - scripts/cloudflare-worker.js    deployable proxy (Yahoo/NASDAQ/CBOE/search/raw)
  *
  * WHY THESE API CHOICES (research summary, keep for future agents):
  *   - Dropdown order is fixed: CACHE, CBOE, NASDAQ, YAHOO.
- *   - CACHE (static): same-origin data/*.json -> zero CORS/keys.
+ *   - CACHE (static): same-origin data/options/*.json -> zero CORS/keys.
  *     DEFAULT selection on hosted/static deploys (GitHub Pages).
  *   - CBOE (via proxy): richest no-key delayed data (greeks/IV/OI/spot).
  *     DEFAULT selection on localhost/LAN when proxy is expected.
@@ -735,7 +735,7 @@ const translations: Record<Language, Record<string, string>> = {
         'setupBadge.needsProxy': 'Needs proxy',
 
         'providerDescription.static':
-            'Local static cache — same-origin data/{TICKER}.json (GitHub Action + yfinance + CBOE/BS greeks). ' +
+            'Local static cache — same-origin data/options/{TICKER}.json (GitHub Action + yfinance + CBOE/BS greeks). ' +
             'No proxy, no keys. Best default on GitHub Pages. Only cached tickers are listed.',
         'providerDescription.yahoo':
             'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/options-local-proxy.ts or Cloudflare Worker. ' +
@@ -920,7 +920,7 @@ const translations: Record<Language, Record<string, string>> = {
         'setupBadge.needsProxy': 'Нужен прокси',
 
         'providerDescription.static':
-            'Локальный статический кэш — same-origin data/{TICKER}.json (GitHub Action + yfinance + CBOE/BS греки). ' +
+            'Локальный статический кэш — same-origin data/options/{TICKER}.json (GitHub Action + yfinance + CBOE/BS греки). ' +
             'Без прокси и ключей. Лучший default для GitHub Pages. Показываются только закэшированные тикеры.',
         'providerDescription.yahoo':
             'Yahoo Finance через прокси (/api/options) — crumb/cookie обрабатывают scripts/options-local-proxy.ts или Cloudflare Worker. ' +
@@ -1244,7 +1244,7 @@ interface DataProvider {
      * Optional provider-native ticker suggestions / symbol search.
      * Providers that expose their own search endpoint (Yahoo/NASDAQ/CBOE proxy,
      * DoltHub SQL) implement this. Providers without one fall back to the local
-     * data/index.json manifest, including tickers known to have no options.
+     * data/options/index.json manifest, including tickers known to have no options.
      */
     suggestTickers?: (query: string, ctx: ProviderContext) => Promise<TickerSuggestion[]>;
 }
@@ -1259,7 +1259,7 @@ interface TickerSuggestion {
     exchange?: string;
     /** Human label for the source of this suggestion (Provider / Local index). */
     source: string;
-    /** False only when data/index.json explicitly says the ticker exists but has no listed options. */
+    /** False only when data/options/index.json explicitly says the ticker exists but has no listed options. */
     hasOptions: boolean;
 }
 
@@ -1696,7 +1696,7 @@ function friendlyError(e: unknown, provider: DataProvider, lang: Language): stri
  * Why this exists: the naive `await res.json()` throws an opaque SyntaxError when
  * the server returns something that ISN'T JSON — and the #1 real-world cause of
  * "Bad static data" is a dev/preview or SPA host that serves the app's own
- * index.html (a 200 HTML page) for a missing `data/*.json` path instead of a
+ * index.html (a 200 HTML page) for a missing `data/options/*.json` path instead of a
  * 404. Reading the body as TEXT first lets us detect that case (and truncated /
  * malformed files) and raise an ACTIONABLE message telling the user exactly what
  * to fix, rather than a vague failure.
@@ -1743,15 +1743,15 @@ async function fetchStaticJson(url: string, signal?: AbortSignal, label?: string
     }
 }
 
-/** Local manifest shape normalized from data/index.json for ticker suggestions. */
+/** Local manifest shape normalized from data/options/index.json for ticker suggestions. */
 interface StaticTickerManifest {
     options: string[];
     noOptions: string[];
-    /** Optional TICKER -> company / fund / index name, stored in data/index.json. */
+    /** Optional TICKER -> company / fund / index name, stored in data/options/index.json. */
     names: Record<string, string>;
 }
 
-/** In-memory copy of data/index.json so typing in the ticker box stays instant. */
+/** In-memory copy of data/options/index.json so typing in the ticker box stays instant. */
 let staticTickerManifestCache: StaticTickerManifest | null = null;
 
 /** Normalize any provider/search symbol into the uppercase value the app submits. */
@@ -1765,14 +1765,14 @@ function looksLikeTicker(sym: string): boolean {
 }
 
 /**
- * Read data/index.json and normalize BOTH known-with-options (`files`) and
+ * Read data/options/index.json and normalize BOTH known-with-options (`files`) and
  * known-without-options (`no_options`). The latter is deliberately preserved for
  * suggestions so a user can see "XYZ (no options)" while typing and understand
  * that the ticker is valid but the latest cache scan found no listed contracts.
  */
 async function loadStaticTickerManifest(ctx: ProviderContext): Promise<StaticTickerManifest> {
     if (staticTickerManifestCache) return staticTickerManifestCache;
-    const j: any = await fetchStaticJson('data/index.json', ctx.signal);
+    const j: any = await fetchStaticJson('data/options/index.json', ctx.signal);
     // v13: `files` is a sorted ticker list. Legacy v4–v12 used { TICKER: updatedISO }.
     const rawFiles = j?.files;
     const fileSymbols: string[] = Array.isArray(rawFiles)
@@ -1829,7 +1829,7 @@ function staticTickerSuggestionsFromManifest(query: string, manifest: StaticTick
         .map(({ _rank, ...s }) => s);
 }
 
-/** Convenience wrapper for fallback suggestions from data/index.json. */
+/** Convenience wrapper for fallback suggestions from data/options/index.json. */
 async function staticTickerSuggestions(query: string, ctx: ProviderContext, limit = 24): Promise<TickerSuggestion[]> {
     const manifest = await loadStaticTickerManifest(ctx);
     return staticTickerSuggestionsFromManifest(query, manifest, limit);
@@ -1851,7 +1851,7 @@ function dedupeTickerSuggestions(items: TickerSuggestion[], limit = 24): TickerS
 /**
  * Provider-native suggestion request with local-index fallback. If a provider has
  * no dedicated search/list endpoint, or its proxy is unavailable, the UI still
- * suggests tickers from data/index.json and labels `no_options` entries.
+ * suggests tickers from data/options/index.json and labels `no_options` entries.
  */
 async function suggestTickers(provider: DataProvider, query: string, ctx: ProviderContext, limit = 24): Promise<TickerSuggestion[]> {
     if (provider.suggestTickers) {
@@ -1869,7 +1869,7 @@ async function suggestTickers(provider: DataProvider, query: string, ctx: Provid
 /**
  * Static cache provider (BULK, no setup — best for GitHub Pages).
  * Reads the site's OWN files (same-origin => zero CORS, zero keys):
- *   ./data/index.json     -> { files: ["<TICKER>", ...],
+ *   ./data/options/index.json     -> { files: ["<TICKER>", ...],
  *                              count, names?, no_options? }
  *                            (v0.9.16: the manifest now records EACH ticker's own
  *                            `updated` timestamp instead of a single global
@@ -1877,14 +1877,14 @@ async function suggestTickers(provider: DataProvider, query: string, ctx: Provid
  *                            is the sorted keys of `files`. No legacy shape kept.
  *                            `names` powers local company-name suggestions;
  *                            `no_options` is surfaced as "(no options)".)
- *   ./data/{TICKER}.json  -> ChainResult-like payload (see scripts/options-data.py)
+ *   ./data/options/{TICKER}.json  -> ChainResult-like payload (see scripts/options-data.py)
  * Data is refreshed by the GitHub Action. Greeks may be null (yfinance source).
  */
 const staticProvider: DataProvider = {
     id: 'static',
     label: 'CACHE',
     description:
-        'Local static cache — same-origin data/{TICKER}.json (GitHub Action + yfinance + CBOE/BS greeks). ' +
+        'Local static cache — same-origin data/options/{TICKER}.json (GitHub Action + yfinance + CBOE/BS greeks). ' +
         'No proxy, no keys. Best default on GitHub Pages. Only cached tickers are listed.',
     mode: 'bulk',
     setup: 'none',
@@ -1910,12 +1910,12 @@ const staticProvider: DataProvider = {
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
         const manifest = await loadStaticTickerManifest(ctx).catch(() => null);
         if (manifest?.noOptions.includes(raw)) {
-            throw new Error(`"${raw}" is a valid ticker, but data/index.json marks it as (no options) in the latest static-cache scan.`);
+            throw new Error(`"${raw}" is a valid ticker, but data/options/index.json marks it as (no options) in the latest static-cache scan.`);
         }
         // fetchStaticJson reads the body as TEXT first, so we can tell apart the
         // real failure modes (404, HTML SPA fallback, malformed JSON) and report
         // an ACTIONABLE message instead of a vague "Bad static data".
-        const j: any = await fetchStaticJson(`data/${encodeURIComponent(raw)}.json`, ctx.signal, raw);
+        const j: any = await fetchStaticJson(`data/options/${encodeURIComponent(raw)}.json`, ctx.signal, raw);
         if (!j || !Array.isArray(j.quotes)) {
             throw new Error(
                 `Static file data/${raw}.json loaded but has no "quotes" array. ` +
@@ -1963,7 +1963,7 @@ const staticProvider: DataProvider = {
  * Query the companion proxy's unified suggestion endpoint. The local Bun proxy
  * and Cloudflare Worker both expose /api/search?provider=<id>&q=<text>, returning
  * normalized `{ suggestions: TickerSuggestion[] }`. If the proxy is unavailable,
- * callers fall back to data/index.json via suggestTickers().
+ * callers fall back to data/options/index.json via suggestTickers().
  */
 async function proxyTickerSuggestions(providerId: 'yahoo' | 'nasdaq' | 'cboe', query: string, ctx: ProviderContext): Promise<TickerSuggestion[]> {
     const q = query.trim();
@@ -2240,7 +2240,7 @@ const cboeProvider: DataProvider = {
 
 /**
  * Provider registry — only four sources, fixed dropdown order everywhere:
- *   CACHE  = same-origin static data/*.json (no proxy)
+ *   CACHE  = same-origin static data/options/*.json (no proxy)
  *   CBOE   = delayed options via proxy /api/cboe
  *   NASDAQ = full chain via proxy /api/nasdaq
  *   YAHOO  = option chain via proxy /api/options (lazy)
@@ -4134,7 +4134,7 @@ const App: React.FC = () => {
     const [error, setError] = useState<string>('');
     const [notice, setNotice] = useState<string>('');              // calm info (e.g. cancelled)
     const [errorNonce, setErrorNonce] = useState<number>(0);
-    // Ticker suggestions: provider-native search when available; otherwise data/index.json fallback.
+    // Ticker suggestions: provider-native search when available; otherwise data/options/index.json fallback.
     const [tickerSuggestions, setTickerSuggestions] = useState<TickerSuggestion[]>([]);
     const [tickerSuggestionsLoading, setTickerSuggestionsLoading] = useState<boolean>(false);
     const [tickerSuggestionsOpen, setTickerSuggestionsOpen] = useState<boolean>(false);
@@ -4171,7 +4171,7 @@ const App: React.FC = () => {
 
     // Load ticker suggestions as the user types. Provider-native search is used
     // when supported (Yahoo/NASDAQ/CBOE proxy, DoltHub SQL); otherwise, or when
-    // the proxy/search request fails, suggestions fall back to data/index.json.
+    // the proxy/search request fails, suggestions fall back to data/options/index.json.
     useEffect(() => {
         let cancelled = false;
         const ac = new AbortController();
@@ -4408,7 +4408,7 @@ const App: React.FC = () => {
             <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
                 {/* ---- Controls: STEP 1 (ticker → Expirations), STEP 2 (exp → Load) ---- */}
                 <div className="mb-4 flex flex-wrap items-center gap-2">
-                    {/* Ticker input — searchable suggestions use provider-native search when possible, then data/index.json fallback. */}
+                    {/* Ticker input — searchable suggestions use provider-native search when possible, then data/options/index.json fallback. */}
                     <form
                         onSubmit={(e) => { e.preventDefault(); getDates(tickerInput); }}
                         className={

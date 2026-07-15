@@ -18,11 +18,11 @@ Key parts:
 
 - `src/main.tsx` — React app: **4 providers**, state/cache, UI, **single** Black-Scholes / higher-order greeks implementation.
 - `src/index.css` — Tailwind CSS v4, theme tokens, sticky desk/grid CSS.
-- `scripts/options-data.py` — build-time CACHE generator: yfinance + **Cboe delayed 1st-order only** + `data/index.json`. **No** model BS.
+- `scripts/options-data.py` — build-time CACHE generator: yfinance + **Cboe delayed 1st-order only** + `data/options/index.json`. **No** model BS.
 - `scripts/options-local-proxy.ts` — local Bun proxy: `/api/cboe`, `/api/nasdaq`, `/api/options` (Yahoo), `/api/search`.
 - `scripts/cloudflare-worker.js` — Cloudflare Worker with identical endpoints (+ `/raw`).
-- `data/*.json` — static cache of chains (quotes + optional Cboe 1st-order).
-- `data/index.json` — manifest: `files`, `count`, `names`, `no_options`.
+- `data/options/*.json` — static cache of chains (quotes + optional Cboe 1st-order).
+- `data/options/index.json` — manifest: `files`, `count`, `names`, `no_options`.
 
 Agent docs:
 
@@ -48,7 +48,7 @@ CACHE, CBOE, NASDAQ, YAHOO
 
 | UI label | id | Mode | Proxy | Default selection |
 |----------|-----|------|-------|-------------------|
-| **CACHE** | `static` | bulk | none (`data/*.json`) | **GitHub Pages / hosted** |
+| **CACHE** | `static` | bulk | none (`data/options/*.json`) | **GitHub Pages / hosted** |
 | **CBOE** | `cboe` | bulk | `/api/cboe` | **localhost / LAN** |
 | **NASDAQ** | `nasdaq` | bulk | `/api/nasdaq` | — |
 | **YAHOO** | `yahoo` | lazy | `/api/options` | — |
@@ -81,7 +81,7 @@ Rules:
 - Provider 1st-order greeks must **not** be overwritten by model values; the UI only **computes missing** 1st-order + higher-order greeks.
 - `greeksSource: "cboe"` — provider; `"black-scholes"` — full model in UI; `null` + reason — gap/missing.
 - NASDAQ without IV → model greeks empty (`missing_iv`).
-- Legacy `data/*.json` files may still contain precomputed higher-order greeks — UI skips recomputing if they already exist.
+- Legacy `data/options/*.json` files may still contain precomputed higher-order greeks — UI skips recomputing if they already exist.
 - BS assumptions (client side only): `r=0.045`, `q=0.0`; theta/day; vega per 1 vol-pt.
 - Settings columns for λ / Vanna / … are **disabled by default**.
 - Missing cell = empty string; `0.0` = real numerical value.
@@ -129,8 +129,8 @@ git diff --check
 
 ### Ask First
 
-- Changes to `data/*.json` schema that break legacy files;
-- Mass regenerating/committing `data/*.json`;
+- Changes to `data/options/*.json` schema that break legacy files;
+- Mass regenerating/committing `data/options/*.json`;
 - Editing `.github/workflows/*`;
 - **Changing fixed provider order** (`CACHE, CBOE, NASDAQ, YAHOO`) or host defaults;
 - Adding a 5th provider / paid API;
@@ -148,7 +148,7 @@ git diff --check
 - **Duplicating business logic** in two places (especially Black-Scholes: UI only).
 - **Scanning/listing/grepping across the entire `data/` directory** (~thousands of files). Allowed:
   - Known ticker → `data/AAPL.json`;
-  - `data/index.json`;
+  - `data/options/index.json`;
   - Explicit request regarding a specific file;
   - Otherwise — ask first.
 

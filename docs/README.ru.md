@@ -45,7 +45,7 @@
 ## Что это умеет
 
 - **Двухшаговая загрузка без лишних запросов:** при открытии ничего не грузится. Тикер → **Expirations**; экспирации → **Load**.
-- **Подсказки тикеров:** поиск по тикеру/названию для всех провайдеров. Локальные подсказки берут названия из `data/index.json`; тикеры из `no_options` помечаются **`(no options)`**.
+- **Подсказки тикеров:** поиск по тикеру/названию для всех провайдеров. Локальные подсказки берут названия из `data/options/index.json`; тикеры из `no_options` помечаются **`(no options)`**.
 - **Несколько экспираций:** можно выбрать одну, несколько или все. Цепочки показываются стопкой от ранней к поздней со sticky-заголовками.
 - **Удобная доска:** подсветка ATM, sticky Calls/Strike/Puts, greeks-колонки включены по умолчанию, настройки колонок для каждой стороны (Calls/Puts) отдельно, missing data показывается пустой ячейкой, скроллбары в теме, сворачивание/разворачивание, автопрокрутка к текущему страйку после загрузки/разворачивания.
 - **Theme UX:** компактная иконка текущей темы с animated dropdown для остальных тем.
@@ -94,7 +94,7 @@ bun run build-github-pages
 
 | UI label | Настройка | Покрытие | Греки | Заметки |
 |---|---|---|---|---|
-| **CACHE** *(default на GitHub Pages)* | Без настройки | Тикеры из `data/*.json` | CBOE/model-enriched по мере refresh | Same-origin static JSON (GitHub Actions/yfinance + CBOE delayed 1st-order). Model/higher-order greeks считает браузер. Без CORS и ключей. |
+| **CACHE** *(default на GitHub Pages)* | Без настройки | Тикеры из `data/options/*.json` | CBOE/model-enriched по мере refresh | Same-origin static JSON (GitHub Actions/yfinance + CBOE delayed 1st-order). Model/higher-order greeks считает браузер. Без CORS и ключей. |
 | **CBOE** *(default на localhost)* | Нужен прокси | CBOE delayed options | Да (provider + client BS higher-order) | Самый богатый delayed-фид (greeks/IV/OI/spot). Нужен Proxy base URL (`/api/cboe`). |
 | **NASDAQ** | Нужен прокси | NASDAQ option-chain | Нет IV → нет model greeks | Полная цепочка за один запрос: bid/ask/last/volume/OI. Прокси `/api/nasdaq`. |
 | **YAHOO** | Нужен прокси | Yahoo symbol search / option chains | Client Black-Scholes из IV | Lazy по expiration. Прокси обрабатывает crumb/cookies (`/api/options`). |
@@ -107,7 +107,7 @@ bun run build-github-pages
 
 ## Подсказки тикеров
 
-- Локальные подсказки читаются из `data/index.json`:
+- Локальные подсказки читаются из `data/options/index.json`:
   - `files` — тикеры с закэшированными цепочками.
   - `names` — тикер → название компании/фонда/индекса.
   - `no_options` — валидные тикеры, где последний скан не нашёл опционов; они показываются как **`(no options)`**.
@@ -128,7 +128,7 @@ bun run build-github-pages
 
 1. Включи Pages: **Settings → Pages**.
 2. Разреши Actions коммитить: **Settings → Actions → General → Workflow permissions → Read and write permissions**.
-3. Workflow **Update options data** запускает `scripts/options-data.py`, сам находит universe тикеров, обновляет/расширяет `data/*.json`, обновляет `data/index.json` и коммитит изменения в `master`.
+3. Workflow **Update options data** запускает `scripts/options-data.py`, сам находит universe тикеров, обновляет/расширяет `data/options/*.json`, обновляет `data/options/index.json` и коммитит изменения в `master`.
 4. Workflow **GitHub Pages** собирает приложение через `bun run build-github-pages` и деплоит `dist/`.
 
 Ручной список тикеров поддерживается только для разовых запусков: `TICKERS="AAPL MSFT SPY" python scripts/options-data.py`. Плановый workflow использует самообнаружение.
@@ -183,7 +183,7 @@ bun ./scripts/options-local-proxy.ts
 
 ## Вспомогательная инфраструктура
 
-- `scripts/options-data.py` — умный yfinance-сборщик. Создаёт/обновляет `data/*.json`, вешает Cboe delayed **1st-order** greeks (model greeks только в UI) и ведёт `data/index.json` с `{ files, count, names, no_options }`.
+- `scripts/options-data.py` — умный yfinance-сборщик. Создаёт/обновляет `data/options/*.json`, вешает Cboe delayed **1st-order** greeks (model greeks только в UI) и ведёт `data/options/index.json` с `{ files, count, names, no_options }`.
 - `.github/workflows/update-data.yml` — плановый/ручной refresh данных.
 - `scripts/options-local-proxy.ts` — локальный **Bun**-прокси:
   - `/api/options` — Yahoo optionChain с crumb/cookies.
@@ -203,7 +203,7 @@ data/
   index.json                  # { files, count, names, no_options }
   AAPL.json, SPY.json, ...    # один cache-файл цепочки на тикер, с greeks metadata после refresh
 scripts/
-  options-data.py               # yfinance -> data/*.json + data/index.json
+  options-data.py               # yfinance -> data/options/*.json + data/options/index.json
   options-local-proxy.ts              # локальный Bun proxy: Yahoo/NASDAQ/CBOE/search
   cloudflare-worker.js        # Cloudflare Worker: Yahoo/NASDAQ/CBOE/search/raw
 .github/workflows/
@@ -235,7 +235,7 @@ docs/
 - **При открытии ничего не грузится:** это нормально. Нажми **Expirations**, затем **Load**.
 - **Needs proxy / CORS:** запусти `bun ./scripts/options-local-proxy.ts` локально или укажи Cloudflare Worker URL в Settings → Proxy base URL.
 - **`Unexpected token '<'`:** прокси/сервер вернул HTML вместо JSON. Проверь URL прокси или провайдера.
-- **CACHE говорит not cached:** тикера нет в `data/*.json`; используй другой провайдер или дождись, пока data workflow его закэширует.
+- **CACHE говорит not cached:** тикера нет в `data/options/*.json`; используй другой провайдер или дождись, пока data workflow его закэширует.
 - **Подсказка `(no options)`:** тикер валиден в локальном manifest, но последний скан не нашёл listed options.
 - **Proxy connection refused:** убедись, что прокси запущен (`bun ./scripts/options-local-proxy.ts`) и Proxy base URL указан правильно в Settings.
 

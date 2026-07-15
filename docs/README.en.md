@@ -45,7 +45,7 @@ We use **Bun** for JavaScript/TypeScript and **uv** for Python. **Important:** A
 ## What you get
 
 - **Two-step, quota-friendly loading:** nothing fetches on page open. Type/search a ticker → **Expirations**; select expiration(s) → **Load**.
-- **Ticker suggestions:** searchable ticker/company combobox for every provider. Local static suggestions use `data/index.json` names and mark known valid tickers without options as **`(no options)`**.
+- **Ticker suggestions:** searchable ticker/company combobox for every provider. Local static suggestions use `data/options/index.json` names and mark known valid tickers without options as **`(no options)`**.
 - **Multiple expirations:** select one, many, or all expirations. Chains render stacked earliest-to-latest with sticky/piled expiration headers.
 - **Desk UX:** ATM row highlight, sticky Calls/Strike/Puts headers, greeks columns enabled by default, user-selectable per-side/per-column desk settings, empty cells for missing data, themed scrollbars, collapse/expand controls, and automatic centering on the current strike after load/expand.
 - **Theme UX:** compact current-theme icon with an animated dropdown for the other themes.
@@ -94,7 +94,7 @@ Only four sources. Short uppercase labels in the API dropdown.
 
 | UI label | Setup | Coverage | Greeks | Notes |
 |---|---|---|---|---|
-| **CACHE** *(default on GitHub Pages)* | No setup | Cached tickers in `data/*.json` | CBOE/model-enriched as files refresh | Same-origin static JSON from GitHub Actions/yfinance + CBOE delayed 1st-order greeks. Model/higher-order greeks computed in the browser. No CORS, no keys. |
+| **CACHE** *(default on GitHub Pages)* | No setup | Cached tickers in `data/options/*.json` | CBOE/model-enriched as files refresh | Same-origin static JSON from GitHub Actions/yfinance + CBOE delayed 1st-order greeks. Model/higher-order greeks computed in the browser. No CORS, no keys. |
 | **CBOE** *(default on localhost)* | Needs proxy | CBOE delayed options | Yes (provider + client BS higher-order) | Richest delayed feed (greeks/IV/OI/spot). Requires Proxy base URL (`/api/cboe`). |
 | **NASDAQ** | Needs proxy | NASDAQ option-chain | No IV → no model greeks | Full chain in one call: bid/ask/last/volume/OI. Proxy `/api/nasdaq`. |
 | **YAHOO** | Needs proxy | Yahoo symbol search / option chains | Client Black-Scholes from IV | Lazy per-expiration. Companion proxy handles crumb/cookies (`/api/options`). |
@@ -107,7 +107,7 @@ Removed from the live registry (changelog only): marketdata.app, DoltHub, Tradie
 
 ## Ticker suggestions
 
-- Static/local suggestions come from `data/index.json`:
+- Static/local suggestions come from `data/options/index.json`:
   - `files` — tickers with cached option chains.
   - `names` — ticker → company/fund/index display name.
   - `no_options` — valid tickers where the latest data scan found no listed options; these show as **`(no options)`**.
@@ -128,7 +128,7 @@ Removed from the live registry (changelog only): marketdata.app, DoltHub, Tradie
 
 1. Enable Pages in repo **Settings → Pages**.
 2. Allow Actions to commit: **Settings → Actions → General → Workflow permissions → Read and write permissions**.
-3. The scheduled **Update options data** workflow runs `scripts/options-data.py`, self-discovers an optionable universe, refreshes/grows `data/*.json`, updates `data/index.json`, and commits changes back to `master`.
+3. The scheduled **Update options data** workflow runs `scripts/options-data.py`, self-discovers an optionable universe, refreshes/grows `data/options/*.json`, updates `data/options/index.json`, and commits changes back to `master`.
 4. The **GitHub Pages** workflow builds the app with `bun run build-github-pages` and deploys `dist/`.
 
 You do **not** need to maintain a ticker list. For a one-off/manual data run, set `TICKERS="AAPL MSFT SPY"` when running `scripts/options-data.py`; the default scheduled workflow uses self-discovery.
@@ -185,7 +185,7 @@ For a deployable proxy that doesn't require local setup:
 
 These files are optional infrastructure outside the core app source:
 
-- `scripts/options-data.py` — smart yfinance fetcher. Builds/refreshes `data/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), and maintains `data/index.json` with `{ files, count, names, no_options }`.
+- `scripts/options-data.py` — smart yfinance fetcher. Builds/refreshes `data/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), and maintains `data/options/index.json` with `{ files, count, names, no_options }`.
 - `.github/workflows/update-data.yml` — scheduled/manual data refresh workflow.
 - `scripts/options-local-proxy.ts` — local **Bun** proxy serving:
   - `/api/options` — Yahoo optionChain with crumb/cookie handling.
@@ -205,7 +205,7 @@ data/
   index.json                  # { files, count, names, no_options }
   AAPL.json, SPY.json, ...    # one option-chain cache file per ticker, with greeks metadata when refreshed
 scripts/
-  options-data.py               # yfinance -> data/*.json + data/index.json
+  options-data.py               # yfinance -> data/options/*.json + data/options/index.json
   options-local-proxy.ts              # local Bun proxy: Yahoo/NASDAQ/CBOE/search
   cloudflare-worker.js        # Cloudflare Worker proxy: Yahoo/NASDAQ/CBOE/search/raw
 .github/workflows/
@@ -237,7 +237,7 @@ docs/
 - **Nothing loads on open:** expected. Press **Expirations**, then **Load**.
 - **Needs proxy / CORS errors:** start `bun ./scripts/options-local-proxy.ts` locally or set a Cloudflare Worker URL in Settings → Proxy base URL.
 - **`Unexpected token '<'`:** a proxy/server returned HTML instead of JSON. Check proxy URL/provider.
-- **CACHE says not cached:** the ticker is absent from `data/*.json`; use another provider or let the data workflow eventually cache it.
+- **CACHE says not cached:** the ticker is absent from `data/options/*.json`; use another provider or let the data workflow eventually cache it.
 - **`(no options)` suggestion:** the ticker is valid in the local manifest, but the latest data scan found no listed options.
 - **Proxy connection refused:** ensure the proxy is running with `bun ./scripts/options-local-proxy.ts` and the Proxy base URL is set correctly in Settings.
 
