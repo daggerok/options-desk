@@ -3739,14 +3739,14 @@ const TopBar: React.FC<{
                     </button>
 
                     {/* 5. Provider — greys out when CACHE (same pill shell feel via native select styled) */}
-                    <div className="hidden sm:block flex-shrink-0">
+                    <div className="hidden sm:block flex-shrink-0 w-[7.25rem]">
                         <select
                             value={settings.providerId}
                             onChange={(e) => onChange({ providerId: e.target.value })}
                             disabled={isCache}
                             data-provider-select={isCache ? 'disabled' : 'live'}
                             title={isCache ? `${t('settings.provider')} (${t('topBar.proxyDisabled')})` : t('settings.provider')}
-                            className={`rounded-lg border px-2 py-1.5 text-sm font-bold outline-none transition-colors ${
+                            className={`box-border w-full max-w-full rounded-lg border px-2 py-1.5 text-sm font-bold outline-none transition-colors ${
                                 isCache
                                     ? dark
                                         ? 'border-slate-700 bg-slate-800/50 text-slate-500 cursor-not-allowed'
@@ -3887,7 +3887,7 @@ const TopBar: React.FC<{
                                         onChange={(e) => onChange({ providerId: e.target.value })}
                                         disabled={isCache}
                                         data-provider-select={isCache ? 'disabled' : 'live'}
-                                        className={`rounded-lg border px-2 py-1 text-xs font-bold outline-none ${
+                                        className={`box-border w-[7.25rem] max-w-full rounded-lg border px-2 py-1 text-xs font-bold outline-none ${
                                             isCache
                                                 ? dark
                                                     ? 'border-slate-700 bg-slate-900/50 text-slate-500 cursor-not-allowed'

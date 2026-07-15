@@ -35,6 +35,11 @@ describe('header parity + CACHE-muted proxies (options-desk)', () => {
     expect(main).toContain("bg-white border-slate-200 text-slate-900 shadow-sm");
   });
 
+  test('provider select keeps fixed width so CACHE/LIVE toggle does not reflow header', () => {
+    expect(main).toContain('w-[7.25rem]');
+    expect(main).toContain('box-border w-full max-w-full');
+  });
+
   test('provider select: CACHE locks to CACHE; LIVE lists only 3 proxies', () => {
     expect(main).toContain('LIVE_PROVIDERS');
     // CACHE → only static option; LIVE → LIVE_PROVIDERS (CBOE/NASDAQ/YAHOO, no CACHE)
