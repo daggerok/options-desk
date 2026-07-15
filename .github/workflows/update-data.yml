@@ -40,7 +40,7 @@ on:
     # - cron: "34 * * * 0-6"
     # - cron: "45 * * * 0-6"
     # - cron: "55 * * * 0-6"
-    - cron: "30 9 * * 0-6"
+    - cron: "30 13 * * 0-6"
   workflow_dispatch: {} # allow manual runs from the Actions tab
 
 permissions:
