@@ -24,6 +24,8 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.46 - Provider select: CACHE mode locks to CACHE only (disabled);
+ *          LIVE mode lists only CBOE / NASDAQ / YAHOO (no CACHE item).
  * v0.9.45 - Header/settings/debug VISUAL parity with fundamentals:
  *          - Same sticky surface tokens (slate-950/95, backdrop-blur-md),
  *            Pill segmented controls, emoji theme ☀️/🌙 + ⚙️ settings,
@@ -2281,6 +2283,9 @@ const PROVIDERS: DataProvider[] = [
     yahooProvider,   // YAHOO
 ];
 
+/** Live proxy providers only (no CACHE). Used when CACHE/LIVE toggle is LIVE. */
+const LIVE_PROVIDERS: DataProvider[] = PROVIDERS.filter((p) => p.id !== 'static');
+
 /**
  * Are we running locally (localhost / 127.* / 0.0.0.0 / *.local / private LAN)?
  * Local -> default CBOE; hosted (e.g. GitHub Pages) -> default CACHE.
@@ -3396,7 +3401,7 @@ const SettingsPanel: React.FC<{
                                     : `border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 ${ax.focusRing}`)
                             }
                         >
-                            {PROVIDERS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
+                            {(settings.providerId === 'static' ? PROVIDERS.filter((p) => p.id === 'static') : LIVE_PROVIDERS).map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
                         </select>
                         <span className="mt-1 block text-[11px] text-slate-400">{t('settings.providerHint')}</span>
                     </label>
@@ -3751,7 +3756,7 @@ const TopBar: React.FC<{
                                         : 'border-slate-200 bg-slate-100 text-slate-800'
                             }`}
                         >
-                            {PROVIDERS.map((p) => (
+                            {(isCache ? PROVIDERS.filter((p) => p.id === 'static') : LIVE_PROVIDERS).map((p) => (
                                 <option key={p.id} value={p.id}>{p.label}</option>
                             ))}
                         </select>
@@ -3892,7 +3897,7 @@ const TopBar: React.FC<{
                                                     : 'border-slate-200 bg-white text-slate-800'
                                         }`}
                                     >
-                                        {PROVIDERS.map((p) => (
+                                        {(isCache ? PROVIDERS.filter((p) => p.id === 'static') : LIVE_PROVIDERS).map((p) => (
                                             <option key={p.id} value={p.id}>{p.label}</option>
                                         ))}
                                     </select>

@@ -35,6 +35,14 @@ describe('header parity + CACHE-muted proxies (options-desk)', () => {
     expect(main).toContain("bg-white border-slate-200 text-slate-900 shadow-sm");
   });
 
+  test('provider select: CACHE locks to CACHE; LIVE lists only 3 proxies', () => {
+    expect(main).toContain('LIVE_PROVIDERS');
+    // CACHE → only static option; LIVE → LIVE_PROVIDERS (CBOE/NASDAQ/YAHOO, no CACHE)
+    expect(main).toContain("PROVIDERS.filter((p) => p.id === 'static')");
+    expect(main).toContain('LIVE_PROVIDERS).map');
+    expect(main).toContain("p.id !== 'static'");
+  });
+
   test('CACHE mode disables provider select and mutes proxy dots', () => {
     expect(main).toContain('data-proxy-indicators=');
     expect(main).toContain('data-provider-select=');
