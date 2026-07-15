@@ -2834,7 +2834,7 @@ function accentOf(colorTheme: ColorThemeId) {
             : 'focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900',
         open: isFund
             ? 'scale-105 border-emerald-500 bg-emerald-50 text-emerald-600 shadow-sm dark:bg-emerald-950/40 dark:text-emerald-400'
-            : ax.open,
+            : 'scale-105 border-indigo-500 bg-indigo-50 text-indigo-600 shadow-sm dark:bg-indigo-950/40 dark:text-indigo-400',
         menuHover: isFund
             ? 'hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-300'
             : 'hover:bg-indigo-50 hover:text-indigo-700 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300',
@@ -3113,6 +3113,7 @@ const SettingsPanel: React.FC<{
     onClose: () => void;
 }> = ({ settings, provider, onChange, onSetToken, onSetSecret, onClearData, onClearSettings, onClearAll, onClose }) => {
     const { t, lang } = useI18n();
+    const ax = accentOf(settings.colorTheme);
     const currentToken = settings.tokens[provider.id] || '';
     const currentSecret = settings.secrets[provider.id] || '';
     // Cache stats — recompute on any cache mutation (LIVE, no manual refresh):
@@ -3676,6 +3677,7 @@ const ExpirationSection: React.FC<{
     spot: number | null;
     callColumns: DeskColumnDef[];
     putColumns: DeskColumnDef[];
+    colorTheme?: ColorThemeId;
     collapsed: boolean;
     active: boolean;
     onToggle: () => void;
@@ -3686,7 +3688,8 @@ const ExpirationSection: React.FC<{
     /** Registers this section's ATM (at-the-money) row element so the desk can
      *  scroll it to the vertical center on load / expand (center-strike view). */
     atmRef: (el: HTMLDivElement | null) => void;
-}> = ({ section, index, spot, callColumns, putColumns, collapsed, active, onToggle, innerRef, atmRef }) => {
+}> = ({ section, index, spot, callColumns, putColumns, collapsed, active, onToggle, innerRef, atmRef, colorTheme = DEFAULT_COLOR_THEME }) => {
+    const ax = accentOf(colorTheme);
     const { t } = useI18n();
     const { expiration, calls, puts, strikes } = section;
     const atmStrike = useMemo(() => {
@@ -4055,6 +4058,7 @@ const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: num
                             spot={spot}
                             callColumns={visibleColumns.calls}
                             putColumns={visibleColumns.puts}
+                            colorTheme={colorTheme}
                             collapsed={collapsed.has(s.expiration)}
                             active={activeExp === s.expiration}
                             onToggle={() => toggleOne(s.expiration)}
