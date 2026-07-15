@@ -14,8 +14,8 @@
  *   This tiny Bun server relays those requests with permissive CORS for LOCAL
  *   development.
  *
- * RUN:  bun run scripts/yahoo-proxy.ts        (defaults to port 8787)
- *       PORT=9000 bun run scripts/yahoo-proxy.ts
+ * RUN:  bun run scripts/options-local-proxy.ts        (defaults to port 8787)
+ *       PORT=9000 bun run scripts/options-local-proxy.ts
  *
  * USE FROM THE APP (Option Desk → Settings → Proxy base URL = http://localhost:8787):
  *   - Provider "Yahoo (via proxy)" calls:

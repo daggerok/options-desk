@@ -18,8 +18,8 @@ Key parts:
 
 - `src/main.tsx` — React app: **4 providers**, state/cache, UI, **single** Black-Scholes / higher-order greeks implementation.
 - `src/index.css` — Tailwind CSS v4, theme tokens, sticky desk/grid CSS.
-- `scripts/fetch_data.py` — build-time CACHE generator: yfinance + **Cboe delayed 1st-order only** + `data/index.json`. **No** model BS.
-- `scripts/yahoo-proxy.ts` — local Bun proxy: `/api/cboe`, `/api/nasdaq`, `/api/options` (Yahoo), `/api/search`.
+- `scripts/options-data.py` — build-time CACHE generator: yfinance + **Cboe delayed 1st-order only** + `data/index.json`. **No** model BS.
+- `scripts/options-local-proxy.ts` — local Bun proxy: `/api/cboe`, `/api/nasdaq`, `/api/options` (Yahoo), `/api/search`.
 - `scripts/cloudflare-worker.js` — Cloudflare Worker with identical endpoints (+ `/raw`).
 - `data/*.json` — static cache of chains (quotes + optional Cboe 1st-order).
 - `data/index.json` — manifest: `files`, `count`, `names`, `no_options`.
@@ -62,7 +62,7 @@ CACHE, CBOE, NASDAQ, YAHOO
 
 | Layer | Responsible for | **Strictly Forbidden** |
 |-------|-----------------|------------------------|
-| `scripts/fetch_data.py` | yfinance + Cboe **1st-order** (Δ Γ Θ Vega ρ) | BS, λ, 2nd/3rd order |
+| `scripts/options-data.py` | yfinance + Cboe **1st-order** (Δ Γ Θ Vega ρ) | BS, λ, 2nd/3rd order |
 | Live CBOE / YAHOO / NASDAQ | raw / provider fields | model math inside proxy |
 | **`src/main.tsx` runtime** | BS: missing 1st-order + **all** higher-order | second parallel BS in Python |
 
@@ -98,7 +98,7 @@ Rules:
 
 ```bash
 bun run build
-uv run python -m py_compile scripts/fetch_data.py
+uv run python -m py_compile scripts/options-data.py
 node --check scripts/cloudflare-worker.js
 git diff --check
 ```
@@ -106,7 +106,7 @@ git diff --check
 - **Development & Testing (local):**
   `bun run stop ; bun run kill ; bun run ps ; bun run start ; sleep 3 ; bun run logs`
 - **Data fetcher smoke test:**
-  `TICKERS=PEP,KO MAX_FETCHES=3 NASDAQ_TIMEOUT=5 uv run --with yfinance --with requests python scripts/fetch_data.py`
+  `TICKERS=PEP,KO MAX_FETCHES=3 NASDAQ_TIMEOUT=5 uv run --with yfinance --with requests python scripts/options-data.py`
 - **UI:** build at minimum; in PR — provide manual verification scenarios (provider + Settings columns).
 
 ### 3. Environment
@@ -156,18 +156,18 @@ git diff --check
 
 - Preserve useful architectural comments.
 - Update or remove stale comments/docs.
-- Changelog headers inside `main.tsx` / `fetch_data.py` / `index.css` must stay synchronized with actual code behavior.
+- Changelog headers inside `main.tsx` / `options-data.py` / `index.css` must stay synchronized with actual code behavior.
 - Do not write defensive "just in case" boilerplate comments.
 
 ## PR Checklist
 
 ```bash
 bun run build
-uv run python -m py_compile scripts/fetch_data.py
+uv run python -m py_compile scripts/options-data.py
 node --check scripts/cloudflare-worker.js
 git diff --check
 ```
 
 In the PR body: specify what changed / how it was verified / limitations / whether data files were updated.
 
-If greeks were touched: explicitly confirm that model math **has not** appeared in `fetch_data.py`.
+If greeks were touched: explicitly confirm that model math **has not** appeared in `options-data.py`.

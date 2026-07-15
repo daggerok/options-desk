@@ -3,7 +3,7 @@
 # -----------------------------------------------------------------------------
 # INFRASTRUCTURE (not part of the 3-file app source). Implements the
 # "GitHub Actions build-time caching" strategy:
-#   1. Runs scripts/fetch_data.py (yfinance) on a schedule.
+#   1. Runs scripts/options-data.py (yfinance) on a schedule.
 #   2. The script SELF-DISCOVERS a market-cap-ranked US universe, then (v4) works
 #      COVERAGE-FIRST: it fetches every MISSING ticker down the cap-ranked list
 #      (resuming where the last run stopped), and only once nothing is missing
@@ -72,14 +72,14 @@ jobs:
           python-version: 3.13
 
       - name: Fetch option chains
-        run: TICKERS=$(cat data/All.txt) uv run --with yfinance --with requests python scripts/fetch_data.py
+        run: TICKERS=$(cat data/All.txt) uv run --with yfinance --with requests python scripts/options-data.py
 
       - name: Commit updated data
         run: |
           git config user.name  "Maksim Kostromin"
           git config user.email "daggerok@gmail.com"
           # Stage the refreshed chains + data/index.json (which also holds the
-          # no-options skiplist under the `no_options` key since fetch_data.py v9).
+          # no-options skiplist under the `no_options` key since options-data.py v9).
           git add data/ || true
           # Check if there are changes to commit
           if git diff --staged --quiet; then

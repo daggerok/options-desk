@@ -99,7 +99,7 @@
  * v0.9.34 - Ticker input selects all text on focus/click so typing a new
  *          symbol replaces the previous ticker without manual clear.
  * v0.9.33 - Single source of truth for model greeks (UI only):
- *          - scripts/fetch_data.py no longer runs Black-Scholes / higher-order
+ *          - scripts/options-data.py no longer runs Black-Scholes / higher-order
  *            math; it only attaches Cboe delayed 1st-order when available.
  *          - λ + 2nd/3rd-order + full BS fallback remain exclusively in this
  *            file (blackScholesGreeks / enrichQuotesWithModelGreeks) so live
@@ -111,7 +111,7 @@
  *          - Settings migration: unknown/removed providerId resets to host default.
  * v0.9.31 - Client-side Black-Scholes greeks enrichment for live providers:
  *          - Higher-order greeks (λ, vanna, vomma, charm, speed, zomma, color)
- *            used to exist only on Static cache because scripts/fetch_data.py
+ *            used to exist only on Static cache because scripts/options-data.py
  *            pre-computed them at build time. Live providers (CBOE/Yahoo/
  *            NASDAQ) now get the same model enrichment in the browser after
  *            fetch, using spot + IV + strike + side + expiration.
@@ -296,7 +296,7 @@
  *            `{ files: { TICKER: updatedISO }, count, generated }` (per-ticker
  *            timestamps). listTickers() now derives the list from sorted keys of
  *            `files`. No backward-compat with the old `{ tickers, updated }`.
- *            (INFRA fetch_data.py v4: coverage-first (all MISSING tickers, resume
+ *            (INFRA options-data.py v4: coverage-first (all MISSING tickers, resume
  *            down the cap-ranked list) then rotating REFRESH of the OLDEST files,
  *            so every ticker gets cached before we re-loop — and we never re-loop
  *            only the top-cap names. index.json rebuilt from each file's own
@@ -311,7 +311,7 @@
  *          (--od-grid). All prior features preserved: stacking pile, active
  *          highlight (click + scroll), collapse/expand animation, strike-count,
  *          center Strike guide, full-width + adaptive height.
- *          (INFRA, fetch_data.py v3: working-day freshness — skip today's data
+ *          (INFRA, options-data.py v3: working-day freshness — skip today's data
  *          and last-trading-day data on weekends/holidays, re-fetch older files
  *          on trading days; universe deepened to the full US Micro+ cap tiers.)
  * v0.9.14 - Sticky sub-headers STILL see-through on scroll -> forced fix: the
@@ -554,11 +554,11 @@
  *            provider/ticker. Aborts are shown as a calm notice, not an error.
  *          - NEW PROVIDER "Static cache (data.json)" [BULK, no setup]: reads the
  *            site's OWN ./data/{TICKER}.json (produced by the GitHub Action +
- *            scripts/fetch_data.py, yfinance). 100% CORS-free on GitHub Pages,
+ *            scripts/options-data.py, yfinance). 100% CORS-free on GitHub Pages,
  *            no keys. Ships with a ticker picker sourced from ./data/index.json.
  *          - NEW PROVIDER "Yahoo (via proxy)" [LAZY, needs proxy base]: calls a
  *            small proxy that handles Yahoo's crumb/cookie flow — either the
- *            local Bun server (scripts/yahoo-proxy.ts, default
+ *            local Bun server (scripts/options-local-proxy.ts, default
  *            http://localhost:8787) or a deployed Cloudflare Worker
  *            (scripts/cloudflare-worker.js). Endpoint:
  *            GET {base}/api/options?symbol=X[&date=YYYY-MM-DD].
@@ -587,9 +587,9 @@
  * ---------------------------------------------------------------------------
  *
  * COMPANION INFRASTRUCTURE (optional; outside the 3 app source files):
- *   - scripts/fetch_data.py           yfinance -> data/*.json + data/index.json
+ *   - scripts/options-data.py           yfinance -> data/*.json + data/index.json
  *   - .github/workflows/update-data.yml   schedules the fetch + commits JSON
- *   - scripts/yahoo-proxy.ts          local Bun proxy (Yahoo/NASDAQ/CBOE/search)
+ *   - scripts/options-local-proxy.ts          local Bun proxy (Yahoo/NASDAQ/CBOE/search)
  *   - scripts/cloudflare-worker.js    deployable proxy (Yahoo/NASDAQ/CBOE/search/raw)
  *
  * WHY THESE API CHOICES (research summary, keep for future agents):
@@ -665,7 +665,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.getKey': 'Get a free key',
         'settings.keyHint': 'Stored only in your browser (localStorage).',
         'settings.proxyBase': 'Proxy base URL',
-        'settings.proxyBaseHint': 'Run bun ./scripts/yahoo-proxy.ts locally, or deploy scripts/cloudflare-worker.js.',
+        'settings.proxyBaseHint': 'Run bun ./scripts/options-local-proxy.ts locally, or deploy scripts/cloudflare-worker.js.',
         'settings.proxyBasePlaceholder': 'http://localhost:8787 or https://name.you.workers.dev',
         'settings.corsProxy': 'CORS proxy',
         'settings.corsProxyHint': 'Public proxies can be flaky — switch if one fails, or use your own Worker.',
@@ -738,7 +738,7 @@ const translations: Record<Language, Record<string, string>> = {
             'Local static cache — same-origin data/{TICKER}.json (GitHub Action + yfinance + CBOE/BS greeks). ' +
             'No proxy, no keys. Best default on GitHub Pages. Only cached tickers are listed.',
         'providerDescription.yahoo':
-            'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/yahoo-proxy.ts or Cloudflare Worker. ' +
+            'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/options-local-proxy.ts or Cloudflare Worker. ' +
             'Lazy per-expiration. No provider greeks; client Black-Scholes fills them when IV is present.',
         'providerDescription.nasdaq':
             'NASDAQ option chain via proxy (/api/nasdaq) — full chain one call (bid/ask/last/volume/OI). ' +
@@ -800,7 +800,7 @@ const translations: Record<Language, Record<string, string>> = {
             'Could not reach the proxy. To fix this:\n\n' +
             '1. Clone the repo: git clone https://github.com/daggerok/options-desk.git\n' +
             '2. Install dependencies: bun install -E\n' +
-            '3. Run the proxy: bun ./scripts/yahoo-proxy.ts\n' +
+            '3. Run the proxy: bun ./scripts/options-local-proxy.ts\n' +
             '4. Set Proxy base URL in Settings to http://localhost:8787\n\n' +
             'Or deploy scripts/cloudflare-worker.js and set the Worker URL instead.\n\n' +
             'See docs/README.en.md for detailed instructions.',
@@ -850,7 +850,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.getKey': 'Получить бесплатный ключ',
         'settings.keyHint': 'Хранится только в браузере (localStorage).',
         'settings.proxyBase': 'Базовый URL прокси',
-        'settings.proxyBaseHint': 'Запусти bun ./scripts/yahoo-proxy.ts локально или задеплой scripts/cloudflare-worker.js.',
+        'settings.proxyBaseHint': 'Запусти bun ./scripts/options-local-proxy.ts локально или задеплой scripts/cloudflare-worker.js.',
         'settings.proxyBasePlaceholder': 'http://localhost:8787 или https://name.you.workers.dev',
         'settings.corsProxy': 'CORS прокси',
         'settings.corsProxyHint': 'Публичные прокси могут быть нестабильны — переключайся при сбоях или используй свой Worker.',
@@ -923,7 +923,7 @@ const translations: Record<Language, Record<string, string>> = {
             'Локальный статический кэш — same-origin data/{TICKER}.json (GitHub Action + yfinance + CBOE/BS греки). ' +
             'Без прокси и ключей. Лучший default для GitHub Pages. Показываются только закэшированные тикеры.',
         'providerDescription.yahoo':
-            'Yahoo Finance через прокси (/api/options) — crumb/cookie обрабатывают scripts/yahoo-proxy.ts или Cloudflare Worker. ' +
+            'Yahoo Finance через прокси (/api/options) — crumb/cookie обрабатывают scripts/options-local-proxy.ts или Cloudflare Worker. ' +
             'Lazy по expiration. Нет провайдерских греков; клиентский Black-Scholes считает их при наличии IV.',
         'providerDescription.nasdaq':
             'Цепочка NASDAQ через прокси (/api/nasdaq) — полная цепочка за один запрос (bid/ask/last/volume/OI). ' +
@@ -985,7 +985,7 @@ const translations: Record<Language, Record<string, string>> = {
             'Не удалось достучаться до прокси. Чтобы исправить:\n\n' +
             '1. Клонируй репозиторий: git clone https://github.com/daggerok/options-desk.git\n' +
             '2. Установи зависимости: bun install -E\n' +
-            '3. Запусти прокси: bun ./scripts/yahoo-proxy.ts\n' +
+            '3. Запусти прокси: bun ./scripts/options-local-proxy.ts\n' +
             '4. Укажи Proxy base URL в настройках: http://localhost:8787\n\n' +
             'Или задеплой scripts/cloudflare-worker.js и укажи URL Worker.\n\n' +
             'Подробности — в docs/README.en.md.',
@@ -1091,7 +1091,7 @@ function isAbortError(e: unknown): boolean {
  *  Legacy static files may still carry `marketdata` / `dolthub` tags. */
 type GreeksSource = 'cboe' | 'black-scholes' | 'marketdata' | 'dolthub' | null;
 
-/** Top-level greeks enrichment summary written by scripts/fetch_data.py. */
+/** Top-level greeks enrichment summary written by scripts/options-data.py. */
 interface GreeksSummary {
     enabled?: boolean;
     primarySource?: string | null;
@@ -1382,7 +1382,7 @@ function estimateSpot(quotes: OptionQuote[], expiration: string): number | null 
 // ---------------------------------------------------------------------------
 // Client-side Black-Scholes greeks — SINGLE SOURCE OF TRUTH for model math
 // ---------------------------------------------------------------------------
-// scripts/fetch_data.py may attach provider Cboe 1st-order only. All model work
+// scripts/options-data.py may attach provider Cboe 1st-order only. All model work
 // (missing 1st-order + λ + 2nd/3rd-order) happens here after every provider
 // fetch, including CACHE. Do not reintroduce BS in Python — that duplicates this.
 // Conventions: theta per calendar day; vega/rho per 1 vol-point / 1pp rate.
@@ -1409,7 +1409,7 @@ function normCdf(x: number): number {
     return 0.5 * (1 + erf(x / Math.SQRT2));
 }
 
-/** Years to expiration (calendar), +1 day floor — same rule as fetch_data.py. */
+/** Years to expiration (calendar), +1 day floor — same rule as options-data.py. */
 function yearsToExpiration(expiration: string, now: Date = new Date()): number | null {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(expiration || ''));
     if (!m) return null;
@@ -1717,7 +1717,7 @@ async function fetchStaticJson(url: string, signal?: AbortSignal, label?: string
     if (res.status === 404) {
         throw new Error(
             `"${name}" is not in the static cache (data/${name}.json → 404). ` +
-            `Pick a cached ticker from the list, or run scripts/fetch_data.py to add it.`,
+            `Pick a cached ticker from the list, or run scripts/options-data.py to add it.`,
         );
     }
     if (!res.ok) {
@@ -1738,7 +1738,7 @@ async function fetchStaticJson(url: string, signal?: AbortSignal, label?: string
     } catch {
         throw new Error(
             `Static file ${url} is not valid JSON (it may be truncated or contain ` +
-            `NaN/Infinity). Re-run scripts/fetch_data.py to rebuild it.`,
+            `NaN/Infinity). Re-run scripts/options-data.py to rebuild it.`,
         );
     }
 }
@@ -1877,7 +1877,7 @@ async function suggestTickers(provider: DataProvider, query: string, ctx: Provid
  *                            is the sorted keys of `files`. No legacy shape kept.
  *                            `names` powers local company-name suggestions;
  *                            `no_options` is surfaced as "(no options)".)
- *   ./data/{TICKER}.json  -> ChainResult-like payload (see scripts/fetch_data.py)
+ *   ./data/{TICKER}.json  -> ChainResult-like payload (see scripts/options-data.py)
  * Data is refreshed by the GitHub Action. Greeks may be null (yfinance source).
  */
 const staticProvider: DataProvider = {
@@ -1919,7 +1919,7 @@ const staticProvider: DataProvider = {
         if (!j || !Array.isArray(j.quotes)) {
             throw new Error(
                 `Static file data/${raw}.json loaded but has no "quotes" array. ` +
-                `The file may be truncated or in an old format — re-run scripts/fetch_data.py to rebuild it.`,
+                `The file may be truncated or in an old format — re-run scripts/options-data.py to rebuild it.`,
             );
         }
         const quotes: OptionQuote[] = j.quotes.map((q: any) => ({
@@ -1986,7 +1986,7 @@ async function proxyTickerSuggestions(providerId: 'yahoo' | 'nasdaq' | 'cboe', q
 
 /**
  * Yahoo (via proxy) provider (LAZY, needs a proxy base URL).
- * The proxy (scripts/yahoo-proxy.ts locally, or scripts/cloudflare-worker.js
+ * The proxy (scripts/options-local-proxy.ts locally, or scripts/cloudflare-worker.js
  * deployed) handles Yahoo's crumb/cookie flow and re-exposes CORS:*.
  * Endpoint: GET {base}/api/options?symbol=X[&date=YYYY-MM-DD]
  *   -> Yahoo optionChain JSON: result[0].expirationDates (unix), quote price,
@@ -1996,7 +1996,7 @@ const yahooProvider: DataProvider = {
     id: 'yahoo',
     label: 'YAHOO',
     description:
-        'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/yahoo-proxy.ts or Cloudflare Worker. ' +
+        'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/options-local-proxy.ts or Cloudflare Worker. ' +
         'Lazy per-expiration. No provider greeks; client Black-Scholes fills them when IV is present.',
     mode: 'lazy',
     setup: 'proxy',
@@ -2116,7 +2116,7 @@ const nasdaqProvider: DataProvider = {
             ? `${base}/api/nasdaq?symbol=${encodeURIComponent(raw)}`
             : proxied(direct, ctx.proxyTemplate);
         if (!base && (!ctx.proxyTemplate || ctx.proxyTemplate === '{url}')) {
-            throw new Error('NASDAQ needs a proxy. Set the Proxy base URL in Settings (run scripts/yahoo-proxy.ts, default http://localhost:8787), or pick a CORS proxy.');
+            throw new Error('NASDAQ needs a proxy. Set the Proxy base URL in Settings (run scripts/options-local-proxy.ts, default http://localhost:8787), or pick a CORS proxy.');
         }
         dbg('nasdaq fetchAll', { raw, url });
 
@@ -2170,7 +2170,7 @@ const nasdaqProvider: DataProvider = {
  * Cash indices are prefixed with "_" (_SPX, _VIX...). CBOE's CDN sends NO CORS
  * header, so the browser CANNOT call it directly — it must be relayed. Two ways:
  *   1) A request-handling proxy base (RECOMMENDED): the local Bun server
- *      (scripts/yahoo-proxy.ts also serves /api/cboe) or the Cloudflare Worker.
+ *      (scripts/options-local-proxy.ts also serves /api/cboe) or the Cloudflare Worker.
  *      Set "Proxy base URL" in Settings; we call {base}/api/cboe?symbol=XXX.
  *   2) A generic CORS proxy template ({url}) as a fallback (public ones flaky).
  */
@@ -2204,7 +2204,7 @@ const cboeProvider: DataProvider = {
             ? `${base}/api/cboe?symbol=${encodeURIComponent(cboeSym)}`
             : proxied(target, ctx.proxyTemplate);
         if (!base && (!ctx.proxyTemplate || ctx.proxyTemplate === '{url}')) {
-            throw new Error('CBOE needs a proxy. Set the Proxy base URL in Settings (run scripts/yahoo-proxy.ts, default http://localhost:8787), or pick a CORS proxy.');
+            throw new Error('CBOE needs a proxy. Set the Proxy base URL in Settings (run scripts/options-local-proxy.ts, default http://localhost:8787), or pick a CORS proxy.');
         }
 
         const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
