@@ -241,7 +241,7 @@ grep -RInE 'TODO|FIXME|old|deprecated|Vite|webpack|no_options|provider|proxy' .
 В существующем проекте агент должен спрашивать перед:
 
 - изменением `.github/workflows/*`;
-- массовым изменением `data/*.json`;
+- массовым изменением `data/options/*.json`;
 - изменением public schema;
 - удалением исторических changelog sections;
 - сменой default provider/theme/UX;

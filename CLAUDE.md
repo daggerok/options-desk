@@ -17,7 +17,7 @@
 - Providers (UI): **CACHE, CBOE, NASDAQ, YAHOO** — fixed order.
 - Defaults: localhost/LAN → **CBOE**; GitHub Pages → **CACHE** (`defaultProviderId` in `src/main.tsx`).
 - Proxy: `scripts/options-local-proxy.ts` / `scripts/cloudflare-worker.js` (`/api/cboe`, `/api/nasdaq`, `/api/options`, `/api/search`).
-- CACHE files: `data/*.json` + `data/index.json` via `scripts/options-data.py`.
+- CACHE files: `data/options/*.json` + `data/options/index.json` via `scripts/options-data.py`.
 
 ## Anti-duplication (критично)
 

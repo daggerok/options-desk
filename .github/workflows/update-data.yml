@@ -11,8 +11,8 @@
 #      fresh today and stops at its budget or when the source rate-limits it.
 #      Each run does NEW work; the next run resumes — so we cache ALL tickers
 #      before re-looping, and never re-loop only the top-cap names.
-#   3. Commits the fresh data/*.json back to the repo.
-# The site (GitHub Pages) then reads its OWN data/*.json via the app's
+#   3. Commits the fresh data/options/*.json back to the repo.
+# The site (GitHub Pages) then reads its OWN data/options/*.json via the app's
 # "Static cache" provider — zero CORS issues, zero exposed keys.
 #
 # SETUP:
@@ -78,7 +78,7 @@ jobs:
         run: |
           git config user.name  "Maksim Kostromin"
           git config user.email "daggerok@gmail.com"
-          # Stage the refreshed chains + data/index.json (which also holds the
+          # Stage the refreshed chains + data/options/index.json (which also holds the
           # no-options skiplist under the `no_options` key since options-data.py v9).
           git add data/ || true
           # Check if there are changes to commit

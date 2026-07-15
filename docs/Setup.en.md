@@ -241,7 +241,7 @@ Better to use separate PRs if the changes are of different types.
 In an existing project the agent should ask before:
 
 - changing `.github/workflows/*`;
-- mass-changing `data/*.json`;
+- mass-changing `data/options/*.json`;
 - changing the public schema;
 - removing historical changelog sections;
 - changing default provider / theme / UX;
