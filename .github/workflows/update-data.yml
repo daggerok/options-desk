@@ -69,7 +69,7 @@ jobs:
           fetch-depth: 2
 
       - name: Set up uv # https://docs.astral.sh/uv/guides/integration/github/#using-uv-pip
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@v8
         with:
           enable-cache: true
           python-version: 3.13
