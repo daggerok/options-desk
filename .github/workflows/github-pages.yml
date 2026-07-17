@@ -36,6 +36,8 @@ jobs:
           # branch ensures Pages builds the newly pushed data commit, not the
           # upstream run's original SHA.
           ref: master
+          # Keep only the latest two default-branch commits; the build needs no deeper history.
+          fetch-depth: 2
       - uses: oven-sh/setup-bun@v2
       - run: bun install -E
       # Используем скрипт из вашего package.json
