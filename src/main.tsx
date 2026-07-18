@@ -4609,6 +4609,7 @@ const App: React.FC = () => {
 
     // ---- Chain data state (DEFERRED loading; nothing fetches on mount) ------
     const [tickerInput, setTickerInput] = useState<string>(settings.lastTicker);
+    const [activeTab, setActiveTab] = useState<'chain' | 'gex'>('chain');
     const [meta, setMeta] = useState<ChainMeta | null>(null);      // set by "Expirations"
     // MULTIPLE selected expirations (set by checkboxes); loaded top→bottom.
     const [selectedExps, setSelectedExps] = useState<string[]>([]);
@@ -4909,73 +4910,9 @@ const App: React.FC = () => {
                 column. See index.css for the matching container note. */}
             <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
                 {/* ---- Controls: STEP 1 (ticker → Expirations), STEP 2 (exp → Load) ---- */}
-                <div className="mb-4 flex flex-wrap items-center gap-2">
-                    
-
-                    {/* Multi-expiration selector + Load — after "Expirations" succeeds.
-                        Pick one or MANY dates (checkboxes); they render stacked
-                        earliest→latest. "All"/"None" quick toggles included. */}
-                    {meta && (
-                        /* A <form> so pressing Enter (once the Load button is focused
-                           after picking a date) submits and loads immediately. */
-                        <form
-                            onSubmit={(e) => { e.preventDefault(); loadChain(); }}
-                            className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5"
-                        >
-                            <span className="text-xs text-slate-400">{tr('controls.expirations')}</span>
-                            <div className="themed-scroll flex max-w-[46vw] items-center gap-1 overflow-x-auto">
-                                {meta.expirations.map((exp) => {
-                                    const on = selectedExps.includes(exp);
-                                    return (
-                                        <button
-                                            key={exp}
-                                            type="button"
-                                            onClick={() => toggleExpiration(exp)}
-                                            aria-pressed={on}
-                                            className={
-                                                'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' +
-                                                (on
-                                                    ? ax.chipActive
-                                                    : ax.chipIdle)
-                                            }
-                                        >
-                                            {exp}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setSelectedExps(selectedExps.length === meta.expirations.length ? [] : [...meta.expirations])}
-                                className="shrink-0 rounded-md border border-slate-300 dark:border-slate-700 px-2 py-0.5 text-[11px] font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                                title={tr('controls.all') + ' / ' + tr('controls.none')}
-                            >
-                                {selectedExps.length === meta.expirations.length ? tr('controls.none') : tr('controls.all')}
-                            </button>
-                            <button
-                                ref={loadBtnRef}
-                                type="submit"
-                                disabled={expLoading || selectedExps.length === 0}
-                                className={`shrink-0 rounded-md ${ax.btn} px-3 py-1 text-xs font-semibold text-white disabled:opacity-50 ${ax.focusRingOffset}`}
-                            >
-                                {expLoading ? tr('controls.loading') : (selectedExps.length > 1 ? tr('controls.loadCount', { count: selectedExps.length }) : tr('controls.load'))}
-                            </button>
-                        </form>
-                    )}
-
-                    {/* Cancel — visible only while a request is in flight. */}
-                    {anyLoading && (
-                        <button
-                            type="button"
-                            onClick={cancelAll}
-                            className="inline-flex items-center gap-1 rounded-lg border border-rose-300 dark:border-rose-700 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
-                        >
-                            <Icon.X className="h-3.5 w-3.5" /> {tr('controls.cancel')}
-                        </button>
-                    )}
-
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     {/* Underlying spot + provider label. */}
-                    {chainSymbol && (
+                    {chainSymbol ? (
                         <div className="flex items-baseline gap-2">
                             <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{chainSymbol}</span>
                             {spot != null && (
@@ -4986,70 +4923,168 @@ const App: React.FC = () => {
                             )}
                             <span className="text-xs text-slate-400">{tr('spot.delayed', { provider: provider.label.split(' ')[0] })}</span>
                         </div>
-                    )}
+                    ) : <div />}
 
-                    {anyLoading && (
-                        <span className={`animate-pulse-soft text-xs font-medium ${ax.pulse}`}>
-                            {metaLoading ? tr('loading.expirations') : tr('loading.chain')}
-                        </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                        {/* Cancel — visible only while a request is in flight. */}
+                        {anyLoading && (
+                            <button
+                                type="button"
+                                onClick={cancelAll}
+                                className="inline-flex items-center gap-1 rounded-lg border border-rose-300 dark:border-rose-700 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                            >
+                                <Icon.X className="h-3.5 w-3.5" /> {tr('controls.cancel')}
+                            </button>
+                        )}
+
+                        {anyLoading && (
+                            <span className={`animate-pulse-soft text-xs font-medium ${ax.pulse}`}>
+                                {metaLoading ? tr('loading.expirations') : tr('loading.chain')}
+                            </span>
+                        )}
+                    </div>
                 </div>
 
-                {/* Calm notice (e.g. cancelled). */}
-                {notice && !error && (
-                    <div className="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-sm text-slate-500 dark:text-slate-400">
-                        {notice}
-                    </div>
-                )}
-
-                {/* Error banner with retry. */}
-                {error && (
-                    <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
-                        <span>{error}</span>
-                        <button
-                            type="button"
-                            onClick={() => (meta ? loadChain() : getDates(tickerInput))}
-                            className="shrink-0 rounded-md border border-rose-300 dark:border-rose-700 px-2 py-0.5 text-xs font-semibold hover:bg-rose-100 dark:hover:bg-rose-900/40"
-                        >
-                            {tr('retry')}
-                        </button>
-                    </div>
-                )}
-
-                {/* Onboarding card (key required for this provider + ticker). */}
-                {showOnboarding && (
-                    <div className="py-10">
-                        <KeyOnboarding
-                            provider={provider}
-                            tokenValue={settings.tokens[provider.id] || ''}
-                            secretValue={settings.secrets[provider.id] || ''}
-                            colorTheme={settings.colorTheme}
-                            onSave={(apiToken, apiSecret) => {
-                                setToken(provider.id, apiToken);
-                                if (provider.supportsSecret) setSecret(provider.id, apiSecret);
-                                // Pass creds directly to avoid a stale-closure race
-                                // (settings state hasn't committed yet).
-                                getDates(tickerInput || 'AAPL', { token: apiToken, secret: apiSecret });
-                            }}
-                            onPreview={onboardingPreview}
-                            previewLabel={previewLabel}
-                        />
-                    </div>
-                )}
-
-                {/* Option chain desk (one section per expiration), or guidance. */}
-                {!showOnboarding && (
-                    chainSymbol && hasRows ? (
-                        <ChainTable symbol={chainSymbol} sections={sections} spot={spot} columns={settings.deskColumns} colorTheme={settings.colorTheme} />
-                    ) : meta && !expLoading && !chainSymbol ? (
-                        <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
-                            {tr('notice.pickExp')} <span className={`mx-1 font-semibold ${ax.pulse}`}>{tr('controls.load')}</span> {tr('notice.toFetch')}
+                {/* Multi-expiration selector + Load — full-width panel below top bar. */}
+                {meta && (
+                    <form
+                        onSubmit={(e) => { e.preventDefault(); loadChain(); }}
+                        className="mb-4 flex w-full items-center justify-between gap-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 shadow-sm"
+                    >
+                        <span className="shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">{tr('controls.expirations')}</span>
+                        <div className="themed-scroll flex flex-1 min-w-0 items-center gap-1.5 overflow-x-auto py-0.5">
+                            {meta.expirations.map((exp) => {
+                                const on = selectedExps.includes(exp);
+                                return (
+                                    <button
+                                        key={exp}
+                                        type="button"
+                                        onClick={() => toggleExpiration(exp)}
+                                        aria-pressed={on}
+                                        className={
+                                            'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors ' +
+                                            (on
+                                                ? ax.chipActive
+                                                : ax.chipIdle)
+                                        }
+                                    >
+                                        {exp}
+                                    </button>
+                                );
+                            })}
                         </div>
-                    ) : (!meta && !metaLoading && !error) ? (
-                        <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
-                            {tr('notice.enterTicker')} <span className="mx-1 font-semibold text-slate-600 dark:text-slate-300">{tr('controls.expirations')}</span> {tr('notice.toBegin')}
+                        <div className="flex shrink-0 items-center gap-1.5">
+                            <button
+                                type="button"
+                                onClick={() => setSelectedExps(selectedExps.length === meta.expirations.length ? [] : [...meta.expirations])}
+                                className="rounded-md border border-slate-300 dark:border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                                title={tr('controls.all') + ' / ' + tr('controls.none')}
+                            >
+                                {selectedExps.length === meta.expirations.length ? tr('controls.none') : tr('controls.all')}
+                            </button>
+                            <button
+                                ref={loadBtnRef}
+                                type="submit"
+                                disabled={expLoading || selectedExps.length === 0}
+                                className={`rounded-md ${ax.btn} px-3 py-1 text-xs font-semibold text-white disabled:opacity-50 ${ax.focusRingOffset}`}
+                            >
+                                {expLoading ? tr('controls.loading') : (selectedExps.length > 1 ? tr('controls.loadCount', { count: selectedExps.length }) : tr('controls.load'))}
+                            </button>
                         </div>
-                    ) : null
+                    </form>
+                )}
+
+                {/* Navigation Tabs (below expirations panel, covering the whole lower app area) */}
+                <div className="mb-4 flex w-full border-b border-slate-200 dark:border-slate-700">
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('chain')}
+                        className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold transition-colors ${
+                            activeTab === 'chain'
+                                ? `border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400`
+                                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                        }`}
+                    >
+                        Options Chain
+                    </button>
+                    <button
+                        type="button"
+                        disabled
+                        aria-disabled="true"
+                        className="-mb-px border-b-2 border-transparent px-4 py-2 text-sm font-semibold text-slate-400 opacity-50 cursor-not-allowed dark:text-slate-600"
+                        title="Mocked tab - coming soon"
+                    >
+                        Gamma & GEX
+                    </button>
+                </div>
+
+                {/* Tab Content */}
+                {activeTab === 'chain' ? (
+                    <>
+                        {/* Calm notice (e.g. cancelled). */}
+                        {notice && !error && (
+                            <div className="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-sm text-slate-500 dark:text-slate-400">
+                                {notice}
+                            </div>
+                        )}
+
+                        {/* Error banner with retry. */}
+                        {error && (
+                            <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
+                                <span>{error}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => (meta ? loadChain() : getDates(tickerInput))}
+                                    className="shrink-0 rounded-md border border-rose-300 dark:border-rose-700 px-2 py-0.5 text-xs font-semibold hover:bg-rose-100 dark:hover:bg-rose-900/40"
+                                >
+                                    {tr('retry')}
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Onboarding card (key required for this provider + ticker). */}
+                        {showOnboarding && (
+                            <div className="py-10">
+                                <KeyOnboarding
+                                    provider={provider}
+                                    tokenValue={settings.tokens[provider.id] || ''}
+                                    secretValue={settings.secrets[provider.id] || ''}
+                                    colorTheme={settings.colorTheme}
+                                    onSave={(apiToken, apiSecret) => {
+                                        setToken(provider.id, apiToken);
+                                        if (provider.supportsSecret) setSecret(provider.id, apiSecret);
+                                        // Pass creds directly to avoid a stale-closure race
+                                        // (settings state hasn't committed yet).
+                                        getDates(tickerInput || 'AAPL', { token: apiToken, secret: apiSecret });
+                                    }}
+                                    onPreview={onboardingPreview}
+                                    previewLabel={previewLabel}
+                                />
+                            </div>
+                        )}
+
+                        {/* Option chain desk (one section per expiration), or guidance. */}
+                        {!showOnboarding && (
+                            chainSymbol && hasRows ? (
+                                <ChainTable symbol={chainSymbol} sections={sections} spot={spot} columns={settings.deskColumns} colorTheme={settings.colorTheme} />
+                            ) : meta && !expLoading && !chainSymbol ? (
+                                <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
+                                    {tr('notice.pickExp')} <span className={`mx-1 font-semibold ${ax.pulse}`}>{tr('controls.load')}</span> {tr('notice.toFetch')}
+                                </div>
+                            ) : (!meta && !metaLoading && !error) ? (
+                                <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
+                                    {tr('notice.enterTicker')} <span className="mx-1 font-semibold text-slate-600 dark:text-slate-300">{tr('controls.expirations')}</span> {tr('notice.toBegin')}
+                                </div>
+                            ) : null
+                        )}
+                    </>
+                ) : (
+                    <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-24 text-sm text-slate-400">
+                        <div className="text-center space-y-2">
+                            <p className="font-semibold text-slate-600 dark:text-slate-300">Gamma & GEX Desk</p>
+                            <p className="text-xs text-slate-400">Mocked tab view — active features coming soon.</p>
+                        </div>
+                    </div>
                 )}
             </main>
         </div>
