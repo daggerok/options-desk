@@ -65,14 +65,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          # The refresh only needs the current tree and a minimal history for its push.
-          fetch-depth: 2
+          fetch-depth: 2          # The refresh only needs the current tree and a minimal history for its push.
 
-      - name: Set up uv # https://docs.astral.sh/uv/guides/integration/github/#using-uv-pip
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
-        with:
-          enable-cache: true
-          python-version: 3.13
+      - uses: ./.github/actions/uv
 
       - name: Fetch option chains
         run: TICKERS=$(cat data/All.txt) uv run --with yfinance --with requests python scripts/options-data.py
